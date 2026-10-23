@@ -22,7 +22,7 @@ security definer
 set search_path = public
 as $$
 begin
-	delete from weekly_hours;
+	delete from weekly_hours where true;
 
 	insert into weekly_hours (weekday, start_time, end_time)
 	select (r->>'weekday')::smallint, (r->>'start')::time, (r->>'end')::time

@@ -340,5 +340,13 @@ await check('anon cannot execute either function', async () => {
 	}
 });
 
+// Supabase's pg_safeupdate rejects DELETE/UPDATE without a WHERE, even inside functions.
+await check('migrations have no DELETE without a WHERE clause', () => {
+	for (const f of readdirSync(migDir)) {
+		const unguarded = readFileSync(join(migDir, f), 'utf8').match(/delete\s+from\s+\w+\s*;/gi);
+		assert(!unguarded, `${f}: ${unguarded?.join(' | ')}`);
+	}
+});
+
 console.table(results);
 process.exit(results.every(([, r]) => r === 'ok') ? 0 : 1);
