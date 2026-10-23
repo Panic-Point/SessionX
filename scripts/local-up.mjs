@@ -1,5 +1,6 @@
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { run, requireDocker } from './lib/run.mjs';
+import { renderLocalEnv } from './lib/env-template.mjs';
 
 await requireDocker();
 
@@ -16,9 +17,11 @@ if (!existsSync('.env.local')) {
 	);
 	const serviceKey = vars.SERVICE_ROLE_KEY ?? vars.SECRET_KEY;
 	const anonKey = vars.ANON_KEY ?? vars.PUBLISHABLE_KEY;
-	const env = readFileSync('.env.local.example', 'utf8')
-		.replace(/^SUPABASE_SERVICE_ROLE_KEY=.*$/m, `SUPABASE_SERVICE_ROLE_KEY=${serviceKey}`)
-		.replace(/^PUBLIC_SUPABASE_ANON_KEY=.*$/m, `PUBLIC_SUPABASE_ANON_KEY=${anonKey}`);
+	const env = renderLocalEnv(readFileSync('.env.local.example', 'utf8'), {
+		serviceKey,
+		anonKey,
+		supabaseUrl: vars.API_URL ?? 'http://127.0.0.1:54321'
+	});
 	writeFileSync('.env.local', env);
 	console.log('Wrote .env.local from the running Supabase stack.');
 }
