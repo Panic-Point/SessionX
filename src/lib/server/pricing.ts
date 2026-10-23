@@ -17,10 +17,14 @@ export function displayPriceCents(viewer: Viewer, ctx: PriceContext): number {
 	const canSeeCustom =
 		viewer.kind === 'admin' ||
 		(viewer.kind === 'account' && viewer.accountId === ctx.studentAccountId);
-	return canSeeCustom ? effectivePriceCents(ctx) : ctx.listPriceCents;
+	return canSeeCustom ? (ctx.customPriceCents ?? ctx.listPriceCents) : ctx.listPriceCents;
 }
 
-/** The price the teacher will charge, snapshotted onto the booking. */
-export function effectivePriceCents(ctx: PriceContext): number {
-	return ctx.customPriceCents ?? ctx.listPriceCents;
+/**
+ * The price snapshotted onto a booking: whatever the booker was shown. A guest booking for a
+ * student with a custom price is charged the list price, so a custom price never leaks to
+ * (or surprises) someone who isn't signed in as that student's account.
+ */
+export function snapshotPriceCents(booker: Viewer, ctx: PriceContext): number {
+	return displayPriceCents(booker, ctx);
 }

@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import { displayPriceCents, effectivePriceCents, type PriceContext } from './pricing';
+import { displayPriceCents, snapshotPriceCents, type PriceContext } from './pricing';
 
 const withCustom: PriceContext = {
 	listPriceCents: 3500,
@@ -40,12 +40,16 @@ describe('displayPriceCents', () => {
 	});
 });
 
-describe('effectivePriceCents', () => {
-	test('prefers the custom price', () => {
-		expect(effectivePriceCents(withCustom)).toBe(3000);
+describe('snapshotPriceCents', () => {
+	test('guest booking is charged the list price it was shown', () => {
+		expect(snapshotPriceCents({ kind: 'guest' }, withCustom)).toBe(3500);
 	});
 
-	test('falls back to the list price', () => {
-		expect(effectivePriceCents(noCustom)).toBe(3500);
+	test('signed-in account booking its own student is charged the custom price', () => {
+		expect(snapshotPriceCents({ kind: 'account', accountId: 'A' }, withCustom)).toBe(3000);
+	});
+
+	test('falls back to the list price without a custom price', () => {
+		expect(snapshotPriceCents({ kind: 'account', accountId: 'A' }, noCustom)).toBe(3500);
 	});
 });

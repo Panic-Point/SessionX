@@ -32,7 +32,14 @@ export interface BookingRules {
 
 export interface Interval {
 	start: Date;
+	/** Real end of the busy time: a booking's ends_at (never blocked_until) or a calendar event's end. */
 	end: Date;
+	/**
+	 * For existing bookings, the stored blocked_until the DB overlap guard enforces. When present
+	 * it's used instead of end + the current buffer, so a later buffer change can't show a slot
+	 * the database would reject.
+	 */
+	blockedUntil?: Date;
 }
 
 export interface SlotQuery {
@@ -96,7 +103,9 @@ export function getAvailableSlots(
 				if (start < earliestStart) continue;
 				const blockedUntil = start + durationMs + bufferMs;
 				const conflicts = busy.some(
-					(b) => start < b.end.getTime() + bufferMs && b.start.getTime() < blockedUntil
+					(b) =>
+						start < Math.max(b.end.getTime() + bufferMs, b.blockedUntil?.getTime() ?? 0) &&
+						b.start.getTime() < blockedUntil
 				);
 				if (!conflicts) starts.add(start);
 			}

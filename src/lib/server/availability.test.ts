@@ -99,6 +99,19 @@ describe('getAvailableSlots', () => {
 		expect(slots).toContain(utc(`${MONDAY}T16:00`));
 	});
 
+	test("an existing booking's stored blockedUntil still blocks after the buffer is lowered", () => {
+		const busy = [
+			{
+				start: local(`${MONDAY}T15:00`),
+				end: local(`${MONDAY}T15:30`),
+				blockedUntil: local(`${MONDAY}T15:45`)
+			}
+		];
+		const slots = slotsFor(MONDAY, { durationMin: 30, busy, rules: { bufferMin: 0 } });
+		expect(slots).not.toContain(utc(`${MONDAY}T15:30`));
+		expect(slots).toContain(utc(`${MONDAY}T16:00`));
+	});
+
 	test('min notice boundary: exactly min notice away is allowed', () => {
 		expect(slotsFor(MONDAY, { now: local('2026-11-01T15:00') })).toContain(utc(`${MONDAY}T15:00`));
 	});

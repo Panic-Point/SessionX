@@ -23,7 +23,8 @@ if (!existsSync('.env.local')) {
 	console.log('Wrote .env.local from the running Supabase stack.');
 }
 
-await run('docker', ['compose', 'up', '-d', '--build', 'app']);
+// -V recreates the node_modules volume so dependency changes in the rebuilt image take effect.
+await run('docker', ['compose', 'up', '-d', '--build', '-V', 'app']);
 
 console.log(`
 SessionX is running:
