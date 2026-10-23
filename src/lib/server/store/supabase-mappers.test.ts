@@ -5,7 +5,11 @@ import {
 	mapOverrides,
 	mapLessonTypeRow,
 	mapLiveBookingRow,
-	mapRpcError
+	mapRpcError,
+	mapAccountRow,
+	mapAdminBookingRow,
+	mapAdminLessonTypeRow,
+	mapOverridesWithNotes
 } from './supabase-mappers';
 
 describe('supabase mappers', () => {
@@ -111,5 +115,106 @@ describe('supabase mappers', () => {
 	it('returns null for unknown or missing codes', () => {
 		expect(mapRpcError({ code: '42P01', message: 'boom' })).toBeNull();
 		expect(mapRpcError({ message: 'boom' })).toBeNull();
+	});
+
+	it('maps an account row', () => {
+		expect(mapAccountRow({ id: 'a', name: 'Pat', email: 'p@x.com', role: 'admin' })).toEqual({
+			id: 'a',
+			name: 'Pat',
+			email: 'p@x.com',
+			role: 'admin'
+		});
+	});
+
+	it('maps an admin lesson type row including active', () => {
+		expect(
+			mapAdminLessonTypeRow({
+				id: 'abc',
+				name: 'n',
+				description: 'd',
+				duration_min: 45,
+				price_cents: 5000,
+				sort_order: 2,
+				active: false
+			})
+		).toEqual({
+			id: 'abc',
+			name: 'n',
+			description: 'd',
+			durationMin: 45,
+			priceCents: 5000,
+			sortOrder: 2,
+			active: false
+		});
+	});
+
+	const adminRow = {
+		id: 'b1',
+		status: 'approved' as const,
+		starts_at: '2030-03-04T20:00:00+00:00',
+		ends_at: '2030-03-04T20:30:00+00:00',
+		price_cents: 3500,
+		paid_at: '2030-03-05T10:00:00+00:00',
+		note: 'hi',
+		decline_reason: 'busy',
+		late_cancel: true,
+		manage_token: 'tok',
+		lesson_types: { name: '30-minute lesson', duration_min: 30 },
+		students: { name: 'Ava', accounts: { name: 'Pat', email: 'pat@example.com' } }
+	};
+
+	it('maps an admin booking row with embeds', () => {
+		expect(mapAdminBookingRow(adminRow)).toEqual({
+			id: 'b1',
+			status: 'approved',
+			startsAt: new Date('2030-03-04T20:00:00Z'),
+			endsAt: new Date('2030-03-04T20:30:00Z'),
+			lessonTypeName: '30-minute lesson',
+			durationMin: 30,
+			studentName: 'Ava',
+			accountName: 'Pat',
+			accountEmail: 'pat@example.com',
+			priceCents: 3500,
+			paidAt: new Date('2030-03-05T10:00:00Z'),
+			note: 'hi',
+			declineReason: 'busy',
+			lateCancel: true,
+			manageToken: 'tok'
+		});
+	});
+
+	it('maps null paid_at and decline_reason to null', () => {
+		const b = mapAdminBookingRow({ ...adminRow, paid_at: null, decline_reason: null });
+		expect(b.paidAt).toBeNull();
+		expect(b.declineReason).toBeNull();
+	});
+
+	it('falls back to empty strings for missing embeds', () => {
+		const b = mapAdminBookingRow({ ...adminRow, lesson_types: null, students: null });
+		expect(b.lessonTypeName).toBe('');
+		expect(b.durationMin).toBe(0);
+		expect(b.studentName).toBe('');
+		expect(b.accountName).toBe('');
+		expect(b.accountEmail).toBe('');
+	});
+
+	it('groups override ranges with notes, null note becomes empty', () => {
+		expect(
+			mapOverridesWithNotes(
+				[
+					{ date: '2030-01-02', is_closed: false, note: null },
+					{ date: '2030-01-01', is_closed: true, note: 'Holiday' }
+				],
+				[{ date: '2030-01-02', start_time: '09:00:00', end_time: '11:00:00' }]
+			)
+		).toEqual([
+			{ date: '2030-01-01', isClosed: true, ranges: [], note: 'Holiday' },
+			{
+				date: '2030-01-02',
+				isClosed: false,
+				ranges: [{ start: '09:00', end: '11:00' }],
+				note: ''
+			}
+		]);
 	});
 });

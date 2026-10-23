@@ -1,5 +1,16 @@
 import type { DateOverride, TimeRange, WeeklyHours } from '../availability';
-import { BookingStoreError, type LessonType, type LiveBooking, type StudioSettings } from './types';
+import {
+	BookingStoreError,
+	type Account,
+	type AccountRole,
+	type AdminBooking,
+	type AdminLessonType,
+	type BookingStatus,
+	type DateOverrideWithNote,
+	type LessonType,
+	type LiveBooking,
+	type StudioSettings
+} from './types';
 
 export interface SettingsRow {
 	timezone: string;
@@ -44,6 +55,33 @@ export interface LiveBookingRow {
 	starts_at: string;
 	ends_at: string;
 	blocked_until: string;
+}
+
+export interface AccountRow {
+	id: string;
+	name: string;
+	email: string;
+	role: AccountRole;
+}
+
+export interface AdminLessonTypeRow extends LessonTypeRow {
+	active: boolean;
+}
+
+/** Shape returned by the bookings select with students/accounts and lesson_types embeds. */
+export interface AdminBookingRow {
+	id: string;
+	status: BookingStatus;
+	starts_at: string;
+	ends_at: string;
+	price_cents: number;
+	paid_at: string | null;
+	note: string;
+	decline_reason: string | null;
+	late_cancel: boolean;
+	manage_token: string;
+	lesson_types: { name: string; duration_min: number } | null;
+	students: { name: string; accounts: { name: string; email: string } | null } | null;
 }
 
 /** Postgres `time` arrives as 'HH:mm:ss'; the app uses 'HH:mm'. */
@@ -117,4 +155,43 @@ export function mapRpcError(error: { code?: string; message?: string }): Booking
 		default:
 			return null;
 	}
+}
+
+export function mapAccountRow(row: AccountRow): Account {
+	return { id: row.id, name: row.name, email: row.email, role: row.role };
+}
+
+export function mapAdminLessonTypeRow(row: AdminLessonTypeRow): AdminLessonType {
+	return { ...mapLessonTypeRow(row), active: row.active };
+}
+
+export function mapAdminBookingRow(row: AdminBookingRow): AdminBooking {
+	return {
+		id: row.id,
+		status: row.status,
+		startsAt: new Date(row.starts_at),
+		endsAt: new Date(row.ends_at),
+		lessonTypeName: row.lesson_types?.name ?? '',
+		durationMin: row.lesson_types?.duration_min ?? 0,
+		studentName: row.students?.name ?? '',
+		accountName: row.students?.accounts?.name ?? '',
+		accountEmail: row.students?.accounts?.email ?? '',
+		priceCents: row.price_cents,
+		paidAt: row.paid_at ? new Date(row.paid_at) : null,
+		note: row.note,
+		declineReason: row.decline_reason,
+		lateCancel: row.late_cancel,
+		manageToken: row.manage_token
+	};
+}
+
+export function mapOverridesWithNotes(
+	overrideRows: DateOverrideRow[],
+	rangeRows: DateOverrideRangeRow[]
+): DateOverrideWithNote[] {
+	const notes = new Map(overrideRows.map((o) => [o.date, o.note ?? '']));
+	return mapOverrides(overrideRows, rangeRows).map((o) => ({
+		...o,
+		note: notes.get(o.date) ?? ''
+	}));
 }
