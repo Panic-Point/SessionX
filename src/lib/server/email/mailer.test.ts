@@ -85,3 +85,39 @@ describe('createMailer', () => {
 		info.mockRestore();
 	});
 });
+
+describe('createMailer attachments', () => {
+	const att = [{ filename: 'lesson.ics', contentType: 'text/calendar', content: 'Zoë' }];
+	const b64 = (s: string) => Buffer.from(s, 'utf-8').toString('base64');
+
+	it('resend sends base64 attachment', async () => {
+		const { fn, calls } = fakeFetch();
+		await createMailer({ EMAIL_TRANSPORT: 'resend', RESEND_API_KEY: 'k' }, fn).send({
+			...msg,
+			attachments: att
+		});
+		const body = JSON.parse(calls[0].init.body as string);
+		expect(body.attachments).toEqual([{ filename: 'lesson.ics', content: b64('Zoë') }]);
+		expect(
+			new TextDecoder().decode(
+				Uint8Array.from(atob(body.attachments[0].content), (c) => c.charCodeAt(0))
+			)
+		).toBe('Zoë');
+	});
+	it('mailpit sends base64 attachment', async () => {
+		const { fn, calls } = fakeFetch();
+		await createMailer({ EMAIL_TRANSPORT: 'mailpit', MAILPIT_URL: 'http://m' }, fn).send({
+			...msg,
+			attachments: att
+		});
+		const body = JSON.parse(calls[0].init.body as string);
+		expect(body.Attachments).toEqual([
+			{ Filename: 'lesson.ics', ContentType: 'text/calendar', Content: b64('Zoë') }
+		]);
+	});
+	it('omits attachments when none', async () => {
+		const { fn, calls } = fakeFetch();
+		await createMailer({ EMAIL_TRANSPORT: 'resend', RESEND_API_KEY: 'k' }, fn).send(msg);
+		expect(JSON.parse(calls[0].init.body as string)).not.toHaveProperty('attachments');
+	});
+});
