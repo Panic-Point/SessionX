@@ -17,4 +17,5 @@ jobs:
       - run: npm ci
       - run: npm run check
       - run: npm test
+      - run: npm run test:db:lite
       - run: npm run build
