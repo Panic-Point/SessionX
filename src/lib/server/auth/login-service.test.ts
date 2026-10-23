@@ -3,6 +3,7 @@ import { MemoryBookingStore } from '../store/memory';
 import { demoData } from '../store/demo-data';
 import type { EmailMessage, Mailer } from '../email/mailer';
 import { completeLogin, requestLoginLink } from './login-service';
+import { generateToken } from './tokens';
 
 const now = new Date('2026-11-01T00:00:00Z');
 
@@ -19,7 +20,7 @@ function setup(failSend = false) {
 }
 
 function tokenFrom(m: EmailMessage): string {
-	const match = /https:\/\/x\.test\/admin\/verify\?token=([A-Za-z0-9_-]+)/.exec(m.text);
+	const match = /https:\/\/x\.test\/login\/verify\?token=([A-Za-z0-9_-]+)/.exec(m.text);
 	return match![1];
 }
 
@@ -57,6 +58,16 @@ describe('login service', () => {
 		const t = tokenFrom(sent[0]);
 		expect(await completeLogin(deps.store, t, now)).not.toBeNull();
 		expect(await completeLogin(deps.store, t, now)).toBeNull();
+	});
+	it('completeLogin rejects unknown token', async () => {
+		const { deps } = setup();
+		expect(await completeLogin(deps.store, generateToken(), now)).toBeNull();
+	});
+	it('login link uses /login/verify path', async () => {
+		const { deps, sent } = setup();
+		await requestLoginLink(deps, 'admin@sessionx.local', now);
+		expect(sent[0].text).toMatch(/https:\/\/x\.test\/login\/verify\?token=/);
+		expect(sent[0].text).not.toContain('/admin/verify');
 	});
 	it('completeLogin rejects expired token', async () => {
 		const { deps, sent } = setup();

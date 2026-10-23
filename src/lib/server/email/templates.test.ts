@@ -87,10 +87,10 @@ describe('new templates', () => {
 		expect(bookingDeclinedEmail(data, null).text).not.toContain('Reason');
 	});
 	it('login email contains link', () => {
-		const m = loginLinkEmail('a@b.com', 'Ann', 'https://x.test/admin/verify?token=abc');
+		const m = loginLinkEmail('a@b.com', 'Ann', 'https://x.test/login/verify?token=abc');
 		expect(m.to).toBe('a@b.com');
 		expect(m.subject).toBe('Your SessionX sign-in link');
-		expect(m.text).toContain('https://x.test/admin/verify?token=abc');
-		expect(m.html).toContain('https://x.test/admin/verify?token=abc');
+		expect(m.text).toContain('https://x.test/login/verify?token=abc');
+		expect(m.html).toContain('https://x.test/login/verify?token=abc');
 	});
 });

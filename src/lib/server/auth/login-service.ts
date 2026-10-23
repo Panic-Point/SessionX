@@ -22,7 +22,7 @@ export async function requestLoginLink(deps: LoginDeps, email: string, now: Date
 		await hashToken(token),
 		new Date(now.getTime() + LOGIN_TOKEN_TTL_MS)
 	);
-	const url = `${deps.appUrl.replace(/\/+$/, '')}/admin/verify?token=${token}`;
+	const url = `${deps.appUrl.replace(/\/+$/, '')}/login/verify?token=${token}`;
 	try {
 		await deps.mailer.send(loginLinkEmail(account.email, account.name, url));
 	} catch (err) {
