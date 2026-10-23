@@ -34,8 +34,8 @@ Success = a parent or student books from their phone in under a minute, and the 
 ## Non-goals (v1)
 
 - Online payments or deposits. Native store apps. SMS or phone intake. Multiple teachers or locations.
-- Recurring/series bookings. *(my call)*
-- Reminder emails before lessons. *(my call; easy add later via cron)*
+- Recurring/series bookings. _(my call)_
+- Reminder emails before lessons. _(my call; easy add later via cron)_
 
 ## Anti-goals
 
@@ -62,7 +62,7 @@ Success = a parent or student books from their phone in under a minute, and the 
 - `lesson_types`: `name`, `description`, `duration_min`, `price_cents`, `active`, `sort_order`.
 - `accounts`: `name`, `email` (unique, citext), `phone?`, `auth_user_id` (nullable, linked on first sign-in with a matching email), `role`, `admin_notes`.
 - `students`: `account_id`, `name`, `notes`. An account holder who is also the student is just a student row with their own name.
-- `student_prices`: `student_id`, `lesson_type_id`, `price_cents`. **Per student** *(my call: siblings can have different rates)*.
+- `student_prices`: `student_id`, `lesson_type_id`, `price_cents`. **Per student** _(my call: siblings can have different rates)_.
 - `bookings`: `student_id`, `lesson_type_id`, `starts_at`, `ends_at`, `status` ∈ {pending, approved, declined, cancelled, expired}, `late_cancel`, `price_cents` snapshot, `paid_at`, `gcal_event_id`, `note`, `decline_reason`, `manage_token` (guest manage/cancel link).
 - **Double-booking guard:** `btree_gist` exclusion constraint on `tstzrange(starts_at, ends_at + buffer)` for `status in ('pending','approved')`.
 
@@ -81,7 +81,7 @@ Success = a parent or student books from their phone in under a minute, and the 
 - **Admin requests:** pending list, one-tap approve/decline (optional reason) → email (approval email carries an `.ics` file) + Google Calendar event.
 - **Cancel:** from the account or the emailed link. Inside the cutoff: policy warning, confirmation, `late_cancel = true`, teacher emailed. Always frees the slot and deletes the Google Calendar event.
 - **Admin screens:** Requests, Lessons (upcoming/past, mark paid, filter unpaid or late cancel), Hours & Overrides, Lesson Types, Rules & Cancellation Policy, Accounts & Students (custom prices, notes), Calendar settings.
-- **Spam limits** *(my call)*: Turnstile, max 2 pending requests per email.
+- **Spam limits** _(my call)_: Turnstile, max 2 pending requests per email.
 
 ## Local Docker setup (goal 11)
 

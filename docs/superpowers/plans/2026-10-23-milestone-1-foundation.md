@@ -71,7 +71,9 @@ alter table bookings add constraint bookings_no_overlap
   exclude using gist (tstzrange(starts_at, blocked_until, '[)') with &&)
   where (status in ('pending','approved'));
 ```
-  where `blocked_until timestamptz not null` = `ends_at + buffer` set by the app at insert (keeps constraint immutable-expression-safe). Check `ends_at > starts_at`, `blocked_until >= ends_at`.
+
+where `blocked_until timestamptz not null` = `ends_at + buffer` set by the app at insert (keeps constraint immutable-expression-safe). Check `ends_at > starts_at`, `blocked_until >= ends_at`.
+
 - [ ] Step 3: Seed: settings (`America/New_York`, min_notice 24, max_advance 60, cancel_cutoff 24, allow_same_day false, admin_email `admin@sessionx.local`), Mon–Fri 15:00–20:00 + Sat 09:00–13:00, lesson types (30-min $35, 45-min $50, 60-min $65), admin account, family account `parent@example.com` with students "Ava" and "Ben", custom price for Ben on 30-min = $30.
 - [ ] Step 4: `npm run local:reset && npm run test:db` → all pgTAP pass (requires Docker).
 - [ ] Step 5: Commit `feat: database schema, overlap constraint, seed`.
@@ -81,19 +83,54 @@ alter table bookings add constraint bookings_no_overlap
 **Files:** Create `src/lib/server/availability.ts`, `src/lib/server/availability.test.ts`
 
 **Interfaces — Produces:**
+
 ```ts
-export interface WeeklyHours { weekday: number /* ISO 1=Mon..7=Sun */; start: string /* HH:mm */; end: string }
-export interface TimeRange { start: string; end: string }
-export interface DateOverride { date: string /* yyyy-MM-dd */; isClosed: boolean; ranges: TimeRange[] }
-export interface BookingRules { timezone: string; minNoticeHours: number; maxAdvanceDays: number; slotIncrementMin: number; bufferMin: number; allowSameDay: boolean }
-export interface Interval { start: Date; end: Date }
-export interface SlotQuery { durationMin: number; fromDate: string; toDate: string /* inclusive, yyyy-MM-dd in rules.timezone */; now: Date }
-export type SlotsByDate = Record<string, string[] /* ISO UTC start times, ascending */>
-export function getAvailableSlots(q: SlotQuery, rules: BookingRules, hours: WeeklyHours[], overrides: DateOverride[], busy: Interval[]): SlotsByDate
+export interface WeeklyHours {
+	weekday: number /* ISO 1=Mon..7=Sun */;
+	start: string /* HH:mm */;
+	end: string;
+}
+export interface TimeRange {
+	start: string;
+	end: string;
+}
+export interface DateOverride {
+	date: string /* yyyy-MM-dd */;
+	isClosed: boolean;
+	ranges: TimeRange[];
+}
+export interface BookingRules {
+	timezone: string;
+	minNoticeHours: number;
+	maxAdvanceDays: number;
+	slotIncrementMin: number;
+	bufferMin: number;
+	allowSameDay: boolean;
+}
+export interface Interval {
+	start: Date;
+	end: Date;
+}
+export interface SlotQuery {
+	durationMin: number;
+	fromDate: string;
+	toDate: string /* inclusive, yyyy-MM-dd in rules.timezone */;
+	now: Date;
+}
+export type SlotsByDate = Record<string, string[] /* ISO UTC start times, ascending */>;
+export function getAvailableSlots(
+	q: SlotQuery,
+	rules: BookingRules,
+	hours: WeeklyHours[],
+	overrides: DateOverride[],
+	busy: Interval[]
+): SlotsByDate;
 ```
+
 Every date in `[fromDate, toDate]` appears as a key (empty array = greyed out). Overlap rule mirrors the DB: candidate `[s, s+duration+buffer)` conflicts with busy `[b.start, b.end+buffer)`.
 
 Tests (rules: `America/New_York`, notice 24, advance 60, increment 30, buffer 0, allowSameDay false; hours Mon 15:00–17:00; now = 2026-11-01T12:00 local, a Sunday):
+
 - [ ] Step 1: Write failing tests:
   - `generates slots inside weekly hours` — Mon 2026-11-02, 60 min → `15:00, 15:30, 16:00` local (as UTC ISO `20:00Z, 20:30Z, 21:00Z`).
   - `no partial slot at window end` — 90 min → `15:00, 15:30` only.
@@ -116,12 +153,18 @@ Tests (rules: `America/New_York`, notice 24, advance 60, increment 30, buffer 0,
 **Files:** Create `src/lib/server/pricing.ts`, `src/lib/server/pricing.test.ts`
 
 **Interfaces — Produces:**
+
 ```ts
-export type Viewer = { kind: 'guest' } | { kind: 'account'; accountId: string } | { kind: 'admin' }
-export interface PriceContext { listPriceCents: number; studentAccountId: string | null; customPriceCents: number | null }
-export function displayPriceCents(viewer: Viewer, ctx: PriceContext): number
-export function effectivePriceCents(ctx: PriceContext): number   // snapshot stored on booking: custom ?? list
+export type Viewer = { kind: 'guest' } | { kind: 'account'; accountId: string } | { kind: 'admin' };
+export interface PriceContext {
+	listPriceCents: number;
+	studentAccountId: string | null;
+	customPriceCents: number | null;
+}
+export function displayPriceCents(viewer: Viewer, ctx: PriceContext): number;
+export function effectivePriceCents(ctx: PriceContext): number; // snapshot stored on booking: custom ?? list
 ```
+
 - [ ] Step 1: Failing tests:
   - `guest sees list price even when custom exists` → 3500 (list 3500, custom 3000).
   - `account sees own student's custom price` → 3000.
