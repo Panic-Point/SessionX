@@ -31,5 +31,10 @@ export const variables = defineEnvVars({
 	EMAIL_FROM: {
 		schema: optional,
 		description: 'From address, e.g. `SessionX <bookings@example.com>`.'
+	},
+	SESSION_SECRET: {
+		schema: optional,
+		description:
+			'Secret for signing admin session cookies. Required in production; dev falls back to a fixed dev-only value.'
 	}
 });

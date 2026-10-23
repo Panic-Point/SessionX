@@ -1,8 +1,14 @@
 <script lang="ts">
 	import favicon from '#lib/assets/favicon.svg';
+	import { page } from '$app/state';
 	import type { LayoutProps } from './$types';
 
-	let { children }: LayoutProps = $props();
+	let { data, children }: LayoutProps = $props();
+
+	// The admin area has its own navigation; /login doesn't need a link to itself.
+	const showLink = $derived(
+		!page.url.pathname.startsWith('/admin') && !page.url.pathname.startsWith('/login')
+	);
 </script>
 
 <svelte:head>
@@ -12,6 +18,19 @@
 </svelte:head>
 
 <div class="app">
+	{#if showLink}
+		<nav class="account-link" aria-label="Account">
+			{#if data.viewer === 'admin'}
+				<a href="/admin">Admin</a>
+			{:else if data.viewer === 'client'}
+				<form method="POST" action="/logout">
+					<button type="submit">Sign out</button>
+				</form>
+			{:else}
+				<a href="/login">Sign in</a>
+			{/if}
+		</nav>
+	{/if}
 	{@render children()}
 </div>
 
@@ -66,6 +85,27 @@
 		margin: 0 auto;
 		padding: 1rem;
 		padding-bottom: calc(1rem + env(safe-area-inset-bottom));
+	}
+
+	.account-link {
+		display: flex;
+		justify-content: flex-end;
+	}
+
+	.account-link a,
+	.account-link button {
+		display: inline-flex;
+		align-items: center;
+		min-height: var(--tap);
+		padding: 0 0.5rem;
+		border: 0;
+		background: none;
+		color: var(--accent);
+		font-family: inherit;
+		font-size: 0.95rem;
+		font-weight: 600;
+		text-decoration: none;
+		cursor: pointer;
 	}
 
 	@media (min-width: 768px) {

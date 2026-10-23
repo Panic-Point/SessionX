@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { chooseStore } from './choose-store';
+import { chooseStore, getSessionSecret } from './choose-store';
 
 describe('chooseStore', () => {
 	it('uses memory when BOOKING_STORE=memory, even in production', () => {
@@ -29,5 +29,26 @@ describe('chooseStore', () => {
 	it('throws when the url is set but the key is missing (dev or prod)', () => {
 		expect(() => chooseStore({ SUPABASE_URL: 'u' }, true)).toThrow(/SUPABASE_SERVICE_ROLE_KEY/);
 		expect(() => chooseStore({ SUPABASE_URL: 'u' }, false)).toThrow(/SUPABASE_SERVICE_ROLE_KEY/);
+	});
+});
+
+describe('getSessionSecret', () => {
+	it('returns SESSION_SECRET when set (dev or prod)', () => {
+		expect(getSessionSecret({ SESSION_SECRET: 's3cret' }, false)).toBe('s3cret');
+		expect(getSessionSecret({ SESSION_SECRET: 's3cret' }, true)).toBe('s3cret');
+	});
+	it('falls back to the dev-only secret in dev when unset or empty', () => {
+		expect(getSessionSecret({}, true)).toBe('dev-only-session-secret-change-me');
+		expect(getSessionSecret({ SESSION_SECRET: '' }, true)).toBe(
+			'dev-only-session-secret-change-me'
+		);
+	});
+	it('throws in production when unset', () => {
+		expect(() => getSessionSecret({}, false)).toThrow('SESSION_SECRET must be set');
+	});
+	it('treats an empty string as unset in production', () => {
+		expect(() => getSessionSecret({ SESSION_SECRET: '' }, false)).toThrow(
+			'SESSION_SECRET must be set'
+		);
 	});
 });

@@ -1,17 +1,17 @@
 import * as env from '$app/env/private';
 import { dev } from '$app/env';
 import { getRequestEvent } from '$app/server';
-import { chooseStore } from './choose-store';
+import { chooseStore, getSessionSecret as pickSessionSecret } from './choose-store';
 import { createMailer, type Mailer } from './email/mailer';
 import { demoData } from './store/demo-data';
 import { MemoryBookingStore } from './store/memory';
 import { createSupabaseBookingStore } from './store/supabase';
-import type { BookingStore } from './store/types';
+import type { AdminStore, BookingStore } from './store/types';
 
 let memoryStore: MemoryBookingStore | undefined;
 
 /** In-memory demo store only for `BOOKING_STORE=memory` or dev without Supabase; see `chooseStore`. */
-export function getStore(): BookingStore {
+export function getStore(): BookingStore & AdminStore {
 	const choice = chooseStore(env, dev);
 	if (choice.kind === 'memory') {
 		memoryStore ??= new MemoryBookingStore(demoData());
@@ -32,4 +32,9 @@ export function getMailer(): Mailer {
 /** `PUBLIC_APP_URL` (without a trailing slash), or the current request's origin. */
 export function getAppUrl(): string {
 	return (env.PUBLIC_APP_URL ?? getRequestEvent().url.origin).replace(/\/+$/, '');
+}
+
+/** Session cookie signing secret; see `getSessionSecret` in choose-store. */
+export function getSessionSecret(): string {
+	return pickSessionSecret(env, dev);
 }
