@@ -68,22 +68,35 @@ export class MemoryBookingStore implements BookingStore {
 		const lessonType = this.data.lessonTypes.find((t) => t.id === input.lessonTypeId);
 		if (!lessonType) throw new BookingStoreError('lesson_type_not_found');
 
+		// Checks run against lookups only; rows are created after every check passes so a
+		// rejected request mutates nothing (the SQL function is one transaction).
 		const email = input.email.trim().toLowerCase();
-		let account = this.data.accounts.find((a) => a.email.toLowerCase() === email);
+		const existingAccount = this.data.accounts.find((a) => a.email.toLowerCase() === email);
+
+		if (existingAccount) {
+			const ownStudentIds = new Set(
+				this.data.students.filter((s) => s.accountId === existingAccount.id).map((s) => s.id)
+			);
+			const pending = this.bookings.filter(
+				(b) => b.status === 'pending' && ownStudentIds.has(b.studentId) && b.startsAt > now
+			).length;
+			if (pending >= MAX_PENDING) throw new BookingStoreError('too_many_pending');
+		}
+
+		const endsAt = new Date(input.startsAt.getTime() + lessonType.durationMin * MINUTE_MS);
+		const blockedUntil = new Date(endsAt.getTime() + this.data.settings.bufferMin * MINUTE_MS);
+		const clash = this.bookings.some(
+			(b) => isLive(b) && input.startsAt < b.blockedUntil && b.startsAt < blockedUntil
+		);
+		if (clash) throw new BookingStoreError('slot_taken');
+
+		// Existing accounts keep their name; only new ones take the submitted name.
+		let account = existingAccount;
 		if (!account) {
-			// Existing accounts keep their name; only new ones take the submitted name.
 			account = { id: crypto.randomUUID(), name: input.accountName, email, role: 'client' };
 			this.data.accounts.push(account);
 		}
 		const accountId = account.id;
-
-		const ownStudentIds = new Set(
-			this.data.students.filter((s) => s.accountId === accountId).map((s) => s.id)
-		);
-		const pending = this.bookings.filter(
-			(b) => b.status === 'pending' && ownStudentIds.has(b.studentId) && b.startsAt > now
-		).length;
-		if (pending >= MAX_PENDING) throw new BookingStoreError('too_many_pending');
 
 		const wanted = input.studentName.trim().toLowerCase();
 		let student = this.data.students.find(
@@ -93,13 +106,6 @@ export class MemoryBookingStore implements BookingStore {
 			student = { id: crypto.randomUUID(), accountId, name: input.studentName.trim() };
 			this.data.students.push(student);
 		}
-
-		const endsAt = new Date(input.startsAt.getTime() + lessonType.durationMin * MINUTE_MS);
-		const blockedUntil = new Date(endsAt.getTime() + this.data.settings.bufferMin * MINUTE_MS);
-		const clash = this.bookings.some(
-			(b) => isLive(b) && input.startsAt < b.blockedUntil && b.startsAt < blockedUntil
-		);
-		if (clash) throw new BookingStoreError('slot_taken');
 
 		const booking: StoredBooking = {
 			id: crypto.randomUUID(),

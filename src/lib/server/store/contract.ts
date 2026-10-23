@@ -108,6 +108,29 @@ export function runBookingStoreContract(name: string, makeStore: () => Promise<B
 			expect(code).toBe('too_many_pending');
 		});
 
+		it('rejected request by a new email leaves no account behind', async () => {
+			const store = await makeStore();
+			await store.requestGuestBooking(input(), NOW);
+			const code = await errorCode(
+				store.requestGuestBooking(
+					input({ email: 'new@example.com', accountName: 'Alice', studentName: 'Al' }),
+					NOW
+				)
+			);
+			expect(code).toBe('slot_taken');
+			const retry = await store.requestGuestBooking(
+				input({
+					email: 'new@example.com',
+					accountName: 'Alicia',
+					studentName: 'Al',
+					startsAt: new Date('2030-03-05T20:00:00Z')
+				}),
+				NOW
+			);
+			const summary = await store.getBookingByManageToken(retry.manageToken);
+			expect(summary?.accountName).toBe('Alicia');
+		});
+
 		it('unknown lesson type is rejected', async () => {
 			const store = await makeStore();
 			const code = await errorCode(
