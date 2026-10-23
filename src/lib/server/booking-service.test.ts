@@ -87,7 +87,7 @@ describe('booking service', () => {
 		if (!r.ok) return;
 		const view = await getManageView(store, r.manageToken);
 		expect(view?.status).toBe('pending');
-		expect(view?.accountName).toBe('Gina Guest');
+		expect(view).not.toHaveProperty('accountName');
 	});
 
 	it('sends received email to booker and new-request email to admin', async () => {

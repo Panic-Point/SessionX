@@ -36,7 +36,7 @@ interface BookingByTokenRow {
 	price_cents: number;
 	note: string;
 	lesson_types: { name: string } | null;
-	students: { name: string; accounts: { name: string } | null } | null;
+	students: { name: string } | null;
 }
 
 interface RpcBookingRow {
@@ -140,9 +140,7 @@ export function createSupabaseBookingStore(url: string, serviceRoleKey: string):
 		async getBookingByManageToken(token: string): Promise<BookingSummary | null> {
 			const { data, error } = await db
 				.from('bookings')
-				.select(
-					'status, starts_at, ends_at, price_cents, note, lesson_types(name), students(name, accounts(name))'
-				)
+				.select('status, starts_at, ends_at, price_cents, note, lesson_types(name), students(name)')
 				.eq('manage_token', token)
 				.maybeSingle();
 			if (error) fail('getBookingByManageToken', error);
@@ -154,7 +152,6 @@ export function createSupabaseBookingStore(url: string, serviceRoleKey: string):
 				endsAt: new Date(row.ends_at),
 				lessonTypeName: row.lesson_types?.name ?? '',
 				studentName: row.students?.name ?? '',
-				accountName: row.students?.accounts?.name ?? '',
 				priceCents: row.price_cents,
 				note: row.note
 			};

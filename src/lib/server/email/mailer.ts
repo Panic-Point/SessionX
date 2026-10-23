@@ -28,19 +28,31 @@ async function post(
 	fetchFn: typeof fetch,
 	url: string,
 	headers: Record<string, string>,
-	body: unknown
+	body: unknown,
+	timeoutMs: number
 ) {
 	const res = await fetchFn(url, {
 		method: 'POST',
 		headers: { 'Content-Type': 'application/json', ...headers },
-		body: JSON.stringify(body)
+		body: JSON.stringify(body),
+		signal: AbortSignal.timeout(timeoutMs)
 	});
 	if (!res.ok) {
 		throw new Error(`Email send failed: ${res.status} ${res.statusText}`.trim());
 	}
 }
 
-export function createMailer(env: MailerEnv, fetchFn: typeof fetch = fetch): Mailer {
+export interface MailerOptions {
+	/** Abort a send that has not completed after this many milliseconds. Default 5000. */
+	timeoutMs?: number;
+}
+
+export function createMailer(
+	env: MailerEnv,
+	fetchFn: typeof fetch = fetch,
+	options: MailerOptions = {}
+): Mailer {
+	const timeoutMs = options.timeoutMs ?? 5000;
 	const from = env.EMAIL_FROM || DEFAULT_FROM;
 	switch (env.EMAIL_TRANSPORT) {
 		case 'resend':
@@ -50,7 +62,8 @@ export function createMailer(env: MailerEnv, fetchFn: typeof fetch = fetch): Mai
 						fetchFn,
 						'https://api.resend.com/emails',
 						{ Authorization: `Bearer ${env.RESEND_API_KEY ?? ''}` },
-						{ from, to: [msg.to], subject: msg.subject, text: msg.text, html: msg.html }
+						{ from, to: [msg.to], subject: msg.subject, text: msg.text, html: msg.html },
+						timeoutMs
 					)
 			};
 		case 'mailpit':
@@ -66,7 +79,8 @@ export function createMailer(env: MailerEnv, fetchFn: typeof fetch = fetch): Mai
 							Subject: msg.subject,
 							Text: msg.text,
 							HTML: msg.html
-						}
+						},
+						timeoutMs
 					)
 			};
 		default:

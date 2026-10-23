@@ -10,7 +10,6 @@ export const load: PageServerLoad = async ({ params }) => {
 		status: view.status,
 		lessonTypeName: view.lessonTypeName,
 		studentName: view.studentName,
-		accountName: view.accountName,
 		whenLabel: view.whenLabel,
 		priceLabel: view.priceLabel,
 		note: view.note

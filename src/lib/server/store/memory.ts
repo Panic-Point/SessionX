@@ -141,7 +141,6 @@ export class MemoryBookingStore implements BookingStore {
 			endsAt: booking.endsAt,
 			lessonTypeName: lessonType.name,
 			studentName: student.name,
-			accountName: account.name,
 			priceCents: booking.priceCents,
 			note: booking.note
 		};

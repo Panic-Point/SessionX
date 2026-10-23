@@ -6,6 +6,28 @@ import { demoData } from './demo-data';
 runBookingStoreContract('memory', async () => new MemoryBookingStore(demoData()));
 
 describe('MemoryBookingStore specifics', () => {
+	it('rejected request by a new email leaves no account behind', async () => {
+		const store = new MemoryBookingStore(demoData());
+		const base = {
+			lessonTypeId: '11111111-0000-0000-0000-000000000030',
+			startsAt: new Date('2030-03-04T20:00:00Z'),
+			note: ''
+		};
+		const now = new Date('2026-11-01T17:00:00Z');
+		await store.requestGuestBooking(
+			{ ...base, email: 'a@example.com', accountName: 'A', studentName: 'A' },
+			now
+		);
+		const before = store['data'].accounts.length;
+		await expect(
+			store.requestGuestBooking(
+				{ ...base, email: 'new@example.com', accountName: 'Alice', studentName: 'Al' },
+				now
+			)
+		).rejects.toMatchObject({ code: 'slot_taken' });
+		expect(store['data'].accounts).toHaveLength(before);
+	});
+
 	it('filters date overrides to the inclusive range', async () => {
 		const data = demoData();
 		data.dateOverrides = [
@@ -33,6 +55,9 @@ describe('MemoryBookingStore specifics', () => {
 			new Date('2026-11-01T17:00:00Z')
 		);
 		const summary = await store.getBookingByManageToken(created.manageToken);
-		expect(summary).toMatchObject({ studentName: 'Ben', accountName: 'Pat Parent' });
+		expect(summary).toMatchObject({ studentName: 'Ben' });
+		expect(summary).not.toHaveProperty('accountName');
+		// Matched the seeded account by email; the submitted name was ignored.
+		expect(store['data'].accounts.map((a) => a.name)).toEqual(['Studio Admin', 'Pat Parent']);
 	});
 });

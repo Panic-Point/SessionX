@@ -62,7 +62,6 @@ export interface BookingSummary {
 	endsAt: Date;
 	lessonTypeName: string;
 	studentName: string;
-	accountName: string;
 	priceCents: number;
 	note: string;
 }

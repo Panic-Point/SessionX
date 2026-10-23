@@ -35,10 +35,6 @@
 				<dt>Price</dt>
 				<dd>{data.priceLabel}</dd>
 			</div>
-			<div>
-				<dt>Booked by</dt>
-				<dd>{data.accountName}</dd>
-			</div>
 			{#if data.note}
 				<div>
 					<dt>Note</dt>

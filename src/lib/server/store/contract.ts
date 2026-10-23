@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeEach } from 'vitest';
 import { BookingStoreError } from './types';
 import type { BookingStore, BookingStoreErrorCode, GuestBookingInput } from './types';
 
@@ -28,8 +28,15 @@ async function errorCode(promise: Promise<unknown>): Promise<BookingStoreErrorCo
 }
 
 /** Behaviour every BookingStore implementation must share. Seeded with supabase/seed.sql data. */
-export function runBookingStoreContract(name: string, makeStore: () => Promise<BookingStore>) {
+export function runBookingStoreContract(
+	name: string,
+	makeStore: () => Promise<BookingStore>,
+	reset?: () => Promise<void>
+) {
 	describe(`BookingStore contract: ${name}`, () => {
+		// Stores that share state across tests (a real database) pass a reset back to the seed.
+		if (reset) beforeEach(reset);
+
 		it('returns seeded settings', async () => {
 			const settings = await (await makeStore()).getSettings();
 			expect(settings).toMatchObject({
@@ -72,7 +79,7 @@ export function runBookingStoreContract(name: string, makeStore: () => Promise<B
 				NOW
 			);
 			const summary = await store.getBookingByManageToken(second.manageToken);
-			expect(summary?.accountName).toBe('Pat Parent');
+			expect(summary).not.toHaveProperty('accountName');
 			expect(second.bookingId).not.toBe(first.bookingId);
 		});
 
@@ -118,6 +125,7 @@ export function runBookingStoreContract(name: string, makeStore: () => Promise<B
 				)
 			);
 			expect(code).toBe('slot_taken');
+			// The failed attempt must not block a later request by the same email.
 			const retry = await store.requestGuestBooking(
 				input({
 					email: 'new@example.com',
@@ -128,7 +136,8 @@ export function runBookingStoreContract(name: string, makeStore: () => Promise<B
 				NOW
 			);
 			const summary = await store.getBookingByManageToken(retry.manageToken);
-			expect(summary?.accountName).toBe('Alicia');
+			expect(summary?.studentName).toBe('Al');
+			expect(summary).not.toHaveProperty('accountName');
 		});
 
 		it('unknown lesson type is rejected', async () => {
@@ -171,7 +180,6 @@ export function runBookingStoreContract(name: string, makeStore: () => Promise<B
 				status: 'pending',
 				lessonTypeName: '30-minute lesson',
 				studentName: 'Ben',
-				accountName: 'Pat Parent',
 				priceCents: 3500,
 				note: 'Bring scales'
 			});

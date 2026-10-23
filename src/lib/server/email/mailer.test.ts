@@ -52,6 +52,23 @@ describe('createMailer', () => {
 		});
 	});
 
+	it('rejects when the send hangs past the timeout', async () => {
+		const hanging = ((_url: string | URL | Request, init?: RequestInit) =>
+			new Promise<Response>((_resolve, reject) => {
+				init?.signal?.addEventListener('abort', () => reject(init.signal?.reason));
+			})) as typeof fetch;
+		const mailer = createMailer({ EMAIL_TRANSPORT: 'resend', RESEND_API_KEY: 'k' }, hanging, {
+			timeoutMs: 20
+		});
+		await expect(mailer.send(msg)).rejects.toBeDefined();
+	});
+
+	it('passes an abort signal to fetch by default', async () => {
+		const { fn, calls } = fakeFetch();
+		await createMailer({ EMAIL_TRANSPORT: 'resend', RESEND_API_KEY: 'k' }, fn).send(msg);
+		expect(calls[0].init.signal).toBeInstanceOf(AbortSignal);
+	});
+
 	it('non-2xx response throws', async () => {
 		const { fn } = fakeFetch(500);
 		await expect(
