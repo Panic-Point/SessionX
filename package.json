@@ -15,7 +15,11 @@
 		"test:unit": "vitest",
 		"test": "npm run test:unit -- --run",
 		"gen": "wrangler types",
-		"test:all": "npm run lint && npm run check && npm test"
+		"test:all": "npm run lint && npm run check && npm test",
+		"local:up": "node scripts/local-up.mjs",
+		"local:down": "node scripts/local-down.mjs",
+		"local:reset": "node scripts/local-reset.mjs",
+		"test:db": "supabase test db"
 	},
 	"devDependencies": {
 		"@sveltejs/adapter-cloudflare": "^8.0.0",
@@ -24,6 +28,7 @@
 		"@types/luxon": "^3.7.6",
 		"prettier": "^3.8.3",
 		"prettier-plugin-svelte": "^4.1.0",
+		"supabase": "^2.122.0",
 		"svelte": "^5.57.1",
 		"svelte-check": "^4.6.0",
 		"typescript": "^6.0.3",
@@ -37,7 +42,8 @@
 	},
 	"allowScripts": {
 		"esbuild@0.28.2": true,
-		"workerd@1.20261019.1": true
+		"workerd@1.20261019.1": true,
+		"supabase@2.122.0": true
 	},
 	"dependencies": {
 		"luxon": "^3.7.2"

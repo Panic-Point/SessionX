@@ -13,6 +13,10 @@ export default defineConfig({
 			adapter: adapter()
 		})
 	],
+	server: {
+		// File events don't cross Docker Desktop's Windows bind mounts; poll inside the container.
+		watch: { usePolling: process.env.VITE_USE_POLLING === 'true' }
+	},
 	test: {
 		expect: { requireAssertions: true },
 		projects: [

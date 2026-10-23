@@ -1,0 +1,21 @@
+# App container for local development. The Supabase stack (Postgres, Auth,
+# Studio, Mailpit) is started separately by the Supabase CLI — see
+# docs/local-dev.md or just run `npm run local:up`.
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    ports:
+      - '5173:5173'
+    env_file: .env.local
+    environment:
+      # Inside the container, the Supabase CLI stack is reached via the host.
+      SUPABASE_URL: http://host.docker.internal:54321
+      SMTP_HOST: host.docker.internal
+      VITE_USE_POLLING: 'true'
+    extra_hosts:
+      - 'host.docker.internal:host-gateway'
+    volumes:
+      - .:/app
+      - /app/node_modules
