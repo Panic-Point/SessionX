@@ -1,6 +1,7 @@
 import { redirect } from '@sveltejs/kit';
 import { DateTime } from 'luxon';
 import { getMonthAvailability, listLessonTypes } from '#lib/server/booking-service.ts';
+import { pickSelectedDate } from '#lib/booking-page.ts';
 import { getStore } from '#lib/server/context.ts';
 import type { PageServerLoad } from './$types';
 
@@ -51,10 +52,7 @@ export const load: PageServerLoad = async ({ url }) => {
 	for (const [date, times] of Object.entries(availability.days)) {
 		if (times.length > 0) available[date] = times.length;
 	}
-	const openDates = Object.keys(available).sort();
-	const requestedDate = url.searchParams.get('date');
-	const selectedDate =
-		requestedDate && requestedDate in available ? requestedDate : (openDates[0] ?? null);
+	const selectedDate = pickSelectedDate(availability.days, url.searchParams.get('date'));
 
 	return {
 		step: 'time' as const,

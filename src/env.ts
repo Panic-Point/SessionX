@@ -11,7 +11,7 @@ export const variables = defineEnvVars({
 	BOOKING_STORE: {
 		schema: optional,
 		description:
-			'`memory` forces the in-memory demo store. Defaults to memory when SUPABASE_URL is unset.'
+			'`memory` forces the in-memory demo store. Otherwise memory is used only in dev when SUPABASE_URL is unset.'
 	},
 	SUPABASE_URL: { schema: optional, description: 'Supabase API URL.' },
 	SUPABASE_SERVICE_ROLE_KEY: {

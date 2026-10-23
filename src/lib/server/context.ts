@@ -1,5 +1,7 @@
 import * as env from '$app/env/private';
+import { dev } from '$app/env';
 import { getRequestEvent } from '$app/server';
+import { chooseStore } from './choose-store';
 import { createMailer, type Mailer } from './email/mailer';
 import { demoData } from './store/demo-data';
 import { MemoryBookingStore } from './store/memory';
@@ -8,13 +10,14 @@ import type { BookingStore } from './store/types';
 
 let memoryStore: MemoryBookingStore | undefined;
 
-/** `BOOKING_STORE=memory`, or no `SUPABASE_URL`, gives the shared in-memory demo store. */
+/** In-memory demo store only for `BOOKING_STORE=memory` or dev without Supabase; see `chooseStore`. */
 export function getStore(): BookingStore {
-	if (env.BOOKING_STORE === 'memory' || !env.SUPABASE_URL) {
+	const choice = chooseStore(env, dev);
+	if (choice.kind === 'memory') {
 		memoryStore ??= new MemoryBookingStore(demoData());
 		return memoryStore;
 	}
-	return createSupabaseBookingStore(env.SUPABASE_URL, env.SUPABASE_SERVICE_ROLE_KEY ?? '');
+	return createSupabaseBookingStore(choice.url, choice.key);
 }
 
 export function getMailer(): Mailer {
