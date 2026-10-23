@@ -12,7 +12,7 @@ services:
     environment:
       # Inside the container, the Supabase CLI stack is reached via the host.
       SUPABASE_URL: http://host.docker.internal:54321
-      SMTP_HOST: host.docker.internal
+      MAILPIT_URL: http://host.docker.internal:54324
       VITE_USE_POLLING: 'true'
     extra_hosts:
       - 'host.docker.internal:host-gateway'
