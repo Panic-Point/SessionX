@@ -1,5 +1,5 @@
 import type { DateOverride, WeeklyHours } from '../availability';
-import type { LessonType, StudioSettings } from './types';
+import type { AdminLessonType, StudioSettings } from './types';
 
 export interface DemoAccount {
 	id: string;
@@ -24,7 +24,7 @@ export interface DemoData {
 	settings: StudioSettings;
 	weeklyHours: WeeklyHours[];
 	dateOverrides: DateOverride[];
-	lessonTypes: LessonType[];
+	lessonTypes: AdminLessonType[];
 	accounts: DemoAccount[];
 	students: DemoStudent[];
 	studentPrices: DemoStudentPrice[];
@@ -55,7 +55,8 @@ export function demoData(): DemoData {
 				description: 'Great for beginners and younger students.',
 				durationMin: 30,
 				priceCents: 3500,
-				sortOrder: 1
+				sortOrder: 1,
+				active: true
 			},
 			{
 				id: '11111111-0000-0000-0000-000000000045',
@@ -63,7 +64,8 @@ export function demoData(): DemoData {
 				description: 'Our most popular lesson length.',
 				durationMin: 45,
 				priceCents: 5000,
-				sortOrder: 2
+				sortOrder: 2,
+				active: true
 			},
 			{
 				id: '11111111-0000-0000-0000-000000000060',
@@ -71,7 +73,8 @@ export function demoData(): DemoData {
 				description: 'For intermediate and advanced students.',
 				durationMin: 60,
 				priceCents: 6500,
-				sortOrder: 3
+				sortOrder: 3,
+				active: true
 			}
 		],
 		accounts: [

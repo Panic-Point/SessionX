@@ -1,12 +1,19 @@
 import { createClient } from '@supabase/supabase-js';
 import type { DateOverride, WeeklyHours } from '../availability';
 import {
+	mapAccountRow,
+	mapAdminBookingRow,
+	mapAdminLessonTypeRow,
 	mapLessonTypeRow,
 	mapLiveBookingRow,
 	mapOverrides,
+	mapOverridesWithNotes,
 	mapRpcError,
 	mapSettingsRow,
 	mapWeeklyHoursRow,
+	type AccountRow,
+	type AdminBookingRow,
+	type AdminLessonTypeRow,
 	type DateOverrideRangeRow,
 	type DateOverrideRow,
 	type LessonTypeRow,
@@ -14,15 +21,23 @@ import {
 	type SettingsRow,
 	type WeeklyHoursRow
 } from './supabase-mappers';
-import type {
-	BookingStatus,
-	BookingStore,
-	BookingSummary,
-	CreatedBooking,
-	GuestBookingInput,
-	LessonType,
-	LiveBooking,
-	StudioSettings
+import {
+	AdminStoreError,
+	type Account,
+	type AdminBooking,
+	type AdminLessonType,
+	type AdminStore,
+	type BookingFilter,
+	type BookingStatus,
+	type BookingStore,
+	type BookingSummary,
+	type CreatedBooking,
+	type DateOverrideWithNote,
+	type GuestBookingInput,
+	type LessonType,
+	type LessonTypeInput,
+	type LiveBooking,
+	type StudioSettings
 } from './types';
 
 function fail(context: string, error: { message?: string }): never {
@@ -47,9 +62,36 @@ interface RpcBookingRow {
 	ends_at: string;
 }
 
-/** BookingStore backed by Supabase. Uses the service-role key, so server-side only. */
-export function createSupabaseBookingStore(url: string, serviceRoleKey: string): BookingStore {
+const ACCOUNT_COLUMNS = 'id, name, email, role';
+const LESSON_TYPE_COLUMNS = 'id, name, description, duration_min, price_cents, sort_order, active';
+const BOOKING_COLUMNS =
+	'id, status, starts_at, ends_at, price_cents, paid_at, note, decline_reason, late_cancel, manage_token, lesson_types(name, duration_min), students(name, accounts(name, email))';
+
+const lessonTypeColumns = (input: LessonTypeInput) => ({
+	name: input.name,
+	description: input.description,
+	duration_min: input.durationMin,
+	price_cents: input.priceCents,
+	sort_order: input.sortOrder,
+	active: input.active
+});
+
+/** BookingStore and AdminStore backed by Supabase. Uses the service-role key, so server-side only. */
+export function createSupabaseBookingStore(
+	url: string,
+	serviceRoleKey: string
+): BookingStore & AdminStore {
 	const db = createClient(url, serviceRoleKey, { auth: { persistSession: false } });
+
+	async function getAdminBooking(id: string): Promise<AdminBooking | null> {
+		const { data, error } = await db
+			.from('bookings')
+			.select(BOOKING_COLUMNS)
+			.eq('id', id)
+			.maybeSingle();
+		if (error) fail('getBooking', error);
+		return data ? mapAdminBookingRow(data as unknown as AdminBookingRow) : null;
+	}
 
 	return {
 		async getSettings(): Promise<StudioSettings> {
@@ -155,6 +197,191 @@ export function createSupabaseBookingStore(url: string, serviceRoleKey: string):
 				priceCents: row.price_cents,
 				note: row.note
 			};
+		},
+
+		// ---- AdminStore ----
+
+		async findAccountByEmail(email: string): Promise<Account | null> {
+			const { data, error } = await db
+				.from('accounts')
+				.select(ACCOUNT_COLUMNS)
+				.eq('email', email.trim().toLowerCase())
+				.maybeSingle();
+			if (error) fail('findAccountByEmail', error);
+			return data ? mapAccountRow(data as AccountRow) : null;
+		},
+
+		async findAccountById(id: string): Promise<Account | null> {
+			const { data, error } = await db
+				.from('accounts')
+				.select(ACCOUNT_COLUMNS)
+				.eq('id', id)
+				.maybeSingle();
+			if (error) fail('findAccountById', error);
+			return data ? mapAccountRow(data as AccountRow) : null;
+		},
+
+		async createLoginToken(accountId: string, tokenHash: string, expiresAt: Date): Promise<void> {
+			const { error } = await db.from('login_tokens').insert({
+				token_hash: tokenHash,
+				account_id: accountId,
+				expires_at: expiresAt.toISOString()
+			});
+			if (error) fail('createLoginToken', error);
+		},
+
+		async consumeLoginToken(tokenHash: string, now: Date): Promise<string | null> {
+			const { data, error } = await db
+				.from('login_tokens')
+				.update({ used_at: now.toISOString() })
+				.eq('token_hash', tokenHash)
+				.is('used_at', null)
+				.gt('expires_at', now.toISOString())
+				.select('account_id');
+			if (error) fail('consumeLoginToken', error);
+			return (data as { account_id: string }[])[0]?.account_id ?? null;
+		},
+
+		async listBookings(filter: BookingFilter): Promise<AdminBooking[]> {
+			let query = db
+				.from('bookings')
+				.select(BOOKING_COLUMNS)
+				.in('status', filter.statuses)
+				.order('starts_at', { ascending: filter.order === 'asc' });
+			if (filter.from) query = query.gte('starts_at', filter.from.toISOString());
+			if (filter.to) query = query.lt('starts_at', filter.to.toISOString());
+			if (filter.unpaidOnly) query = query.is('paid_at', null);
+			const { data, error } = await query;
+			if (error) fail('listBookings', error);
+			return (data as unknown as AdminBookingRow[]).map(mapAdminBookingRow);
+		},
+
+		async getBooking(id: string): Promise<AdminBooking | null> {
+			return getAdminBooking(id);
+		},
+
+		async decideBooking(
+			id: string,
+			decision: 'approved' | 'declined',
+			reason: string | null,
+			now: Date
+		): Promise<AdminBooking> {
+			let update = db
+				.from('bookings')
+				.update({
+					status: decision,
+					decided_at: now.toISOString(),
+					decline_reason: decision === 'declined' ? reason : null
+				})
+				.eq('id', id)
+				.eq('status', 'pending');
+			if (decision === 'approved') update = update.gt('starts_at', now.toISOString());
+			const { data, error } = await update.select(BOOKING_COLUMNS);
+			if (error) fail('decideBooking', error);
+			const row = (data as unknown as AdminBookingRow[])[0];
+			if (row) return mapAdminBookingRow(row);
+
+			const existing = await getAdminBooking(id);
+			if (!existing) throw new AdminStoreError('not_found');
+			if (existing.status !== 'pending') throw new AdminStoreError('not_pending');
+			throw new AdminStoreError('in_past');
+		},
+
+		async setPaid(id: string, paidAt: Date | null): Promise<AdminBooking> {
+			const { data, error } = await db
+				.from('bookings')
+				.update({ paid_at: paidAt ? paidAt.toISOString() : null })
+				.eq('id', id)
+				.select(BOOKING_COLUMNS);
+			if (error) fail('setPaid', error);
+			const row = (data as unknown as AdminBookingRow[])[0];
+			if (!row) throw new AdminStoreError('not_found');
+			return mapAdminBookingRow(row);
+		},
+
+		async updateSettings(settings: StudioSettings): Promise<void> {
+			const { error } = await db
+				.from('settings')
+				.update({
+					timezone: settings.timezone,
+					min_notice_hours: settings.minNoticeHours,
+					max_advance_days: settings.maxAdvanceDays,
+					slot_increment_min: settings.slotIncrementMin,
+					buffer_min: settings.bufferMin,
+					allow_same_day: settings.allowSameDay,
+					cancel_cutoff_hours: settings.cancelCutoffHours,
+					cancellation_policy_text: settings.cancellationPolicyText,
+					admin_email: settings.adminEmail,
+					updated_at: new Date().toISOString()
+				})
+				.eq('id', true);
+			if (error) fail('updateSettings', error);
+		},
+
+		async replaceWeeklyHours(hours: WeeklyHours[]): Promise<void> {
+			const { error } = await db.rpc('replace_weekly_hours', { p_hours: hours });
+			if (error) fail('replaceWeeklyHours', error);
+		},
+
+		async listDateOverrides(fromDate: string): Promise<DateOverrideWithNote[]> {
+			const [overrides, ranges] = await Promise.all([
+				db.from('date_overrides').select('date, is_closed, note').gte('date', fromDate),
+				db.from('date_override_ranges').select('date, start_time, end_time').gte('date', fromDate)
+			]);
+			if (overrides.error) fail('listDateOverrides', overrides.error);
+			if (ranges.error) fail('listDateOverrides', ranges.error);
+			return mapOverridesWithNotes(
+				overrides.data as DateOverrideRow[],
+				ranges.data as DateOverrideRangeRow[]
+			);
+		},
+
+		async saveDateOverride(override: DateOverrideWithNote): Promise<void> {
+			const { error } = await db.rpc('save_date_override', {
+				p_date: override.date,
+				p_is_closed: override.isClosed,
+				p_note: override.note,
+				p_ranges: override.ranges
+			});
+			if (error) fail('saveDateOverride', error);
+		},
+
+		async deleteDateOverride(date: string): Promise<void> {
+			// Ranges go with it (ON DELETE CASCADE).
+			const { error } = await db.from('date_overrides').delete().eq('date', date);
+			if (error) fail('deleteDateOverride', error);
+		},
+
+		async listAllLessonTypes(): Promise<AdminLessonType[]> {
+			const { data, error } = await db
+				.from('lesson_types')
+				.select(LESSON_TYPE_COLUMNS)
+				.order('sort_order')
+				.order('name');
+			if (error) fail('listAllLessonTypes', error);
+			return (data as AdminLessonTypeRow[]).map(mapAdminLessonTypeRow);
+		},
+
+		async createLessonType(input: LessonTypeInput): Promise<AdminLessonType> {
+			const { data, error } = await db
+				.from('lesson_types')
+				.insert(lessonTypeColumns(input))
+				.select(LESSON_TYPE_COLUMNS)
+				.single();
+			if (error) fail('createLessonType', error);
+			return mapAdminLessonTypeRow(data as AdminLessonTypeRow);
+		},
+
+		async updateLessonType(id: string, input: LessonTypeInput): Promise<AdminLessonType> {
+			const { data, error } = await db
+				.from('lesson_types')
+				.update(lessonTypeColumns(input))
+				.eq('id', id)
+				.select(LESSON_TYPE_COLUMNS);
+			if (error) fail('updateLessonType', error);
+			const row = (data as AdminLessonTypeRow[])[0];
+			if (!row) throw new AdminStoreError('not_found');
+			return mapAdminLessonTypeRow(row);
 		}
 	};
 }

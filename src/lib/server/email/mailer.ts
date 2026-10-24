@@ -3,6 +3,14 @@ export interface EmailMessage {
 	subject: string;
 	text: string;
 	html: string;
+	attachments?: { filename: string; contentType: string; content: string }[];
+}
+
+/** Base64 of the UTF-8 bytes of `text`. */
+function toBase64(text: string): string {
+	let bin = '';
+	for (const b of new TextEncoder().encode(text)) bin += String.fromCharCode(b);
+	return btoa(bin);
 }
 
 export interface Mailer {
@@ -45,6 +53,11 @@ async function post(
 export interface MailerOptions {
 	/** Abort a send that has not completed after this many milliseconds. Default 5000. */
 	timeoutMs?: number;
+	/**
+	 * Whether this is a dev build. The console transport logs full bodies, which hold working
+	 * sign-in and manage links, so it is refused outside dev. Default true.
+	 */
+	dev?: boolean;
 }
 
 export function createMailer(
@@ -62,7 +75,19 @@ export function createMailer(
 						fetchFn,
 						'https://api.resend.com/emails',
 						{ Authorization: `Bearer ${env.RESEND_API_KEY ?? ''}` },
-						{ from, to: [msg.to], subject: msg.subject, text: msg.text, html: msg.html },
+						{
+							from,
+							to: [msg.to],
+							subject: msg.subject,
+							text: msg.text,
+							html: msg.html,
+							...(msg.attachments?.length && {
+								attachments: msg.attachments.map((a) => ({
+									filename: a.filename,
+									content: toBase64(a.content)
+								}))
+							})
+						},
 						timeoutMs
 					)
 			};
@@ -78,12 +103,22 @@ export function createMailer(
 							To: [{ Email: msg.to }],
 							Subject: msg.subject,
 							Text: msg.text,
-							HTML: msg.html
+							HTML: msg.html,
+							...(msg.attachments?.length && {
+								Attachments: msg.attachments.map((a) => ({
+									Filename: a.filename,
+									ContentType: a.contentType,
+									Content: toBase64(a.content)
+								}))
+							})
 						},
 						timeoutMs
 					)
 			};
 		default:
+			if (options.dev === false) {
+				throw new Error('EMAIL_TRANSPORT must be set to resend or mailpit outside dev');
+			}
 			return {
 				send: async (msg) => {
 					console.info(`[email] to=${msg.to} subject=${msg.subject}\n${msg.text}`);

@@ -1,4 +1,5 @@
 import { escapeHtml, formatDateTime, formatMoney, formatTime } from '../format';
+import { buildIcs } from './ics';
 import type { EmailMessage } from './mailer';
 
 export interface BookingEmailData {
@@ -65,5 +66,56 @@ export function newRequestEmail(d: BookingEmailData, adminEmail: string): EmailM
 		subject: `New lesson request: ${d.studentName}, ${when}`,
 		text,
 		html: wrap('New lesson request', rows, footer)
+	};
+}
+
+export function loginLinkEmail(to: string, name: string, url: string): EmailMessage {
+	const text = `Hi ${name},\n\nUse this link to sign in to SessionX. It expires in 15 minutes and can be used once.\n\n${url}\n\nIf you did not request this, you can ignore this email.\n`;
+	const footer = `<p style="margin:16px 0 0"><a href="${escapeHtml(url)}">${escapeHtml(url)}</a></p><p style="color:#555">It expires in 15 minutes and can be used once. If you did not request this, you can ignore this email.</p>`;
+	return {
+		to,
+		subject: 'Your SessionX sign-in link',
+		text,
+		html: wrap(`Hi ${name}, sign in to SessionX`, [], footer)
+	};
+}
+
+export function bookingApprovedEmail(
+	d: BookingEmailData,
+	bookingId: string,
+	now: Date
+): EmailMessage {
+	const when = formatDateTime(d.startsAt, d.timezone);
+	const rows = details(d);
+	const text = `Hi ${d.accountName},\n\nYour lesson is confirmed. A calendar invite is attached.\n\n${textRows(rows)}\n\nManage your booking: ${d.manageUrl}\n`;
+	const footer = `<p style="margin:16px 0 0">A calendar invite is attached.</p><p style="margin:8px 0 0">Manage your booking: <a href="${escapeHtml(d.manageUrl)}">${escapeHtml(d.manageUrl)}</a></p>`;
+	const ics = buildIcs({
+		uid: `${bookingId}@sessionx`,
+		start: d.startsAt,
+		end: new Date(d.startsAt.getTime() + d.durationMin * 60_000),
+		summary: `${d.lessonTypeName} – ${d.studentName}`,
+		description: `${d.lessonTypeName} for ${d.studentName}. Manage: ${d.manageUrl}`,
+		url: d.manageUrl,
+		now
+	});
+	return {
+		to: d.email,
+		subject: `Lesson confirmed – ${d.lessonTypeName} on ${when}`,
+		text,
+		html: wrap(`Hi ${d.accountName}, your lesson is confirmed`, rows, footer),
+		attachments: [{ filename: 'lesson.ics', contentType: 'text/calendar', content: ics }]
+	};
+}
+
+export function bookingDeclinedEmail(d: BookingEmailData, reason: string | null): EmailMessage {
+	const when = formatDateTime(d.startsAt, d.timezone);
+	const rows = details(d);
+	if (reason) rows.push(['Reason', reason]);
+	const text = `Hi ${d.accountName},\n\nUnfortunately we could not accept your lesson request.\n\n${textRows(rows)}\n`;
+	return {
+		to: d.email,
+		subject: `Lesson request declined – ${d.lessonTypeName} on ${when}`,
+		text,
+		html: wrap(`Hi ${d.accountName}, we could not accept your lesson request`, rows, '')
 	};
 }
