@@ -90,20 +90,22 @@ export async function decideRequest(
 		throw e;
 	}
 
-	const { timezone } = await store.getSettings();
-	const data: BookingEmailData = {
-		accountName: booking.accountName,
-		email: booking.accountEmail,
-		studentName: booking.studentName,
-		lessonTypeName: booking.lessonTypeName,
-		durationMin: booking.durationMin,
-		startsAt: booking.startsAt,
-		timezone,
-		priceCents: booking.priceCents,
-		note: booking.note,
-		manageUrl: `${appUrl}/manage/${booking.manageToken}`
-	};
+	// The decision has committed: from here on a failure (settings read, email) must only log, or
+	// a retry would report "already handled" and the family would never be emailed.
 	try {
+		const { timezone } = await store.getSettings();
+		const data: BookingEmailData = {
+			accountName: booking.accountName,
+			email: booking.accountEmail,
+			studentName: booking.studentName,
+			lessonTypeName: booking.lessonTypeName,
+			durationMin: booking.durationMin,
+			startsAt: booking.startsAt,
+			timezone,
+			priceCents: booking.priceCents,
+			note: booking.note,
+			manageUrl: `${appUrl}/manage/${booking.manageToken}`
+		};
 		await mailer.send(
 			decision === 'approved'
 				? bookingApprovedEmail(data, booking.id, now)

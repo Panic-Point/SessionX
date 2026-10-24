@@ -141,6 +141,19 @@ describe('admin service', () => {
 		expect((await store.getBooking(a.bookingId))!.status).toBe('approved');
 	});
 
+	it('a settings failure after the decision commits only logs', async () => {
+		const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
+		const { store, sent, deps } = setup();
+		const created = await book(store, MON_3PM);
+		vi.spyOn(store, 'getSettings').mockRejectedValue(new Error('db down'));
+		expect(await decideRequest(deps, created.bookingId, 'approved', '', now)).toEqual({
+			ok: true
+		});
+		expect(spy).toHaveBeenCalledOnce();
+		expect(sent).toHaveLength(0);
+		expect((await store.getBooking(created.bookingId))!.status).toBe('approved');
+	});
+
 	it('reason too long rejected', async () => {
 		const { store, sent, deps } = setup();
 		const created = await book(store, MON_3PM);
