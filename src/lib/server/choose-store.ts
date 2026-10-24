@@ -22,3 +22,12 @@ export function chooseStore(
 	}
 	return { kind: 'supabase', url: env.SUPABASE_URL, key: env.SUPABASE_SERVICE_ROLE_KEY };
 }
+
+export const DEV_SESSION_SECRET = 'dev-only-session-secret-change-me';
+
+/** Session signing secret. An empty value counts as unset; only dev gets a fallback. */
+export function getSessionSecret(env: { SESSION_SECRET?: string }, dev: boolean): string {
+	if (env.SESSION_SECRET) return env.SESSION_SECRET;
+	if (dev) return DEV_SESSION_SECRET;
+	throw new Error('SESSION_SECRET must be set');
+}

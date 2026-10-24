@@ -222,5 +222,131 @@ await sqlCheck(
 await sqlCheck('zero length rejected', ins('2030-01-08 15:00Z', '2030-01-08 15:00Z'), '23514');
 await sqlCheck('second settings row rejected', `insert into settings (id) values (false)`, '23514');
 
+// ---- admin: login tokens + schedule functions ----
+const hoursSig = 'replace_weekly_hours(jsonb)';
+const overrideSig = 'save_date_override(date,boolean,text,jsonb)';
+const rangesFor = async (date) =>
+	(
+		await db.query(
+			`select start_time::text s, end_time::text e from date_override_ranges where date = $1 order by start_time`,
+			[date]
+		)
+	).rows.map((r) => `${r.s}-${r.e}`);
+const saveOverride = (date, closed, note, ranges) =>
+	db.query('select save_date_override($1, $2, $3, $4::jsonb)', [
+		date,
+		closed,
+		note,
+		JSON.stringify(ranges)
+	]);
+
+await check('login_tokens has RLS', async () => {
+	const { rows } = await db.query(
+		`select relrowsecurity from pg_class where oid = 'public.login_tokens'::regclass`
+	);
+	assert(rows[0]?.relrowsecurity === true, 'RLS not enabled on login_tokens');
+	const { rows: p } = await db.query(
+		`select count(*)::int n from pg_policies where tablename = 'login_tokens'`
+	);
+	assert(p[0].n === 0, `unexpected policies: ${p[0].n}`);
+});
+
+await check('replace_weekly_hours replaces all rows', async () => {
+	const { rows: before } = await db.query('select count(*)::int n from weekly_hours');
+	assert(before[0].n === 6, `seed rows ${before[0].n}`);
+	await db.query('select replace_weekly_hours($1::jsonb)', [
+		JSON.stringify([
+			{ weekday: 2, start: '09:00', end: '12:00' },
+			{ weekday: 5, start: '15:00', end: '20:00' }
+		])
+	]);
+	const { rows } = await db.query(
+		`select weekday, start_time::text s, end_time::text e from weekly_hours order by weekday`
+	);
+	assert(rows.length === 2, `rows ${rows.length}`);
+	assert(
+		rows[0].weekday === 2 && rows[0].s === '09:00:00' && rows[0].e === '12:00:00',
+		'first row'
+	);
+	assert(
+		rows[1].weekday === 5 && rows[1].s === '15:00:00' && rows[1].e === '20:00:00',
+		'second row'
+	);
+});
+
+await check('replace_weekly_hours rejects end <= start and keeps original rows', async () => {
+	// A failed statement aborts the surrounding transaction, so use a savepoint to inspect afterwards.
+	await db.exec('savepoint s');
+	await expectCode(
+		() =>
+			db.query('select replace_weekly_hours($1::jsonb)', [
+				JSON.stringify([
+					{ weekday: 1, start: '10:00', end: '11:00' },
+					{ weekday: 2, start: '15:00', end: '15:00' }
+				])
+			]),
+		'23514'
+	);
+	await db.exec('rollback to s');
+	const { rows } = await db.query('select count(*)::int n from weekly_hours');
+	assert(rows[0].n === 6, `original rows lost: ${rows[0].n}`);
+});
+
+await check('save_date_override inserts closed day with no ranges', async () => {
+	await saveOverride('2030-03-01', true, 'Holiday', []);
+	const { rows } = await db.query(
+		`select is_closed, note from date_overrides where date = '2030-03-01'`
+	);
+	assert(rows.length === 1, 'override row missing');
+	assert(rows[0].is_closed === true && rows[0].note === 'Holiday', 'override values');
+	assert((await rangesFor('2030-03-01')).length === 0, 'ranges present');
+});
+
+await check('save_date_override replaces ranges on re-save', async () => {
+	await saveOverride('2030-03-02', false, 'Short day', [{ start: '10:00', end: '12:00' }]);
+	assert((await rangesFor('2030-03-02')).join() === '10:00:00-12:00:00', 'first save');
+	await saveOverride('2030-03-02', false, 'Other', [
+		{ start: '13:00', end: '14:00' },
+		{ start: '16:00', end: '18:00' }
+	]);
+	assert(
+		(await rangesFor('2030-03-02')).join() === '13:00:00-14:00:00,16:00:00-18:00:00',
+		'second save'
+	);
+	const { rows } = await db.query(
+		`select count(*)::int n, min(note) note from date_overrides where date = '2030-03-02'`
+	);
+	assert(rows[0].n === 1 && rows[0].note === 'Other', 'override not upserted');
+});
+
+await check('save_date_override closed clears ranges', async () => {
+	await saveOverride('2030-03-03', false, '', [{ start: '10:00', end: '12:00' }]);
+	await saveOverride('2030-03-03', true, '', [{ start: '10:00', end: '12:00' }]);
+	assert((await rangesFor('2030-03-03')).length === 0, 'ranges not cleared');
+	const { rows } = await db.query(`select is_closed from date_overrides where date = '2030-03-03'`);
+	assert(rows[0].is_closed === true, 'not closed');
+});
+
+await check('anon cannot execute either function', async () => {
+	for (const sig of [hoursSig, overrideSig]) {
+		const { rows } = await db.query(
+			`select has_function_privilege('anon', '${sig}', 'execute') anon,
+			        has_function_privilege('authenticated', '${sig}', 'execute') authenticated,
+			        has_function_privilege('service_role', '${sig}', 'execute') service_role`
+		);
+		assert(rows[0].anon === false, `anon can execute ${sig}`);
+		assert(rows[0].authenticated === false, `authenticated can execute ${sig}`);
+		assert(rows[0].service_role === true, `service_role cannot execute ${sig}`);
+	}
+});
+
+// Supabase's pg_safeupdate rejects DELETE/UPDATE without a WHERE, even inside functions.
+await check('migrations have no DELETE without a WHERE clause', () => {
+	for (const f of readdirSync(migDir)) {
+		const unguarded = readFileSync(join(migDir, f), 'utf8').match(/delete\s+from\s+\w+\s*;/gi);
+		assert(!unguarded, `${f}: ${unguarded?.join(' | ')}`);
+	}
+});
+
 console.table(results);
 process.exit(results.every(([, r]) => r === 'ok') ? 0 : 1);
