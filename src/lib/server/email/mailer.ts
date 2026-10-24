@@ -53,6 +53,11 @@ async function post(
 export interface MailerOptions {
 	/** Abort a send that has not completed after this many milliseconds. Default 5000. */
 	timeoutMs?: number;
+	/**
+	 * Whether this is a dev build. The console transport logs full bodies, which hold working
+	 * sign-in and manage links, so it is refused outside dev. Default true.
+	 */
+	dev?: boolean;
 }
 
 export function createMailer(
@@ -111,6 +116,9 @@ export function createMailer(
 					)
 			};
 		default:
+			if (options.dev === false) {
+				throw new Error('EMAIL_TRANSPORT must be set to resend or mailpit outside dev');
+			}
 			return {
 				send: async (msg) => {
 					console.info(`[email] to=${msg.to} subject=${msg.subject}\n${msg.text}`);

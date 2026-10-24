@@ -21,12 +21,16 @@ export function getStore(): BookingStore & AdminStore {
 }
 
 export function getMailer(): Mailer {
-	return createMailer({
-		EMAIL_TRANSPORT: env.EMAIL_TRANSPORT,
-		RESEND_API_KEY: env.RESEND_API_KEY,
-		MAILPIT_URL: env.MAILPIT_URL,
-		EMAIL_FROM: env.EMAIL_FROM
-	});
+	return createMailer(
+		{
+			EMAIL_TRANSPORT: env.EMAIL_TRANSPORT,
+			RESEND_API_KEY: env.RESEND_API_KEY,
+			MAILPIT_URL: env.MAILPIT_URL,
+			EMAIL_FROM: env.EMAIL_FROM
+		},
+		fetch,
+		{ dev }
+	);
 }
 
 /** `PUBLIC_APP_URL` (without a trailing slash), or the current request's origin. */

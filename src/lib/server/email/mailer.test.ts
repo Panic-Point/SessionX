@@ -86,6 +86,31 @@ describe('createMailer', () => {
 	});
 });
 
+describe('createMailer outside dev', () => {
+	it.each([{}, { EMAIL_TRANSPORT: 'console' }, { EMAIL_TRANSPORT: 'smtp' }])(
+		'refuses the console transport for %o when dev is false',
+		(env) => {
+			expect(() => createMailer(env, fetch, { dev: false })).toThrow(
+				'EMAIL_TRANSPORT must be set to resend or mailpit outside dev'
+			);
+		}
+	);
+	it('allows the console transport when dev is true', async () => {
+		const info = vi.spyOn(console, 'info').mockImplementation(() => {});
+		await createMailer({}, fetch, { dev: true }).send(msg);
+		expect(info).toHaveBeenCalledOnce();
+		info.mockRestore();
+	});
+	it('allows resend and mailpit when dev is false', () => {
+		expect(() =>
+			createMailer({ EMAIL_TRANSPORT: 'resend', RESEND_API_KEY: 'k' }, fetch, { dev: false })
+		).not.toThrow();
+		expect(() =>
+			createMailer({ EMAIL_TRANSPORT: 'mailpit', MAILPIT_URL: 'http://m' }, fetch, { dev: false })
+		).not.toThrow();
+	});
+});
+
 describe('createMailer attachments', () => {
 	const att = [{ filename: 'lesson.ics', contentType: 'text/calendar', content: 'Zoë' }];
 	const b64 = (s: string) => Buffer.from(s, 'utf-8').toString('base64');
