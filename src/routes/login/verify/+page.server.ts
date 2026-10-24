@@ -1,4 +1,5 @@
 import { fail, redirect } from '@sveltejs/kit';
+import { dev } from '$app/env';
 import { completeLogin } from '#lib/server/auth/login-service.ts';
 import { SESSION_COOKIE, SESSION_MAX_AGE_SECONDS, signSession } from '#lib/server/auth/session.ts';
 import { formString } from '#lib/server/admin-actions.ts';
@@ -23,6 +24,7 @@ export const actions: Actions = {
 			path: '/',
 			httpOnly: true,
 			sameSite: 'lax',
+			secure: !dev,
 			maxAge: SESSION_MAX_AGE_SECONDS
 		});
 		redirect(303, account.role === 'admin' ? '/admin' : '/');

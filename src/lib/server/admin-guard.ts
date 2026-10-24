@@ -9,3 +9,8 @@ export function adminGuard(account: Account | null): AdminGuardResult {
 	if (account.role !== 'admin') return { kind: 'forbidden' };
 	return { kind: 'ok' };
 }
+
+/** True for `/admin` and everything beneath it, including `__data.json` data requests. */
+export function isAdminPath(pathname: string): boolean {
+	return pathname === '/admin' || pathname.startsWith('/admin/');
+}

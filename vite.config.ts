@@ -1,3 +1,4 @@
+import { fileURLToPath } from 'node:url';
 import { defineConfig } from 'vitest/config';
 import adapter from '@sveltejs/adapter-cloudflare';
 import { sveltekit } from '@sveltejs/kit/vite';
@@ -22,6 +23,14 @@ export default defineConfig({
 		projects: [
 			{
 				extends: './vite.config.ts',
+				resolve: {
+					// `cloudflare:workers` only exists in the Workers runtime.
+					alias: {
+						'cloudflare:workers': fileURLToPath(
+							new URL('./src/lib/server/test-stubs/cloudflare-workers.ts', import.meta.url)
+						)
+					}
+				},
 				test: {
 					name: 'server',
 					environment: 'node',

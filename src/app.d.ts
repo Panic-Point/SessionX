@@ -7,8 +7,6 @@ declare global {
 		interface Platform {
 			env: Env;
 			ctx: ExecutionContext;
-			/** Cloudflare execution context, when the adapter provides it (used for `waitUntil`). */
-			context?: ExecutionContext;
 			caches: CacheStorage;
 			cf?: IncomingRequestCfProperties;
 		}
