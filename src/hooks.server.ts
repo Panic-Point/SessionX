@@ -1,6 +1,6 @@
 import { redirect } from '@sveltejs/kit';
 import type { Handle } from '@sveltejs/kit/hooks';
-import { adminGuard, isAdminPath } from '#lib/server/admin-guard.ts';
+import { adminGuard, isAdminRequest } from '#lib/server/admin-guard.ts';
 import { SESSION_COOKIE, verifySession } from '#lib/server/auth/session.ts';
 import { getSessionSecret, getStore } from '#lib/server/context.ts';
 
@@ -15,7 +15,8 @@ export const handle: Handle = async ({ event, resolve }) => {
 		else event.cookies.delete(SESSION_COOKIE, { path: '/' });
 	}
 	// Central guard: covers page loads, form actions and __data.json, so no admin data leaves unchecked.
-	if (isAdminPath(event.url.pathname)) {
+	// Checks the resolved route as well as the pathname, since `/%61dmin` routes to `/admin`.
+	if (isAdminRequest(event.route.id, event.url.pathname)) {
 		const guard = adminGuard(event.locals.account);
 		if (guard.kind === 'redirect') redirect(303, guard.location);
 		if (guard.kind === 'forbidden') {

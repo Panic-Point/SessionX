@@ -4,7 +4,8 @@ import { formString, requireAdmin } from '#lib/server/admin-actions.ts';
 import { getStore } from '#lib/server/context.ts';
 import type { Actions, PageServerLoad } from './$types';
 
-export const load: PageServerLoad = async ({ url }) => {
+export const load: PageServerLoad = async ({ locals, url }) => {
+	requireAdmin(locals.account);
 	const range: 'upcoming' | 'past' = url.searchParams.get('range') === 'past' ? 'past' : 'upcoming';
 	const unpaidOnly = url.searchParams.get('unpaid') === '1';
 	const lessons = await listLessons(getStore(), { range, unpaidOnly }, new Date());

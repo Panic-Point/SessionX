@@ -4,7 +4,8 @@ import { formString, requireAdmin } from '#lib/server/admin-actions.ts';
 import { getAppUrl, getMailer, getStore } from '#lib/server/context.ts';
 import type { Actions, PageServerLoad } from './$types';
 
-export const load: PageServerLoad = async () => {
+export const load: PageServerLoad = async ({ locals }) => {
+	requireAdmin(locals.account);
 	const requests = await listPendingRequests(getStore(), new Date());
 	return {
 		requests: requests.map((r) => ({

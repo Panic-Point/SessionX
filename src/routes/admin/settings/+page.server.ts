@@ -18,7 +18,8 @@ const FIELDS = [
 
 type SettingsValues = Record<(typeof FIELDS)[number], string>;
 
-export const load: PageServerLoad = async () => {
+export const load: PageServerLoad = async ({ locals }) => {
+	requireAdmin(locals.account);
 	const s = await getStore().getSettings();
 	const values: SettingsValues = {
 		timezone: s.timezone,

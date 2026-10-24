@@ -15,7 +15,8 @@ function readValues(data: FormData): LessonTypeValues {
 	) as LessonTypeValues;
 }
 
-export const load: PageServerLoad = async () => {
+export const load: PageServerLoad = async ({ locals }) => {
+	requireAdmin(locals.account);
 	const types = await getStore().listAllLessonTypes();
 	return {
 		lessonTypes: types.map((t) => ({

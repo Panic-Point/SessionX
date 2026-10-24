@@ -19,7 +19,8 @@ function readRanges(data: FormData): Range[] {
 		.filter((r) => r.start.trim() || r.end.trim());
 }
 
-export const load: PageServerLoad = async () => {
+export const load: PageServerLoad = async ({ locals }) => {
+	requireAdmin(locals.account);
 	const store = getStore();
 	const { timezone } = await store.getSettings();
 	const today = DateTime.now().setZone(timezone).toISODate()!;
