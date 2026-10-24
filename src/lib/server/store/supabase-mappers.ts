@@ -166,13 +166,16 @@ export function mapAdminLessonTypeRow(row: AdminLessonTypeRow): AdminLessonType 
 }
 
 export function mapAdminBookingRow(row: AdminBookingRow): AdminBooking {
+	const startsAt = new Date(row.starts_at);
+	const endsAt = new Date(row.ends_at);
 	return {
 		id: row.id,
 		status: row.status,
-		startsAt: new Date(row.starts_at),
-		endsAt: new Date(row.ends_at),
+		startsAt,
+		endsAt,
 		lessonTypeName: row.lesson_types?.name ?? '',
-		durationMin: row.lesson_types?.duration_min ?? 0,
+		// The booked length, not the lesson type's current one, which the admin may since have changed.
+		durationMin: Math.round((endsAt.getTime() - startsAt.getTime()) / 60_000),
 		studentName: row.students?.name ?? '',
 		accountName: row.students?.accounts?.name ?? '',
 		accountEmail: row.students?.accounts?.email ?? '',

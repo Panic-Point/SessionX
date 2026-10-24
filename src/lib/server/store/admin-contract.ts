@@ -280,6 +280,25 @@ export function runAdminStoreContract(
 			expect(code).toBe('lesson_type_not_found');
 		});
 
+		it("bookings keep their booked duration after the lesson type's duration changes", async () => {
+			const store = await makeStore();
+			const created = await store.requestGuestBooking(input(), NOW);
+			const type = (await store.listAllLessonTypes()).find((t) => t.id === LESSON_30)!;
+			await store.updateLessonType(LESSON_30, {
+				name: type.name,
+				description: type.description,
+				durationMin: 90,
+				priceCents: type.priceCents,
+				sortOrder: type.sortOrder,
+				active: type.active
+			});
+			expect((await store.getBooking(created.bookingId))?.durationMin).toBe(30);
+			const [listed] = await store.listBookings({ statuses: ['pending'], order: 'asc' });
+			expect(listed.durationMin).toBe(30);
+			const decided = await store.decideBooking(created.bookingId, 'approved', null, NOW);
+			expect(decided.durationMin).toBe(30);
+		});
+
 		it('updateLessonType unknown id throws not_found', async () => {
 			const store = await makeStore();
 			const code = await adminCode(

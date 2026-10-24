@@ -183,6 +183,14 @@ describe('supabase mappers', () => {
 		});
 	});
 
+	it("derives durationMin from the booking's own times, not the lesson type's current length", () => {
+		const b = mapAdminBookingRow({
+			...adminRow,
+			lesson_types: { name: '30-minute lesson', duration_min: 90 }
+		});
+		expect(b.durationMin).toBe(30);
+	});
+
 	it('maps null paid_at and decline_reason to null', () => {
 		const b = mapAdminBookingRow({ ...adminRow, paid_at: null, decline_reason: null });
 		expect(b.paidAt).toBeNull();
@@ -192,7 +200,7 @@ describe('supabase mappers', () => {
 	it('falls back to empty strings for missing embeds', () => {
 		const b = mapAdminBookingRow({ ...adminRow, lesson_types: null, students: null });
 		expect(b.lessonTypeName).toBe('');
-		expect(b.durationMin).toBe(0);
+		expect(b.durationMin).toBe(30);
 		expect(b.studentName).toBe('');
 		expect(b.accountName).toBe('');
 		expect(b.accountEmail).toBe('');

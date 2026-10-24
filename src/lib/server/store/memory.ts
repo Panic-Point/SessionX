@@ -299,7 +299,8 @@ export class MemoryBookingStore implements BookingStore, AdminStore {
 			startsAt: booking.startsAt,
 			endsAt: booking.endsAt,
 			lessonTypeName: lessonType.name,
-			durationMin: lessonType.durationMin,
+			// The booked length, not the lesson type's current one, which the admin may since have changed.
+			durationMin: Math.round((booking.endsAt.getTime() - booking.startsAt.getTime()) / MINUTE_MS),
 			studentName: student.name,
 			accountName: account.name,
 			accountEmail: account.email,

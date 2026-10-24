@@ -72,6 +72,19 @@ describe('admin service', () => {
 		expect((await store.getBooking(created.bookingId))!.declineReason).toBeNull();
 	});
 
+	it("approve email and ics use the booked duration after the lesson type's duration changes", async () => {
+		const { store, sent, deps } = setup();
+		const created = await book(store, MON_3PM);
+		const type = (await store.listAllLessonTypes()).find((t) => t.id === LESSON_30)!;
+		await store.updateLessonType(LESSON_30, { ...type, durationMin: 90 });
+		await decideRequest(deps, created.bookingId, 'approved', '', now);
+		const ics = sent[0].attachments![0].content;
+		expect(ics).toContain('DTSTART:20261102T200000Z');
+		expect(ics).toContain('DTEND:20261102T203000Z');
+		expect(sent[0].text).toContain(', 30 min)');
+		expect(sent[0].text).not.toContain('90 min');
+	});
+
 	it('decline sends declined email with reason', async () => {
 		const { store, sent, deps } = setup();
 		const created = await book(store, MON_3PM);
