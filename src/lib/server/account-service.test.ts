@@ -78,11 +78,22 @@ describe('account home', () => {
 		expect(home.past[0]).toMatchObject({ statusLabel: 'Cancelled', canCancel: false });
 	});
 
-	it('flags approved lessons inside the cutoff as late', async () => {
+	it('reports lateCancel as what happened, not what would happen', async () => {
 		const { store } = setup();
-		await book(store, AVA, hoursFromNow(5), true);
-		const home = await getAccountHome(store, PAT, now);
-		expect(home.upcoming[0].lateCancel).toBe(true);
+		const upcomingSoon = await book(store, AVA, hoursFromNow(5), true);
+		const lateOne = await book(store, BEN, hoursFromNow(6), true);
+		await store.cancelBooking(
+			{ kind: 'account', bookingId: lateOne.id, accountId: PAT },
+			true,
+			now
+		);
+		const pastApproved = await book(store, AVA, hoursFromNow(1), true);
+		const home = await getAccountHome(store, PAT, hoursFromNow(3));
+		expect(home.upcoming.map((b) => b.id)).toEqual([upcomingSoon.id]);
+		expect(home.upcoming[0].lateCancel).toBe(false);
+		const past = Object.fromEntries(home.past.map((b) => [b.id, b]));
+		expect(past[lateOne.id]).toMatchObject({ status: 'cancelled', lateCancel: true });
+		expect(past[pastApproved.id].lateCancel).toBe(false);
 	});
 });
 
@@ -101,7 +112,13 @@ describe('students', () => {
 			ok: false,
 			errors: { name: 'You already have a student with that name.' }
 		});
-		expect(await addMyStudent(store, PAT, 'Cy')).toEqual({ ok: true });
+		const added = await addMyStudent(store, PAT, '  Cy ');
+		expect(added.ok).toBe(true);
+		if (added.ok) {
+			expect(added.student.name).toBe('Cy');
+			expect(added.student.id).toBeTruthy();
+			expect((await store.listStudents(PAT)).map((st) => st.id)).toContain(added.student.id);
+		}
 		expect(await renameMyStudent(store, PAT, AVA, 'Ben')).toEqual({
 			ok: false,
 			errors: { name: 'You already have a student with that name.' }

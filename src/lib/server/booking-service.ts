@@ -191,12 +191,76 @@ export async function getMonthAvailability(
 	return { timezone: zone, month, lessonType: toView(lessonType, student, prices), days };
 }
 
+type SlotCheck =
+	| { ok: true; lessonType: LessonType; startsAt: Date }
+	| { ok: false; errors: Partial<Record<FormField, string>> };
+
+/** The lesson type must be active and the start time one of the currently offered slots. */
+async function validateRequestedSlot(
+	store: BookingStore,
+	settings: StudioSettings,
+	lessonTypeId: string,
+	startsAtIso: string,
+	now: Date
+): Promise<SlotCheck> {
+	const lessonType = (await store.getActiveLessonTypes()).find((t) => t.id === lessonTypeId);
+	if (!lessonType) {
+		return { ok: false, errors: { startsAt: 'That lesson type is no longer available.' } };
+	}
+	const startsAt = new Date(startsAtIso);
+	if (Number.isNaN(startsAt.getTime())) return { ok: false, errors: { startsAt: UNAVAILABLE } };
+	const date = DateTime.fromJSDate(startsAt, { zone: settings.timezone }).toISODate()!;
+	const offered = await slotsForRange(store, settings, lessonType.durationMin, date, date, now);
+	if (!offered[date]?.includes(startsAt.toISOString())) {
+		return { ok: false, errors: { startsAt: UNAVAILABLE } };
+	}
+	return { ok: true, lessonType, startsAt };
+}
+
+/** Null when the error is not a BookingStoreError. */
+function mapBookingStoreError(
+	e: unknown,
+	tooManyPendingKey: FormField
+): { ok: false; errors: Partial<Record<FormField, string>> } | null {
+	if (!(e instanceof BookingStoreError)) return null;
+	if (e.code === 'slot_taken') return { ok: false, errors: { startsAt: UNAVAILABLE } };
+	if (e.code === 'too_many_pending') {
+		return {
+			ok: false,
+			errors: {
+				[tooManyPendingKey]:
+					'You already have 2 lesson requests waiting for approval. Please wait for a reply before requesting more.'
+			}
+		};
+	}
+	return { ok: false, errors: { startsAt: 'That lesson type is no longer available.' } };
+}
+
+async function sendRequestEmails(
+	{ mailer, appUrl }: ServiceDeps,
+	settings: StudioSettings,
+	data: BookingEmailData
+): Promise<void> {
+	try {
+		await mailer.send(requestReceivedEmail(data));
+	} catch (e) {
+		console.error('Failed to send request-received email', e);
+	}
+	if (settings.adminEmail) {
+		try {
+			await mailer.send(newRequestEmail(data, settings.adminEmail, `${appUrl}/admin`));
+		} catch (e) {
+			console.error('Failed to send new-request email', e);
+		}
+	}
+}
+
 export async function submitGuestRequest(
 	deps: ServiceDeps,
 	form: GuestRequestForm,
 	now: Date
 ): Promise<SubmitResult> {
-	const { store, mailer, appUrl } = deps;
+	const { store, appUrl } = deps;
 	const accountName = form.accountName.trim();
 	const email = form.email.trim();
 	const studentName = form.studentName.trim();
@@ -209,19 +273,10 @@ export async function submitGuestRequest(
 	if (note.length > 1000) errors.note = 'Notes must be 1000 characters or fewer.';
 	if (Object.keys(errors).length > 0) return { ok: false, errors };
 
-	const lessonType = (await store.getActiveLessonTypes()).find((t) => t.id === form.lessonTypeId);
-	if (!lessonType) {
-		return { ok: false, errors: { startsAt: 'That lesson type is no longer available.' } };
-	}
-
 	const settings = await store.getSettings();
-	const startsAt = new Date(form.startsAt);
-	if (Number.isNaN(startsAt.getTime())) return { ok: false, errors: { startsAt: UNAVAILABLE } };
-	const date = DateTime.fromJSDate(startsAt, { zone: settings.timezone }).toISODate()!;
-	const offered = await slotsForRange(store, settings, lessonType.durationMin, date, date, now);
-	if (!offered[date]?.includes(startsAt.toISOString())) {
-		return { ok: false, errors: { startsAt: UNAVAILABLE } };
-	}
+	const slot = await validateRequestedSlot(store, settings, form.lessonTypeId, form.startsAt, now);
+	if (!slot.ok) return { ok: false, errors: slot.errors };
+	const { lessonType, startsAt } = slot;
 
 	let created;
 	try {
@@ -230,19 +285,8 @@ export async function submitGuestRequest(
 			now
 		);
 	} catch (e) {
-		if (e instanceof BookingStoreError) {
-			if (e.code === 'slot_taken') return { ok: false, errors: { startsAt: UNAVAILABLE } };
-			if (e.code === 'too_many_pending') {
-				return {
-					ok: false,
-					errors: {
-						email:
-							'You already have 2 lesson requests waiting for approval. Please wait for a reply before requesting more.'
-					}
-				};
-			}
-			return { ok: false, errors: { startsAt: 'That lesson type is no longer available.' } };
-		}
+		const mapped = mapBookingStoreError(e, 'email');
+		if (mapped) return mapped;
 		throw e;
 	}
 
@@ -258,18 +302,7 @@ export async function submitGuestRequest(
 		note,
 		manageUrl: `${appUrl}/manage/${created.manageToken}`
 	};
-	try {
-		await mailer.send(requestReceivedEmail(data));
-	} catch (e) {
-		console.error('Failed to send request-received email', e);
-	}
-	if (settings.adminEmail) {
-		try {
-			await mailer.send(newRequestEmail(data, settings.adminEmail, `${appUrl}/admin`));
-		} catch (e) {
-			console.error('Failed to send new-request email', e);
-		}
-	}
+	await sendRequestEmails(deps, settings, data);
 	return { ok: true, manageToken: created.manageToken };
 }
 
@@ -301,7 +334,7 @@ export async function submitAccountRequest(
 	form: AccountRequestForm,
 	now: Date
 ): Promise<SubmitResult> {
-	const { store, mailer, appUrl } = deps;
+	const { store, appUrl } = deps;
 	const note = form.note.trim();
 	if (note.length > 1000) {
 		return { ok: false, errors: { note: 'Notes must be 1000 characters or fewer.' } };
@@ -313,19 +346,10 @@ export async function submitAccountRequest(
 		return { ok: false, errors: { studentId: 'Choose who the lesson is for.' } };
 	}
 
-	const lessonType = (await store.getActiveLessonTypes()).find((t) => t.id === form.lessonTypeId);
-	if (!lessonType) {
-		return { ok: false, errors: { startsAt: 'That lesson type is no longer available.' } };
-	}
-
 	const settings = await store.getSettings();
-	const startsAt = new Date(form.startsAt);
-	if (Number.isNaN(startsAt.getTime())) return { ok: false, errors: { startsAt: UNAVAILABLE } };
-	const date = DateTime.fromJSDate(startsAt, { zone: settings.timezone }).toISODate()!;
-	const offered = await slotsForRange(store, settings, lessonType.durationMin, date, date, now);
-	if (!offered[date]?.includes(startsAt.toISOString())) {
-		return { ok: false, errors: { startsAt: UNAVAILABLE } };
-	}
+	const slot = await validateRequestedSlot(store, settings, form.lessonTypeId, form.startsAt, now);
+	if (!slot.ok) return { ok: false, errors: slot.errors };
+	const { lessonType, startsAt } = slot;
 
 	let created;
 	try {
@@ -337,19 +361,8 @@ export async function submitAccountRequest(
 		if (e instanceof AccountStoreError) {
 			return { ok: false, errors: { studentId: 'Choose who the lesson is for.' } };
 		}
-		if (e instanceof BookingStoreError) {
-			if (e.code === 'slot_taken') return { ok: false, errors: { startsAt: UNAVAILABLE } };
-			if (e.code === 'too_many_pending') {
-				return {
-					ok: false,
-					errors: {
-						startsAt:
-							'You already have 2 lesson requests waiting for approval. Please wait for a reply before requesting more.'
-					}
-				};
-			}
-			return { ok: false, errors: { startsAt: 'That lesson type is no longer available.' } };
-		}
+		const mapped = mapBookingStoreError(e, 'startsAt');
+		if (mapped) return mapped;
 		throw e;
 	}
 
@@ -365,17 +378,6 @@ export async function submitAccountRequest(
 		note,
 		manageUrl: `${appUrl}/manage/${created.manageToken}`
 	};
-	try {
-		await mailer.send(requestReceivedEmail(data));
-	} catch (e) {
-		console.error('Failed to send request-received email', e);
-	}
-	if (settings.adminEmail) {
-		try {
-			await mailer.send(newRequestEmail(data, settings.adminEmail, `${appUrl}/admin`));
-		} catch (e) {
-			console.error('Failed to send new-request email', e);
-		}
-	}
+	await sendRequestEmails(deps, settings, data);
 	return { ok: true, manageToken: created.manageToken };
 }

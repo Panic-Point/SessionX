@@ -28,6 +28,8 @@ export interface AccountBookingView {
 }
 
 export type FieldResult = { ok: true } | { ok: false; errors: Record<string, string> };
+export type AddStudentResult =
+	{ ok: true; student: Student } | { ok: false; errors: Record<string, string> };
 
 export interface CancelView {
 	booking: AccountBookingView & { durationMin: number };
@@ -63,12 +65,7 @@ function isLive(b: AdminBooking): boolean {
 	return b.status === 'pending' || b.status === 'approved';
 }
 
-function toView(
-	b: AdminBooking,
-	now: Date,
-	timezone: string,
-	cutoffHours: number
-): AccountBookingView {
+function toView(b: AdminBooking, now: Date, timezone: string): AccountBookingView {
 	return {
 		id: b.id,
 		status: b.status,
@@ -77,7 +74,7 @@ function toView(
 		lessonTypeName: b.lessonTypeName,
 		studentName: b.studentName,
 		priceLabel: formatMoney(b.priceCents),
-		lateCancel: isLateCancel(b.status, b.startsAt, now, cutoffHours),
+		lateCancel: b.lateCancel,
 		canCancel: isLive(b) && b.startsAt.getTime() > now.getTime()
 	};
 }
@@ -92,7 +89,7 @@ export async function getAccountHome(
 		store.listAccountBookings(accountId),
 		store.getSettings()
 	]);
-	const view = (b: AdminBooking) => toView(b, now, settings.timezone, settings.cancelCutoffHours);
+	const view = (b: AdminBooking) => toView(b, now, settings.timezone);
 	const isUpcoming = (b: AdminBooking) => isLive(b) && b.startsAt.getTime() >= now.getTime();
 	const byStart = (a: AdminBooking, b: AdminBooking) => a.startsAt.getTime() - b.startsAt.getTime();
 	return {
@@ -111,7 +108,7 @@ function validateName(name: string): string | null {
 	return null;
 }
 
-function studentError(e: unknown): FieldResult {
+function studentError(e: unknown): { ok: false; errors: Record<string, string> } {
 	if (e instanceof AccountStoreError) {
 		if (e.code === 'duplicate_student') {
 			return { ok: false, errors: { name: 'You already have a student with that name.' } };
@@ -125,13 +122,12 @@ export async function addMyStudent(
 	store: AppStore,
 	accountId: string,
 	name: string
-): Promise<FieldResult> {
+): Promise<AddStudentResult> {
 	const trimmed = name.trim();
 	const invalid = validateName(trimmed);
 	if (invalid) return { ok: false, errors: { name: invalid } };
 	try {
-		await store.addStudent(accountId, trimmed);
-		return { ok: true };
+		return { ok: true, student: await store.addStudent(accountId, trimmed) };
 	} catch (e) {
 		return studentError(e);
 	}
@@ -165,7 +161,7 @@ export async function getCancelView(
 	const settings = await store.getSettings();
 	return {
 		booking: {
-			...toView(booking, now, settings.timezone, settings.cancelCutoffHours),
+			...toView(booking, now, settings.timezone),
 			durationMin: booking.durationMin
 		},
 		late: isLateCancel(booking.status, booking.startsAt, now, settings.cancelCutoffHours),
