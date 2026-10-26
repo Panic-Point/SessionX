@@ -41,5 +41,10 @@ export const variables = defineEnvVars({
 		schema: optional,
 		description:
 			'Google service-account key JSON (server only). Unset disables Google Calendar sync. See docs/google-calendar.md.'
+	},
+	CRON_SECRET: {
+		schema: optional,
+		description:
+			'Shared secret for POST /api/cron (`Authorization: Bearer <secret>`). Unset disables the endpoint (503).'
 	}
 });
