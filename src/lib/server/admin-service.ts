@@ -5,14 +5,9 @@ import {
 } from './email/templates';
 import type { Mailer } from './email/mailer';
 import { formatDateTime, formatMoney } from './format';
-import {
-	AdminStoreError,
-	type AdminBooking,
-	type AdminStore,
-	type BookingStore
-} from './store/types';
+import { AdminStoreError, type AdminBooking, type AppStore } from './store/types';
 
-export type AdminDataStore = BookingStore & AdminStore;
+export type AdminDataStore = AppStore;
 
 export interface AdminDeps {
 	store: AdminDataStore;

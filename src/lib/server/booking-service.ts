@@ -10,7 +10,9 @@ import type { Mailer } from './email/mailer';
 import { formatDateTime, formatMoney, formatTime } from './format';
 import { displayPriceCents } from './pricing';
 import {
+	AccountStoreError,
 	BookingStoreError,
+	type AppStore,
 	type BookingStore,
 	type BookingSummary,
 	type LessonType,
@@ -41,7 +43,7 @@ export interface GuestRequestForm {
 	note: string;
 }
 
-export type FormField = 'accountName' | 'email' | 'studentName' | 'note' | 'startsAt';
+export type FormField = 'accountName' | 'email' | 'studentName' | 'studentId' | 'note' | 'startsAt';
 export type SubmitResult =
 	{ ok: true; manageToken: string } | { ok: false; errors: Partial<Record<FormField, string>> };
 
@@ -55,10 +57,22 @@ const DAY_MS = 86_400_000;
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const UNAVAILABLE = 'Sorry, that time is no longer available. Please pick another.';
 
-function toView(t: LessonType): LessonTypeView {
+export interface StudentChoice {
+	accountId: string;
+	studentId: string;
+}
+
+/** A student's custom prices by lesson type, once the student is confirmed to be the account's. */
+type PriceMap = Map<string, number>;
+
+function toView(t: LessonType, student?: StudentChoice, prices?: PriceMap): LessonTypeView {
 	const priceCents = displayPriceCents(
-		{ kind: 'guest' },
-		{ listPriceCents: t.priceCents, studentAccountId: null, customPriceCents: null }
+		student ? { kind: 'account', accountId: student.accountId } : { kind: 'guest' },
+		{
+			listPriceCents: t.priceCents,
+			studentAccountId: student?.accountId ?? null,
+			customPriceCents: prices?.get(t.id) ?? null
+		}
 	);
 	return {
 		id: t.id,
@@ -115,18 +129,48 @@ async function slotsForRange(
 }
 
 export async function listLessonTypes(store: BookingStore): Promise<LessonTypeView[]> {
-	return (await store.getActiveLessonTypes()).map(toView);
+	return (await store.getActiveLessonTypes()).map((t) => toView(t));
+}
+
+/** Null when the student does not belong to the account. */
+async function loadStudentPrices(
+	store: AppStore,
+	student: StudentChoice
+): Promise<PriceMap | null> {
+	const owned = (await store.listStudents(student.accountId)).some(
+		(s) => s.id === student.studentId
+	);
+	if (!owned) return null;
+	const prices = await store.listStudentPrices([student.studentId]);
+	return new Map(prices.map((p) => [p.lessonTypeId, p.priceCents]));
+}
+
+export async function listLessonTypesFor(
+	store: AppStore,
+	student: StudentChoice | null
+): Promise<LessonTypeView[] | null> {
+	if (!student) return listLessonTypes(store);
+	const prices = await loadStudentPrices(store, student);
+	if (!prices) return null;
+	return (await store.getActiveLessonTypes()).map((t) => toView(t, student, prices));
 }
 
 export async function getMonthAvailability(
-	store: BookingStore,
+	store: AppStore,
 	lessonTypeId: string,
 	month: string,
-	now: Date
+	now: Date,
+	student?: StudentChoice
 ): Promise<MonthAvailability | null> {
 	if (!/^\d{4}-\d{2}$/.test(month)) return null;
 	const lessonType = (await store.getActiveLessonTypes()).find((t) => t.id === lessonTypeId);
 	if (!lessonType) return null;
+	let prices: PriceMap | undefined;
+	if (student) {
+		const owned = await loadStudentPrices(store, student);
+		if (!owned) return null;
+		prices = owned;
+	}
 	const settings = await store.getSettings();
 	const zone = settings.timezone;
 	const first = DateTime.fromISO(`${month}-01`, { zone });
@@ -144,7 +188,7 @@ export async function getMonthAvailability(
 	for (const [date, isos] of Object.entries(byDate)) {
 		days[date] = isos.map((iso) => ({ iso, label: formatTime(new Date(iso), zone) }));
 	}
-	return { timezone: zone, month, lessonType: toView(lessonType), days };
+	return { timezone: zone, month, lessonType: toView(lessonType, student, prices), days };
 }
 
 export async function submitGuestRequest(
@@ -221,7 +265,7 @@ export async function submitGuestRequest(
 	}
 	if (settings.adminEmail) {
 		try {
-			await mailer.send(newRequestEmail(data, settings.adminEmail));
+			await mailer.send(newRequestEmail(data, settings.adminEmail, `${appUrl}/admin`));
 		} catch (e) {
 			console.error('Failed to send new-request email', e);
 		}
@@ -242,4 +286,96 @@ export async function getManageView(
 		whenLabel: formatDateTime(booking.startsAt, timezone),
 		priceLabel: formatMoney(booking.priceCents)
 	};
+}
+
+export interface AccountRequestForm {
+	lessonTypeId: string;
+	startsAt: string;
+	studentId: string;
+	note: string;
+}
+
+export async function submitAccountRequest(
+	deps: ServiceDeps & { store: AppStore },
+	accountId: string,
+	form: AccountRequestForm,
+	now: Date
+): Promise<SubmitResult> {
+	const { store, mailer, appUrl } = deps;
+	const note = form.note.trim();
+	if (note.length > 1000) {
+		return { ok: false, errors: { note: 'Notes must be 1000 characters or fewer.' } };
+	}
+
+	const student = (await store.listStudents(accountId)).find((s) => s.id === form.studentId);
+	const account = await store.findAccountById(accountId);
+	if (!student || !account) {
+		return { ok: false, errors: { studentId: 'Choose who the lesson is for.' } };
+	}
+
+	const lessonType = (await store.getActiveLessonTypes()).find((t) => t.id === form.lessonTypeId);
+	if (!lessonType) {
+		return { ok: false, errors: { startsAt: 'That lesson type is no longer available.' } };
+	}
+
+	const settings = await store.getSettings();
+	const startsAt = new Date(form.startsAt);
+	if (Number.isNaN(startsAt.getTime())) return { ok: false, errors: { startsAt: UNAVAILABLE } };
+	const date = DateTime.fromJSDate(startsAt, { zone: settings.timezone }).toISODate()!;
+	const offered = await slotsForRange(store, settings, lessonType.durationMin, date, date, now);
+	if (!offered[date]?.includes(startsAt.toISOString())) {
+		return { ok: false, errors: { startsAt: UNAVAILABLE } };
+	}
+
+	let created;
+	try {
+		created = await store.requestAccountBooking(
+			{ accountId, studentId: student.id, lessonTypeId: lessonType.id, startsAt, note },
+			now
+		);
+	} catch (e) {
+		if (e instanceof AccountStoreError) {
+			return { ok: false, errors: { studentId: 'Choose who the lesson is for.' } };
+		}
+		if (e instanceof BookingStoreError) {
+			if (e.code === 'slot_taken') return { ok: false, errors: { startsAt: UNAVAILABLE } };
+			if (e.code === 'too_many_pending') {
+				return {
+					ok: false,
+					errors: {
+						startsAt:
+							'You already have 2 lesson requests waiting for approval. Please wait for a reply before requesting more.'
+					}
+				};
+			}
+			return { ok: false, errors: { startsAt: 'That lesson type is no longer available.' } };
+		}
+		throw e;
+	}
+
+	const data: BookingEmailData = {
+		accountName: account.name,
+		email: account.email,
+		studentName: student.name,
+		lessonTypeName: lessonType.name,
+		durationMin: lessonType.durationMin,
+		startsAt: created.startsAt,
+		timezone: settings.timezone,
+		priceCents: created.priceCents,
+		note,
+		manageUrl: `${appUrl}/manage/${created.manageToken}`
+	};
+	try {
+		await mailer.send(requestReceivedEmail(data));
+	} catch (e) {
+		console.error('Failed to send request-received email', e);
+	}
+	if (settings.adminEmail) {
+		try {
+			await mailer.send(newRequestEmail(data, settings.adminEmail, `${appUrl}/admin`));
+		} catch (e) {
+			console.error('Failed to send new-request email', e);
+		}
+	}
+	return { ok: true, manageToken: created.manageToken };
 }
