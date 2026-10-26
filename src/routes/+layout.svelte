@@ -14,7 +14,6 @@
 <svelte:head>
 	<link rel="icon" href={favicon} />
 	<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-	<meta name="theme-color" content="#f6f7f9" />
 </svelte:head>
 
 <div class="app">
