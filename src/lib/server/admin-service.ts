@@ -3,6 +3,8 @@ import {
 	bookingDeclinedEmail,
 	type BookingEmailData
 } from './email/templates';
+import { addLessonToCalendar } from './calendar/sync';
+import type { CalendarClient } from './calendar/types';
 import type { Mailer } from './email/mailer';
 import { formatDateTime, formatMoney } from './format';
 import { dollarsToCents, type Result } from './admin-validation';
@@ -11,7 +13,8 @@ import {
 	AdminStoreError,
 	type AdminBooking,
 	type BookingFilter,
-	type AppStore
+	type AppStore,
+	type StudioSettings
 } from './store/types';
 
 export type AdminDataStore = AppStore;
@@ -20,6 +23,7 @@ export interface AdminDeps {
 	store: AdminDataStore;
 	mailer: Mailer;
 	appUrl: string;
+	calendar?: CalendarClient;
 }
 
 export interface AdminBookingView extends AdminBooking {
@@ -98,8 +102,10 @@ export async function decideRequest(
 
 	// The decision has committed: from here on a failure (settings read, email) must only log, or
 	// a retry would report "already handled" and the family would never be emailed.
+	let settings: StudioSettings | null = null;
 	try {
-		const { timezone } = await store.getSettings();
+		settings = await store.getSettings();
+		const { timezone } = settings;
 		const data: BookingEmailData = {
 			accountName: booking.accountName,
 			email: booking.accountEmail,
@@ -119,6 +125,14 @@ export async function decideRequest(
 		);
 	} catch (e) {
 		console.error(`Failed to send booking ${decision} email`, e);
+	}
+	// Without settings (already logged above) there is no write calendar to read, so skip.
+	if (decision === 'approved' && settings) {
+		try {
+			await addLessonToCalendar(deps, booking, settings);
+		} catch (e) {
+			console.error('Failed to add lesson to Google Calendar', e);
+		}
 	}
 	return { ok: true };
 }

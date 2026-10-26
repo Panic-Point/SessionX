@@ -15,6 +15,7 @@ import {
 import type { EmailMessage, Mailer } from './email/mailer';
 import { demoData } from './store/demo-data';
 import { MemoryBookingStore } from './store/memory';
+import { fakeCalendar } from './calendar/fake-client.test-helpers';
 
 const now = DateTime.fromISO('2026-11-01T12:00', { zone: 'America/New_York' }).toJSDate();
 const LESSON_30 = '11111111-0000-0000-0000-000000000030';
@@ -326,5 +327,58 @@ describe('admin service', () => {
 		await store.cancelBooking(target(c.bookingId), false, now);
 		const rows = await listLessons(store, { range: 'late-cancels', unpaidOnly: false }, now);
 		expect(rows.map((v) => v.id)).toEqual([b.bookingId, a.bookingId]);
+	});
+
+	describe('google calendar', () => {
+		async function calSetup(writeId: string | null = 'teacher@example.com') {
+			const { store, deps } = setup();
+			const settings = await store.getSettings();
+			await store.updateSettings({ ...settings, gcalWriteCalendarId: writeId });
+			const calendar = fakeCalendar();
+			return { store, calendar, deps: { ...deps, calendar } };
+		}
+
+		it('approve creates calendar event and stores id', async () => {
+			const { store, calendar, deps } = await calSetup();
+			const created = await book(store, MON_3PM);
+			await decideRequest(deps, created.bookingId, 'approved', '', now);
+			expect(calendar.created).toHaveLength(1);
+			expect(calendar.created[0].calendarId).toBe('teacher@example.com');
+			expect(calendar.created[0].event.start.toISOString()).toBe(MON_3PM);
+			expect(calendar.created[0].event.description).toContain('https://example.test/admin/lessons');
+			expect((await store.getBooking(created.bookingId))!.gcalEventId).toBe('evt-1');
+		});
+
+		it('approve without write calendar does nothing', async () => {
+			const { store, calendar, deps } = await calSetup(null);
+			const created = await book(store, MON_3PM);
+			const r = await decideRequest(deps, created.bookingId, 'approved', '', now);
+			expect(r).toEqual({ ok: true });
+			expect(calendar.created).toEqual([]);
+			expect((await store.getBooking(created.bookingId))!.gcalEventId).toBeNull();
+		});
+
+		it('approve succeeds when calendar create fails', async () => {
+			const err = vi.spyOn(console, 'error').mockImplementation(() => {});
+			const { store, calendar, deps } = await calSetup();
+			calendar.fail.create = true;
+			const created = await book(store, MON_3PM);
+			const r = await decideRequest(deps, created.bookingId, 'approved', '', now);
+			expect(r).toEqual({ ok: true });
+			expect(err).toHaveBeenCalled();
+			const saved = (await store.getBooking(created.bookingId))!;
+			expect(saved.status).toBe('approved');
+			expect(saved.gcalEventId).toBeNull();
+		});
+
+		it('decline never touches calendar', async () => {
+			const { store, calendar, deps } = await calSetup();
+			const created = await book(store, MON_3PM);
+			const r = await decideRequest(deps, created.bookingId, 'declined', 'no', now);
+			expect(r).toEqual({ ok: true });
+			expect(calendar.created).toEqual([]);
+			expect(calendar.deleted).toEqual([]);
+			expect(calendar.busyCalls).toEqual([]);
+		});
 	});
 });

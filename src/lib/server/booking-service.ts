@@ -5,6 +5,8 @@ import {
 	type Interval,
 	type SlotsByDate
 } from './availability';
+import { calendarBusy } from './calendar/sync';
+import type { CalendarClient } from './calendar/types';
 import { newRequestEmail, requestReceivedEmail, type BookingEmailData } from './email/templates';
 import type { Mailer } from './email/mailer';
 import { formatDateTime, formatMoney, formatTime } from './format';
@@ -53,6 +55,7 @@ export interface ServiceDeps {
 	store: BookingStore;
 	mailer: Mailer;
 	appUrl: string;
+	calendar?: CalendarClient;
 }
 
 const DAY_MS = 86_400_000;
@@ -103,24 +106,25 @@ async function slotsForRange(
 	durationMin: number,
 	fromDate: string,
 	toDate: string,
-	now: Date
+	now: Date,
+	calendar?: CalendarClient
 ): Promise<SlotsByDate> {
 	const zone = settings.timezone;
 	const rangeStart = DateTime.fromISO(fromDate, { zone }).startOf('day').toJSDate();
 	const rangeEnd = DateTime.fromISO(toDate, { zone }).plus({ days: 1 }).startOf('day').toJSDate();
-	const [hours, overrides, live] = await Promise.all([
+	const [hours, overrides, live, calendarIntervals] = await Promise.all([
 		store.getWeeklyHours(),
 		store.getDateOverrides(fromDate, toDate),
 		store.getLiveBookings(
 			new Date(rangeStart.getTime() - DAY_MS),
 			new Date(rangeEnd.getTime() + DAY_MS)
-		)
+		),
+		calendarBusy(calendar, settings, rangeStart, rangeEnd)
 	]);
-	const busy: Interval[] = live.map((b) => ({
-		start: b.startsAt,
-		end: b.endsAt,
-		blockedUntil: b.blockedUntil
-	}));
+	const busy: Interval[] = [
+		...live.map((b) => ({ start: b.startsAt, end: b.endsAt, blockedUntil: b.blockedUntil })),
+		...calendarIntervals
+	];
 	return getAvailableSlots(
 		{ durationMin, fromDate, toDate, now },
 		toRules(settings),
@@ -162,7 +166,8 @@ export async function getMonthAvailability(
 	lessonTypeId: string,
 	month: string,
 	now: Date,
-	student?: StudentChoice
+	student?: StudentChoice,
+	calendar?: CalendarClient
 ): Promise<MonthAvailability | null> {
 	if (!/^\d{4}-\d{2}$/.test(month)) return null;
 	const lessonType = (await store.getActiveLessonTypes()).find((t) => t.id === lessonTypeId);
@@ -184,7 +189,8 @@ export async function getMonthAvailability(
 		lessonType.durationMin,
 		first.toISODate()!,
 		first.endOf('month').toISODate()!,
-		now
+		now,
+		calendar
 	);
 	const days: MonthAvailability['days'] = {};
 	for (const [date, isos] of Object.entries(byDate)) {
@@ -203,7 +209,8 @@ async function validateRequestedSlot(
 	settings: StudioSettings,
 	lessonTypeId: string,
 	startsAtIso: string,
-	now: Date
+	now: Date,
+	calendar?: CalendarClient
 ): Promise<SlotCheck> {
 	const lessonType = (await store.getActiveLessonTypes()).find((t) => t.id === lessonTypeId);
 	if (!lessonType) {
@@ -212,7 +219,15 @@ async function validateRequestedSlot(
 	const startsAt = new Date(startsAtIso);
 	if (Number.isNaN(startsAt.getTime())) return { ok: false, errors: { startsAt: UNAVAILABLE } };
 	const date = DateTime.fromJSDate(startsAt, { zone: settings.timezone }).toISODate()!;
-	const offered = await slotsForRange(store, settings, lessonType.durationMin, date, date, now);
+	const offered = await slotsForRange(
+		store,
+		settings,
+		lessonType.durationMin,
+		date,
+		date,
+		now,
+		calendar
+	);
 	if (!offered[date]?.includes(startsAt.toISOString())) {
 		return { ok: false, errors: { startsAt: UNAVAILABLE } };
 	}
@@ -276,7 +291,14 @@ export async function submitGuestRequest(
 	if (Object.keys(errors).length > 0) return { ok: false, errors };
 
 	const settings = await store.getSettings();
-	const slot = await validateRequestedSlot(store, settings, form.lessonTypeId, form.startsAt, now);
+	const slot = await validateRequestedSlot(
+		store,
+		settings,
+		form.lessonTypeId,
+		form.startsAt,
+		now,
+		deps.calendar
+	);
 	if (!slot.ok) return { ok: false, errors: slot.errors };
 	const { lessonType, startsAt } = slot;
 
@@ -349,7 +371,14 @@ export async function submitAccountRequest(
 	}
 
 	const settings = await store.getSettings();
-	const slot = await validateRequestedSlot(store, settings, form.lessonTypeId, form.startsAt, now);
+	const slot = await validateRequestedSlot(
+		store,
+		settings,
+		form.lessonTypeId,
+		form.startsAt,
+		now,
+		deps.calendar
+	);
 	if (!slot.ok) return { ok: false, errors: slot.errors };
 	const { lessonType, startsAt } = slot;
 

@@ -10,7 +10,9 @@ import {
 	type GuestRequestForm
 } from './booking-service';
 import type { EmailMessage, Mailer } from './email/mailer';
+import { demoData } from './store/demo-data';
 import { MemoryBookingStore } from './store/memory';
+import { fakeCalendar } from './calendar/fake-client.test-helpers';
 
 const now = DateTime.fromISO('2026-11-01T12:00', { zone: 'America/New_York' }).toJSDate();
 const LESSON_30 = '11111111-0000-0000-0000-000000000030';
@@ -314,6 +316,87 @@ describe('signed-in booking', () => {
 		expect(long).toEqual({
 			ok: false,
 			errors: { note: 'Notes must be 1000 characters or fewer.' }
+		});
+	});
+
+	describe('google calendar busy time', () => {
+		const LESSON_60 = '11111111-0000-0000-0000-000000000060';
+		const MON_4PM = '2026-11-02T21:00:00.000Z';
+		const MON_5PM = '2026-11-02T22:00:00.000Z';
+		const MON_6PM = '2026-11-02T23:00:00.000Z';
+
+		function calSetup(bufferMin = 0) {
+			const data = demoData();
+			data.settings = {
+				...data.settings,
+				bufferMin,
+				gcalWriteCalendarId: 'teacher@example.com',
+				gcalBusyCalendarIds: ['teacher@example.com']
+			};
+			const store = new MemoryBookingStore(data);
+			const calendar = fakeCalendar();
+			const { mailer } = fakeMailer();
+			return { store, calendar, deps: { store, mailer, appUrl: 'https://example.test', calendar } };
+		}
+
+		const isosFor = async (
+			store: MemoryBookingStore,
+			calendar: ReturnType<typeof fakeCalendar>
+		) => {
+			const m = await getMonthAvailability(store, LESSON_60, '2026-11', now, undefined, calendar);
+			return m!.days['2026-11-02'].map((s) => s.iso);
+		};
+
+		it('busy calendar time hides slots', async () => {
+			const { store, calendar } = calSetup();
+			calendar.busyIntervals = [{ start: new Date(MON_3PM), end: new Date(MON_4PM) }];
+			const isos = await isosFor(store, calendar);
+			expect(isos).not.toContain(MON_3PM);
+			expect(isos).not.toContain(MON_330PM);
+			expect(isos).toContain(MON_4PM);
+		});
+
+		it('buffer applies around calendar busy time', async () => {
+			const { store, calendar } = calSetup(30);
+			calendar.busyIntervals = [{ start: new Date(MON_5PM), end: new Date(MON_6PM) }];
+			const isos = await isosFor(store, calendar);
+			// 3:30-4:30 PM plus a 30 minute buffer ends exactly when the busy time starts.
+			expect(isos).toContain(MON_330PM);
+			// 4:00-5:00 PM would butt up against the busy time with no buffer.
+			expect(isos).not.toContain(MON_4PM);
+			// 6:00 PM is inside the buffer after the busy time; 6:30 PM is clear.
+			expect(isos).not.toContain(MON_6PM);
+			expect(isos).toContain('2026-11-02T23:30:00.000Z');
+		});
+
+		it('availability fails open when calendar errors', async () => {
+			const err = vi.spyOn(console, 'error').mockImplementation(() => {});
+			const { store, calendar } = calSetup();
+			calendar.fail.busy = true;
+			expect(await isosFor(store, calendar)).toContain(MON_3PM);
+			expect(err).toHaveBeenCalled();
+			err.mockRestore();
+		});
+
+		it('submit rejects a slot that is busy on the calendar', async () => {
+			const { store, calendar, deps } = calSetup();
+			calendar.busyIntervals = [{ start: new Date(MON_3PM), end: new Date(MON_4PM) }];
+			const r = await submitGuestRequest(deps, form(), now);
+			expect(r).toEqual({
+				ok: false,
+				errors: { startsAt: 'Sorry, that time is no longer available. Please pick another.' }
+			});
+			expect(await store.getLiveBookings(new Date(0), new Date('2100-01-01'))).toEqual([]);
+		});
+
+		it('submit succeeds when calendar errors', async () => {
+			const err = vi.spyOn(console, 'error').mockImplementation(() => {});
+			const { calendar, deps } = calSetup();
+			calendar.fail.busy = true;
+			const r = await submitGuestRequest(deps, form(), now);
+			expect(r.ok).toBe(true);
+			expect(err).toHaveBeenCalled();
+			err.mockRestore();
 		});
 	});
 });
