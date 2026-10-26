@@ -340,6 +340,165 @@ await check('anon cannot execute either function', async () => {
 	}
 });
 
+// ---- families: unique student names, account booking, cancellation ----
+const PAT = '22222222-0000-0000-0000-00000000000b';
+const AVA = '33333333-0000-0000-0000-0000000000a1';
+const BEN = '33333333-0000-0000-0000-0000000000b1';
+const OTHER_ACCOUNT = '22222222-0000-0000-0000-0000000000c1';
+
+const accountBooking = (account, student, lesson, startsAt, note = '') =>
+	db.query('select * from request_account_booking($1, $2, $3, $4, $5)', [
+		account,
+		student,
+		lesson,
+		startsAt,
+		note
+	]);
+const accountBookingCode = (args, code) => expectCode(() => accountBooking(...args), code);
+const cancel = (bookingId, accountId, token, late, now) =>
+	db.query('select cancel_booking($1, $2, $3, $4, $5) id', [
+		bookingId,
+		accountId,
+		token,
+		late,
+		now
+	]);
+const addOtherAccount = () =>
+	db.exec(
+		`insert into accounts (id, name, email) values ('${OTHER_ACCOUNT}', 'Other', 'other@example.com');
+		 insert into students (account_id, name) values ('${OTHER_ACCOUNT}', 'Zed')`
+	);
+
+await sqlCheck(
+	'duplicate student name in same account rejected (23505)',
+	`insert into students (account_id, name) values ('${PAT}', '  aVA ')`,
+	'23505'
+);
+await sqlCheck(
+	'same name in different accounts allowed',
+	`insert into accounts (id, name, email) values ('${OTHER_ACCOUNT}', 'Other', 'other@example.com');
+	 insert into students (account_id, name) values ('${OTHER_ACCOUNT}', 'Ava')`,
+	null
+);
+
+await check('account booking uses custom price', async () => {
+	const { rows } = await accountBooking(PAT, BEN, LESSON_30, '2030-02-04T15:00:00Z', 'hi');
+	assert(rows.length === 1, 'expected one row');
+	assert(rows[0].price_cents === 3000, `price ${rows[0].price_cents}`);
+	assert(rows[0].manage_token?.length > 10, 'manage_token missing');
+	assert(new Date(rows[0].ends_at).toISOString() === '2030-02-04T15:30:00.000Z', 'ends_at');
+	const { rows: b } = await db.query(
+		'select status, note, student_id from bookings where id = $1',
+		[rows[0].booking_id]
+	);
+	assert(b[0].status === 'pending' && b[0].note === 'hi' && b[0].student_id === BEN, 'stored row');
+});
+
+await check('account booking uses list price without custom', async () => {
+	const { rows } = await accountBooking(PAT, AVA, LESSON_30, '2030-02-04T15:00:00Z');
+	assert(rows[0].price_cents === 3500, `price ${rows[0].price_cents}`);
+});
+
+await check('student from another account raises P0003', async () => {
+	await addOtherAccount();
+	await accountBookingCode([OTHER_ACCOUNT, AVA, LESSON_30, '2030-02-04T15:00:00Z'], 'P0003');
+});
+
+await check('account booking inactive lesson type raises P0002', async () => {
+	await db.exec(`update lesson_types set active = false where id = '${LESSON_30}'`);
+	await accountBookingCode([PAT, AVA, LESSON_30, '2030-02-04T15:00:00Z'], 'P0002');
+});
+
+await check('account booking pending limit P0001', async () => {
+	await accountBooking(PAT, AVA, LESSON_30, '2030-02-04T15:00:00Z');
+	await accountBooking(PAT, BEN, LESSON_30, '2030-02-05T15:00:00Z');
+	await accountBookingCode([PAT, AVA, LESSON_30, '2030-02-06T15:00:00Z'], 'P0001');
+});
+
+await check('account booking overlap 23P01', async () => {
+	await accountBooking(PAT, AVA, LESSON_60, '2030-02-04T15:00:00Z');
+	await accountBookingCode([PAT, BEN, LESSON_30, '2030-02-04T15:30:00Z'], '23P01');
+});
+
+await check('guest booking still matches students after unique index', async () => {
+	await request('parent@example.com', 'Pat Parent', ' BEN ', LESSON_60, '2030-02-04T15:00:00Z');
+	const { rows } = await db.query('select count(*)::int n from students where account_id = $1', [
+		PAT
+	]);
+	assert(rows[0].n === 2, `students ${rows[0].n}`);
+});
+
+await check('cancel by account frees slot and sets late_cancel', async () => {
+	const { rows } = await accountBooking(PAT, AVA, LESSON_60, '2030-02-04T15:00:00Z');
+	const id = rows[0].booking_id;
+	const res = await cancel(id, PAT, null, true, '2030-02-03T12:00:00Z');
+	assert(res.rows[0].id === id, 'returned id');
+	const { rows: b } = await db.query(
+		'select status, late_cancel, cancelled_at from bookings where id = $1',
+		[id]
+	);
+	assert(b[0].status === 'cancelled', `status ${b[0].status}`);
+	assert(b[0].late_cancel === true, 'late_cancel');
+	assert(new Date(b[0].cancelled_at).toISOString() === '2030-02-03T12:00:00.000Z', 'cancelled_at');
+	await accountBooking(PAT, AVA, LESSON_60, '2030-02-04T15:00:00Z');
+});
+
+await check("cancel another account's booking raises P0004", async () => {
+	await addOtherAccount();
+	const { rows } = await accountBooking(PAT, AVA, LESSON_60, '2030-02-04T15:00:00Z');
+	await expectCode(
+		() => cancel(rows[0].booking_id, OTHER_ACCOUNT, null, false, '2030-02-03T12:00:00Z'),
+		'P0004'
+	);
+});
+
+await check('cancel by manage token', async () => {
+	const { rows } = await accountBooking(PAT, AVA, LESSON_60, '2030-02-04T15:00:00Z');
+	const res = await cancel(null, null, rows[0].manage_token, false, '2030-02-03T12:00:00Z');
+	assert(res.rows[0].id === rows[0].booking_id, 'returned id');
+	const { rows: b } = await db.query('select status, late_cancel from bookings where id = $1', [
+		rows[0].booking_id
+	]);
+	assert(b[0].status === 'cancelled' && b[0].late_cancel === false, 'cancelled, not late');
+});
+
+await check('cancel with unknown token raises P0004', () =>
+	expectCode(() => cancel(null, null, 'nope', false, '2030-02-03T12:00:00Z'), 'P0004')
+);
+
+await check('cancel already-cancelled raises P0005', async () => {
+	const { rows } = await accountBooking(PAT, AVA, LESSON_60, '2030-02-04T15:00:00Z');
+	await cancel(rows[0].booking_id, PAT, null, false, '2030-02-03T12:00:00Z');
+	await expectCode(
+		() => cancel(rows[0].booking_id, PAT, null, false, '2030-02-03T13:00:00Z'),
+		'P0005'
+	);
+});
+
+await check('cancel past booking raises P0005', async () => {
+	const { rows } = await accountBooking(PAT, AVA, LESSON_60, '2030-02-04T15:00:00Z');
+	await expectCode(
+		() => cancel(rows[0].booking_id, PAT, null, false, '2030-02-04T15:00:00Z'),
+		'P0005'
+	);
+});
+
+await check('anon cannot execute either function', async () => {
+	for (const sig of [
+		'request_account_booking(uuid,uuid,uuid,timestamptz,text)',
+		'cancel_booking(uuid,uuid,text,boolean,timestamptz)'
+	]) {
+		const { rows } = await db.query(
+			`select has_function_privilege('anon', '${sig}', 'execute') anon,
+			        has_function_privilege('authenticated', '${sig}', 'execute') authenticated,
+			        has_function_privilege('service_role', '${sig}', 'execute') service_role`
+		);
+		assert(rows[0].anon === false, `anon can execute ${sig}`);
+		assert(rows[0].authenticated === false, `authenticated can execute ${sig}`);
+		assert(rows[0].service_role === true, `service_role cannot execute ${sig}`);
+	}
+});
+
 // Supabase's pg_safeupdate rejects DELETE/UPDATE without a WHERE, even inside functions.
 await check('migrations have no DELETE without a WHERE clause', () => {
 	for (const f of readdirSync(migDir)) {
