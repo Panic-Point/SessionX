@@ -23,6 +23,9 @@
 			{#if data.viewer === 'admin'}
 				<a href="/admin">Admin</a>
 			{:else if data.viewer === 'client'}
+				<a href="/account" aria-current={page.url.pathname === '/account' ? 'page' : undefined}
+					>My lessons</a
+				>
 				<form method="POST" action="/logout">
 					<button type="submit">Sign out</button>
 				</form>
@@ -90,6 +93,7 @@
 	.account-link {
 		display: flex;
 		justify-content: flex-end;
+		gap: 0.25rem;
 	}
 
 	.account-link a,

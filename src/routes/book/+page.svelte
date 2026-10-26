@@ -1,10 +1,14 @@
 <script lang="ts">
+	import { enhance } from '$app/forms';
 	import MonthCalendar from '#lib/components/MonthCalendar.svelte';
 	import TimeList from '#lib/components/TimeList.svelte';
 	import { monthGrid, shiftMonth } from '#lib/components/month.ts';
 	import type { PageProps } from './$types';
 
-	let { data }: PageProps = $props();
+	let { data, form }: PageProps = $props();
+
+	let adding = $state(false);
+	const addErrors: Partial<Record<string, string>> = $derived(form?.errors ?? {});
 
 	// Calendar dates carry no time zone; format them as UTC so server and browser agree.
 	const monthFormat = new Intl.DateTimeFormat('en-US', {
@@ -19,8 +23,14 @@
 		timeZone: 'UTC'
 	});
 
+	/** Signed in, every link carries the chosen student so prices and the request stay theirs. */
+	function withStudent(params: Record<string, string>): URLSearchParams {
+		return new URLSearchParams(data.student ? { student: data.student.id, ...params } : params);
+	}
+
 	function bookHref(params: Record<string, string>): string {
-		return `/book?${new URLSearchParams(params)}`;
+		const query = withStudent(params).toString();
+		return query ? `/book?${query}` : '/book';
 	}
 </script>
 
@@ -28,12 +38,74 @@
 	<title>Book a lesson · SessionX</title>
 </svelte:head>
 
+{#snippet forStudent()}
+	{#if data.student}
+		<p class="for-student">
+			For <strong>{data.student.name}</strong>
+			<a class="change" href="/book" aria-label="Change student">Change</a>
+		</p>
+	{/if}
+{/snippet}
+
 <main>
-	{#if data.step === 'type'}
+	{#if data.step === 'student'}
+		<header class="intro">
+			<h1>Book a lesson</h1>
+			<p>Who is this lesson for?</p>
+		</header>
+
+		{#if data.students.length > 0}
+			<ul class="types" aria-label="Students">
+				{#each data.students as student (student.id)}
+					<li>
+						<a class="type-card" href={bookHref({ student: student.id })}>
+							<span class="type-name">{student.name}</span>
+						</a>
+					</li>
+				{/each}
+			</ul>
+		{/if}
+
+		<form
+			class="add-student"
+			method="POST"
+			action="?/addStudent"
+			novalidate
+			use:enhance={() => {
+				adding = true;
+				return async ({ update }) => {
+					await update({ reset: false });
+					adding = false;
+				};
+			}}
+		>
+			<label for="student-name">Add a student</label>
+			<div class="inline">
+				<input
+					id="student-name"
+					name="name"
+					maxlength="100"
+					value={form?.values?.name ?? ''}
+					aria-invalid={addErrors.name ? 'true' : undefined}
+					aria-describedby={addErrors.name
+						? 'student-name-hint student-name-error'
+						: 'student-name-hint'}
+				/>
+				<button class="add-button" type="submit" disabled={adding}>
+					{adding ? 'Adding…' : 'Add'}
+				</button>
+			</div>
+			<p class="hint" id="student-name-hint">Use your own name if the lesson is for you.</p>
+			{#if addErrors.name}
+				<p class="error" id="student-name-error">{addErrors.name}</p>
+			{/if}
+		</form>
+	{:else if data.step === 'type'}
 		<header class="intro">
 			<h1>Book a lesson</h1>
 			<p>Choose a lesson length to see open times.</p>
 		</header>
+		{@render forStudent()}
 
 		{#if data.lessonTypes.length === 0}
 			<p class="muted">No lessons are open for booking right now. Please check back soon.</p>
@@ -63,8 +135,9 @@
 				<h1>{data.lessonType.name}</h1>
 				<p class="muted">{data.lessonType.durationMin} min · {data.lessonType.priceLabel}</p>
 			</div>
-			<a class="change" href="/book">Change</a>
+			<a class="change" href={bookHref({})} aria-label="Change lesson type">Change</a>
 		</header>
+		{@render forStudent()}
 
 		<div class="picker">
 			<section class="pane" aria-label="Choose a date">
@@ -89,7 +162,7 @@
 					<TimeList
 						heading={dayFormat.format(new Date(`${data.selectedDate}T00:00:00Z`))}
 						times={data.times}
-						timeHref={(iso) => `/book/details?${new URLSearchParams({ type: typeId, start: iso })}`}
+						timeHref={(iso) => `/book/details?${withStudent({ type: typeId, start: iso })}`}
 					/>
 				{:else}
 					<div class="no-times">
@@ -168,6 +241,84 @@
 	.type-meta {
 		font-weight: 600;
 		color: var(--accent);
+	}
+
+	.for-student {
+		display: flex;
+		align-items: center;
+		gap: 0.25rem;
+		margin: -0.75rem 0 1rem;
+	}
+
+	.add-student {
+		margin-top: 1.25rem;
+		padding: 1rem 1.25rem;
+		background: var(--surface);
+		border: 1px solid var(--border);
+		border-radius: var(--radius);
+	}
+
+	.add-student label {
+		display: block;
+		font-weight: 600;
+		margin-bottom: 0.25rem;
+	}
+
+	.inline {
+		display: flex;
+		gap: 0.5rem;
+	}
+
+	.add-student input {
+		flex: 1;
+		min-width: 0;
+		min-height: var(--tap);
+		padding: 0.6rem 0.75rem;
+		border: 1px solid #c4c9d1;
+		border-radius: 8px;
+		background: #fff;
+		color: var(--text);
+		font-family: inherit;
+		/* 16px keeps iOS Safari from zooming in on focus. */
+		font-size: 1rem;
+	}
+
+	.add-student input[aria-invalid='true'] {
+		border-color: var(--danger);
+	}
+
+	.add-button {
+		min-height: var(--tap);
+		padding: 0.6rem 1.25rem;
+		border: 0;
+		border-radius: 999px;
+		background: var(--accent);
+		color: #fff;
+		font-family: inherit;
+		font-size: 1rem;
+		font-weight: 600;
+		cursor: pointer;
+	}
+
+	.add-button:hover {
+		background: var(--accent-hover);
+	}
+
+	.add-button:disabled {
+		opacity: 0.7;
+		cursor: progress;
+	}
+
+	.hint {
+		margin: 0.25rem 0 0;
+		font-size: 0.875rem;
+		color: var(--muted);
+	}
+
+	.error {
+		margin: 0.25rem 0 0;
+		font-size: 0.875rem;
+		color: var(--danger);
 	}
 
 	.chosen {

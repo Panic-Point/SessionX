@@ -24,6 +24,9 @@
 		<h1>{data.lessonType.name}</h1>
 		<p class="when">{data.whenLabel}</p>
 		<p class="meta">{data.lessonType.durationMin} min · {data.lessonType.priceLabel}</p>
+		{#if data.student}
+			<p class="meta">For {data.student.name}</p>
+		{/if}
 	</section>
 
 	{#if unavailable}
@@ -43,62 +46,71 @@
 				};
 			}}
 		>
-			<h2>Your details</h2>
+			<h2>{data.student ? 'Anything the teacher should know?' : 'Your details'}</h2>
 			<input type="hidden" name="lessonTypeId" value={data.lessonType.id} />
 			<input type="hidden" name="startsAt" value={data.startsAt} />
 
-			<div class="field">
-				<label for="accountName">Your name</label>
-				<input
-					id="accountName"
-					name="accountName"
-					autocomplete="name"
-					required
-					value={values.accountName}
-					aria-invalid={errors.accountName ? 'true' : undefined}
-					aria-describedby={errors.accountName ? 'accountName-error' : undefined}
-				/>
-				{#if errors.accountName}
-					<p class="error" id="accountName-error">{errors.accountName}</p>
+			{#if data.student}
+				<input type="hidden" name="studentId" value={data.student.id} />
+				{#if errors.studentId}
+					<p class="error form-error" role="alert">
+						{errors.studentId} <a href="/book">Choose a student</a>
+					</p>
 				{/if}
-			</div>
+			{:else}
+				<div class="field">
+					<label for="accountName">Your name</label>
+					<input
+						id="accountName"
+						name="accountName"
+						autocomplete="name"
+						required
+						value={values.accountName}
+						aria-invalid={errors.accountName ? 'true' : undefined}
+						aria-describedby={errors.accountName ? 'accountName-error' : undefined}
+					/>
+					{#if errors.accountName}
+						<p class="error" id="accountName-error">{errors.accountName}</p>
+					{/if}
+				</div>
 
-			<div class="field">
-				<label for="email">Email</label>
-				<input
-					id="email"
-					name="email"
-					type="email"
-					autocomplete="email"
-					required
-					value={values.email}
-					aria-invalid={errors.email ? 'true' : undefined}
-					aria-describedby={errors.email ? 'email-error' : undefined}
-				/>
-				{#if errors.email}
-					<p class="error" id="email-error">{errors.email}</p>
-				{/if}
-			</div>
+				<div class="field">
+					<label for="email">Email</label>
+					<input
+						id="email"
+						name="email"
+						type="email"
+						autocomplete="email"
+						required
+						value={values.email}
+						aria-invalid={errors.email ? 'true' : undefined}
+						aria-describedby={errors.email ? 'email-error' : undefined}
+					/>
+					{#if errors.email}
+						<p class="error" id="email-error">{errors.email}</p>
+					{/if}
+				</div>
 
-			<div class="field">
-				<label for="studentName">Student's name</label>
-				<input
-					id="studentName"
-					name="studentName"
-					required
-					value={values.studentName}
-					aria-invalid={errors.studentName ? 'true' : undefined}
-					aria-describedby={errors.studentName
-						? 'studentName-hint studentName-error'
-						: 'studentName-hint'}
-				/>
-				<p class="hint" id="studentName-hint">
-					Who is the lesson for? Use your own name if it's for you.
-				</p>
-				{#if errors.studentName}
-					<p class="error" id="studentName-error">{errors.studentName}</p>
-				{/if}
-			</div>
+				<div class="field">
+					<label for="studentName">Student's name</label>
+					<input
+						id="studentName"
+						name="studentName"
+						required
+						value={values.studentName}
+						aria-invalid={errors.studentName ? 'true' : undefined}
+						aria-describedby={errors.studentName
+							? 'studentName-hint studentName-error'
+							: 'studentName-hint'}
+					/>
+					<p class="hint" id="studentName-hint">
+						Who is the lesson for? Use your own name if it's for you.
+					</p>
+					{#if errors.studentName}
+						<p class="error" id="studentName-error">{errors.studentName}</p>
+					{/if}
+				</div>
+			{/if}
 
 			<div class="field">
 				<label for="note">Note <span class="optional">(optional)</span></label>
@@ -249,6 +261,10 @@
 		font-size: 0.875rem;
 		color: var(--muted);
 		text-align: center;
+	}
+
+	.form-error {
+		margin: 0 0 1rem;
 	}
 
 	.notice p {

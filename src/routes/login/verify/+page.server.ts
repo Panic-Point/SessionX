@@ -27,6 +27,6 @@ export const actions: Actions = {
 			secure: !dev,
 			maxAge: SESSION_MAX_AGE_SECONDS
 		});
-		redirect(303, account.role === 'admin' ? '/admin' : '/');
+		redirect(303, account.role === 'admin' ? '/admin' : '/account');
 	}
 };
