@@ -2,8 +2,13 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { DateTime } from 'luxon';
 import {
 	decideRequest,
+	getFamily,
+	listFamilies,
 	listLessons,
 	listPendingRequests,
+	saveAccountNotes,
+	saveStudentNotes,
+	saveStudentPrices,
 	setLessonPaid,
 	type AdminDeps
 } from './admin-service';
@@ -13,6 +18,10 @@ import { MemoryBookingStore } from './store/memory';
 
 const now = DateTime.fromISO('2026-11-01T12:00', { zone: 'America/New_York' }).toJSDate();
 const LESSON_30 = '11111111-0000-0000-0000-000000000030';
+const PAT = '22222222-0000-0000-0000-00000000000b';
+const ADMIN = '22222222-0000-0000-0000-00000000000a';
+const AVA = '33333333-0000-0000-0000-0000000000a1';
+const LESSON_45 = '11111111-0000-0000-0000-000000000045';
 const MON_3PM = '2026-11-02T20:00:00.000Z';
 const MON_330PM = '2026-11-02T20:30:00.000Z';
 const TUE_3PM = '2026-11-03T20:00:00.000Z';
@@ -210,5 +219,112 @@ describe('admin service', () => {
 			ok: false,
 			message: 'Booking not found.'
 		});
+	});
+
+	it('lists families without the admin', async () => {
+		const { store } = setup();
+		const families = await listFamilies(store);
+		expect(families.map((f) => f.id)).not.toContain(ADMIN);
+		const pat = families.find((f) => f.id === PAT)!;
+		expect(pat.email).toBe('parent@example.com');
+		expect(pat.studentNames).toContain('Ava');
+	});
+
+	it('family view shows custom and blank prices', async () => {
+		const { store } = setup();
+		await store.setStudentPrice(AVA, LESSON_30, 3000);
+		const family = (await getFamily(store, PAT))!;
+		const ava = family.students.find((x) => x.id === AVA)!;
+		const p30 = ava.prices.find((p) => p.lessonTypeId === LESSON_30)!;
+		const p45 = ava.prices.find((p) => p.lessonTypeId === LESSON_45)!;
+		expect(p30.customPrice).toBe('30.00');
+		expect(p30.listPriceLabel).toMatch(/^\$\d+\.\d{2}$/);
+		expect(p45.customPrice).toBe('');
+		expect(ava.prices).toHaveLength((await store.listAllLessonTypes()).length);
+		expect(await getFamily(store, 'missing')).toBeNull();
+		expect(await getFamily(store, ADMIN)).toBeNull();
+	});
+
+	it('saves and clears student prices', async () => {
+		const { store } = setup();
+		expect(await saveStudentPrices(store, AVA, { [LESSON_30]: '30', [LESSON_45]: '42.5' })).toEqual(
+			{ ok: true, value: null }
+		);
+		let ava = (await getFamily(store, PAT))!.students.find((x) => x.id === AVA)!;
+		expect(ava.prices.find((p) => p.lessonTypeId === LESSON_30)!.customPrice).toBe('30.00');
+		expect(ava.prices.find((p) => p.lessonTypeId === LESSON_45)!.customPrice).toBe('42.50');
+		await saveStudentPrices(store, AVA, { [LESSON_30]: '', [LESSON_45]: '42.50' });
+		ava = (await getFamily(store, PAT))!.students.find((x) => x.id === AVA)!;
+		expect(ava.prices.find((p) => p.lessonTypeId === LESSON_30)!.customPrice).toBe('');
+		expect(ava.prices.find((p) => p.lessonTypeId === LESSON_45)!.customPrice).toBe('42.50');
+	});
+
+	it('invalid price saves nothing', async () => {
+		const { store } = setup();
+		const r = await saveStudentPrices(store, AVA, {
+			[LESSON_30]: '30',
+			[LESSON_45]: 'abc',
+			bogus: '5'
+		});
+		expect(r).toEqual({
+			ok: false,
+			errors: { [LESSON_45]: 'Enter a price like 35 or 35.00.', bogus: 'Unknown lesson type.' }
+		});
+		const tooHigh = await saveStudentPrices(store, AVA, { [LESSON_30]: '1000.01' });
+		expect(tooHigh.ok).toBe(false);
+		const ava = (await getFamily(store, PAT))!.students.find((x) => x.id === AVA)!;
+		expect(ava.prices.every((p) => p.customPrice === '')).toBe(true);
+		expect(await saveStudentPrices(store, 'missing', { [LESSON_30]: '30' })).toEqual({
+			ok: false,
+			errors: { form: 'Student not found.' }
+		});
+	});
+
+	it('saves notes and enforces the length limit', async () => {
+		const { store } = setup();
+		expect(await saveAccountNotes(store, PAT, 'Prefers Mondays')).toEqual({
+			ok: true,
+			value: null
+		});
+		expect(await saveStudentNotes(store, AVA, 'Grade 3')).toEqual({ ok: true, value: null });
+		const family = (await getFamily(store, PAT))!;
+		expect(family.adminNotes).toBe('Prefers Mondays');
+		expect(family.students.find((x) => x.id === AVA)!.notes).toBe('Grade 3');
+		const long = 'x'.repeat(2001);
+		const err = { ok: false, errors: { notes: 'Keep notes under 2000 characters.' } };
+		expect(await saveAccountNotes(store, PAT, long)).toEqual(err);
+		expect(await saveStudentNotes(store, AVA, long)).toEqual(err);
+		expect(await saveAccountNotes(store, 'missing', 'hi')).toEqual({
+			ok: false,
+			errors: { form: 'Family not found.' }
+		});
+		expect(await saveStudentNotes(store, 'missing', 'hi')).toEqual({
+			ok: false,
+			errors: { form: 'Student not found.' }
+		});
+	});
+
+	it('late-cancels range lists only late cancellations', async () => {
+		const { store } = setup();
+		const mk = (startsAt: string) =>
+			store.requestAccountBooking(
+				{
+					accountId: PAT,
+					studentId: AVA,
+					lessonTypeId: LESSON_30,
+					startsAt: new Date(startsAt),
+					note: ''
+				},
+				now
+			);
+		const target = (id: string) => ({ kind: 'account' as const, bookingId: id, accountId: PAT });
+		const a = await mk(MON_3PM);
+		await store.cancelBooking(target(a.bookingId), true, now);
+		const b = await mk(TUE_3PM);
+		await store.cancelBooking(target(b.bookingId), true, now);
+		const c = await mk(MON_330PM);
+		await store.cancelBooking(target(c.bookingId), false, now);
+		const rows = await listLessons(store, { range: 'late-cancels', unpaidOnly: false }, now);
+		expect(rows.map((v) => v.id)).toEqual([b.bookingId, a.bookingId]);
 	});
 });
