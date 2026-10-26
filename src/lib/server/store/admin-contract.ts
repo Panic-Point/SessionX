@@ -228,6 +228,42 @@ export function runAdminStoreContract(
 			expect((await store.getBooking(created.bookingId))?.gcalEventId).toBeNull();
 		});
 
+		it('expires past pending requests and frees the slot', async () => {
+			const store = await makeStore();
+			const created = await store.requestGuestBooking(input(), NOW);
+			const after = new Date(SLOT.getTime() + 60_000);
+			expect(await store.expirePendingBookings(after)).toBe(1);
+			expect((await store.getBooking(created.bookingId))?.status).toBe('expired');
+			const live = await store.getLiveBookings(
+				new Date(SLOT.getTime() - 3_600_000),
+				new Date(SLOT.getTime() + 3_600_000)
+			);
+			expect(live).toHaveLength(0);
+		});
+
+		it('leaves future pending alone', async () => {
+			const store = await makeStore();
+			const created = await store.requestGuestBooking(input(), NOW);
+			expect(await store.expirePendingBookings(new Date(SLOT.getTime() - 60_000))).toBe(0);
+			expect((await store.getBooking(created.bookingId))?.status).toBe('pending');
+		});
+
+		it('leaves approved past lessons alone', async () => {
+			const store = await makeStore();
+			const created = await store.requestGuestBooking(input(), NOW);
+			await store.decideBooking(created.bookingId, 'approved', null, NOW);
+			expect(await store.expirePendingBookings(new Date(SLOT.getTime() + 60_000))).toBe(0);
+			expect((await store.getBooking(created.bookingId))?.status).toBe('approved');
+		});
+
+		it('expirePendingBookings is idempotent', async () => {
+			const store = await makeStore();
+			await store.requestGuestBooking(input(), NOW);
+			const after = new Date(SLOT.getTime() + 60_000);
+			expect(await store.expirePendingBookings(after)).toBe(1);
+			expect(await store.expirePendingBookings(after)).toBe(0);
+		});
+
 		it('setCalendarEventId unknown id throws not_found', async () => {
 			const store = await makeStore();
 			const missing = '99999999-0000-0000-0000-000000000000';

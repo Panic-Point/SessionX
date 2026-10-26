@@ -252,6 +252,17 @@ export class MemoryBookingStore implements BookingStore, AdminStore, AccountStor
 		this.requireBooking(bookingId).gcalEventId = eventId;
 	}
 
+	async expirePendingBookings(now: Date): Promise<number> {
+		let count = 0;
+		for (const booking of this.bookings) {
+			if (booking.status === 'pending' && booking.startsAt <= now) {
+				booking.status = 'expired';
+				count++;
+			}
+		}
+		return count;
+	}
+
 	async replaceWeeklyHours(hours: WeeklyHours[]): Promise<void> {
 		this.data.weeklyHours = hours.map((h) => ({ ...h }));
 	}

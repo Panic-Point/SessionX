@@ -167,6 +167,8 @@ export interface AdminStore {
 	updateSettings(settings: StudioSettings): Promise<void>;
 	/** Throws AdminStoreError not_found. Null clears the stored Google Calendar event id. */
 	setCalendarEventId(bookingId: string, eventId: string | null): Promise<void>;
+	/** Marks pending bookings with startsAt <= now as expired; returns how many. */
+	expirePendingBookings(now: Date): Promise<number>;
 	replaceWeeklyHours(hours: WeeklyHours[]): Promise<void>;
 	/** date >= fromDate, ascending. */
 	listDateOverrides(fromDate: string): Promise<DateOverrideWithNote[]>;
