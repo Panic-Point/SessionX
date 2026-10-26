@@ -12,6 +12,8 @@ export interface StudioSettings {
 	cancelCutoffHours: number;
 	cancellationPolicyText: string;
 	adminEmail: string | null;
+	gcalWriteCalendarId: string | null;
+	gcalBusyCalendarIds: string[];
 }
 
 export interface LessonType {
@@ -122,6 +124,7 @@ export interface AdminBooking {
 	declineReason: string | null;
 	lateCancel: boolean;
 	manageToken: string;
+	gcalEventId: string | null;
 }
 
 /** `from` is inclusive and `to` exclusive, both on startsAt. */
@@ -162,6 +165,8 @@ export interface AdminStore {
 	/** Throws AdminStoreError not_found. */
 	setPaid(id: string, paidAt: Date | null): Promise<AdminBooking>;
 	updateSettings(settings: StudioSettings): Promise<void>;
+	/** Throws AdminStoreError not_found. Null clears the stored Google Calendar event id. */
+	setCalendarEventId(bookingId: string, eventId: string | null): Promise<void>;
 	replaceWeeklyHours(hours: WeeklyHours[]): Promise<void>;
 	/** date >= fromDate, ascending. */
 	listDateOverrides(fromDate: string): Promise<DateOverrideWithNote[]>;

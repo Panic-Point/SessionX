@@ -72,8 +72,25 @@ export function validateSettings(form: Record<string, string | undefined>): Resu
 		allowSameDay: form.allowSameDay === 'on',
 		cancelCutoffHours: cutoff!,
 		cancellationPolicyText: policy,
-		adminEmail: email || null
+		adminEmail: email || null,
+		gcalWriteCalendarId: null,
+		gcalBusyCalendarIds: []
 	}));
+}
+
+/**
+ * The settings form does not carry the calendar fields yet, so validateSettings returns them
+ * blank. Keep the stored choices when saving. Task 4 adds the fields to the form and replaces this.
+ */
+export function keepCalendarSettings(
+	validated: StudioSettings,
+	current: StudioSettings
+): StudioSettings {
+	return {
+		...validated,
+		gcalWriteCalendarId: current.gcalWriteCalendarId,
+		gcalBusyCalendarIds: [...current.gcalBusyCalendarIds]
+	};
 }
 
 /** Format and order error for one range, or null when it is well formed. */

@@ -109,7 +109,9 @@ async function resetToSeed() {
 					allow_same_day: s.allowSameDay,
 					cancel_cutoff_hours: s.cancelCutoffHours,
 					cancellation_policy_text: s.cancellationPolicyText,
-					admin_email: s.adminEmail
+					admin_email: s.adminEmail,
+					gcal_write_calendar_id: s.gcalWriteCalendarId,
+					gcal_busy_calendar_ids: s.gcalBusyCalendarIds
 				})
 				.eq('id', true)
 		).error

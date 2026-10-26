@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
 	dollarsToCents,
+	keepCalendarSettings,
 	validateLessonType,
 	validateOverride,
 	validateSettings,
@@ -37,9 +38,25 @@ describe('validateSettings', () => {
 				allowSameDay: true,
 				cancelCutoffHours: 48,
 				cancellationPolicyText: 'Be kind.',
-				adminEmail: 'teacher@example.com'
+				adminEmail: 'teacher@example.com',
+				gcalWriteCalendarId: null,
+				gcalBusyCalendarIds: []
 			}
 		});
+	});
+
+	it('saving other settings keeps calendar fields', () => {
+		const r = validateSettings(goodSettings);
+		const current = {
+			...(r.ok ? r.value : (undefined as never)),
+			timezone: 'UTC',
+			gcalWriteCalendarId: 'w@x.com',
+			gcalBusyCalendarIds: ['a@x.com']
+		};
+		const merged = keepCalendarSettings(r.ok ? r.value : (undefined as never), current);
+		expect(merged.timezone).toBe('America/New_York');
+		expect(merged.gcalWriteCalendarId).toBe('w@x.com');
+		expect(merged.gcalBusyCalendarIds).toEqual(['a@x.com']);
 	});
 
 	it('blank email is null and missing checkbox is false', () => {

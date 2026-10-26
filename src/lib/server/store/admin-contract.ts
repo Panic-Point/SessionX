@@ -205,6 +205,44 @@ export function runAdminStoreContract(
 			expect(await store.getSettings()).toEqual(settings);
 		});
 
+		it('settings round-trip calendar fields', async () => {
+			const store = await makeStore();
+			const base = await store.getSettings();
+			expect(base.gcalWriteCalendarId).toBeNull();
+			expect(base.gcalBusyCalendarIds).toEqual([]);
+			const settings = {
+				...base,
+				gcalWriteCalendarId: 'write@group.calendar.google.com',
+				gcalBusyCalendarIds: ['a@example.com', 'b@example.com']
+			};
+			await store.updateSettings(settings);
+			expect(await store.getSettings()).toEqual(settings);
+		});
+
+		it('setCalendarEventId sets and clears', async () => {
+			const store = await makeStore();
+			const created = await store.requestGuestBooking(input(), NOW);
+			await store.setCalendarEventId(created.bookingId, 'evt-1');
+			expect((await store.getBooking(created.bookingId))?.gcalEventId).toBe('evt-1');
+			await store.setCalendarEventId(created.bookingId, null);
+			expect((await store.getBooking(created.bookingId))?.gcalEventId).toBeNull();
+		});
+
+		it('setCalendarEventId unknown id throws not_found', async () => {
+			const store = await makeStore();
+			const missing = '99999999-0000-0000-0000-000000000000';
+			expect(await adminCode(store.setCalendarEventId(missing, 'evt-1'))).toBe('not_found');
+			expect(await adminCode(store.setCalendarEventId('not-a-uuid', 'evt-1'))).toBe('not_found');
+		});
+
+		it('admin booking exposes gcalEventId (null by default)', async () => {
+			const store = await makeStore();
+			const created = await store.requestGuestBooking(input(), NOW);
+			expect((await store.getBooking(created.bookingId))?.gcalEventId).toBeNull();
+			const list = await store.listBookings({ statuses: ['pending'], order: 'asc' });
+			expect(list[0].gcalEventId).toBeNull();
+		});
+
 		it('replaceWeeklyHours replaces', async () => {
 			const store = await makeStore();
 			const hours = [

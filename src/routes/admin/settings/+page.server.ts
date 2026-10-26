@@ -1,5 +1,5 @@
 import { fail } from '@sveltejs/kit';
-import { validateSettings } from '#lib/server/admin-validation.ts';
+import { keepCalendarSettings, validateSettings } from '#lib/server/admin-validation.ts';
 import { formString, requireAdmin } from '#lib/server/admin-actions.ts';
 import { getStore } from '#lib/server/context.ts';
 import type { Actions, PageServerLoad } from './$types';
@@ -45,7 +45,9 @@ export const actions: Actions = {
 
 		const result = validateSettings(values);
 		if (!result.ok) return fail(400, { values, errors: result.errors, saved: false });
-		await getStore().updateSettings(result.value);
+		const store = getStore();
+		// Task 4 replaces this merge once the form carries the calendar fields.
+		await store.updateSettings(keepCalendarSettings(result.value, await store.getSettings()));
 		return { values: null, errors: {}, saved: true };
 	}
 };

@@ -27,7 +27,9 @@ describe('supabase mappers', () => {
 			allow_same_day: false,
 			cancel_cutoff_hours: 12,
 			cancellation_policy_text: 'Policy',
-			admin_email: null
+			admin_email: null,
+			gcal_write_calendar_id: 'w@x.com',
+			gcal_busy_calendar_ids: ['a@x.com', 'b@x.com']
 		});
 		expect(s).toEqual({
 			timezone: 'America/New_York',
@@ -38,7 +40,9 @@ describe('supabase mappers', () => {
 			allowSameDay: false,
 			cancelCutoffHours: 12,
 			cancellationPolicyText: 'Policy',
-			adminEmail: null
+			adminEmail: null,
+			gcalWriteCalendarId: 'w@x.com',
+			gcalBusyCalendarIds: ['a@x.com', 'b@x.com']
 		});
 	});
 
@@ -163,6 +167,7 @@ describe('supabase mappers', () => {
 		decline_reason: 'busy',
 		late_cancel: true,
 		manage_token: 'tok',
+		gcal_event_id: 'evt-9',
 		lesson_types: { name: '30-minute lesson', duration_min: 30 },
 		students: { name: 'Ava', accounts: { name: 'Pat', email: 'pat@example.com' } }
 	};
@@ -183,7 +188,8 @@ describe('supabase mappers', () => {
 			note: 'hi',
 			declineReason: 'busy',
 			lateCancel: true,
-			manageToken: 'tok'
+			manageToken: 'tok',
+			gcalEventId: 'evt-9'
 		});
 	});
 

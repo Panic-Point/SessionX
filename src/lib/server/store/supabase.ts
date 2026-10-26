@@ -77,7 +77,7 @@ interface RpcBookingRow {
 const ACCOUNT_COLUMNS = 'id, name, email, role';
 const LESSON_TYPE_COLUMNS = 'id, name, description, duration_min, price_cents, sort_order, active';
 const BOOKING_COLUMNS =
-	'id, status, starts_at, ends_at, price_cents, paid_at, note, decline_reason, late_cancel, manage_token, lesson_types(name, duration_min), students(name, accounts(name, email))';
+	'id, status, starts_at, ends_at, price_cents, paid_at, note, decline_reason, late_cancel, manage_token, gcal_event_id, lesson_types(name, duration_min), students(name, accounts(name, email))';
 
 const STUDENT_COLUMNS = 'id, account_id, name, notes';
 const ACCOUNT_WITH_STUDENTS_COLUMNS = `${ACCOUNT_COLUMNS}, admin_notes, students(${STUDENT_COLUMNS}, student_prices(student_id, lesson_type_id, price_cents))`;
@@ -119,7 +119,7 @@ export function createSupabaseBookingStore(url: string, serviceRoleKey: string):
 			const { data, error } = await db
 				.from('settings')
 				.select(
-					'timezone, min_notice_hours, max_advance_days, slot_increment_min, buffer_min, allow_same_day, cancel_cutoff_hours, cancellation_policy_text, admin_email'
+					'timezone, min_notice_hours, max_advance_days, slot_increment_min, buffer_min, allow_same_day, cancel_cutoff_hours, cancellation_policy_text, admin_email, gcal_write_calendar_id, gcal_busy_calendar_ids'
 				)
 				.single();
 			if (error) fail('getSettings', error);
@@ -334,10 +334,25 @@ export function createSupabaseBookingStore(url: string, serviceRoleKey: string):
 					cancel_cutoff_hours: settings.cancelCutoffHours,
 					cancellation_policy_text: settings.cancellationPolicyText,
 					admin_email: settings.adminEmail,
+					gcal_write_calendar_id: settings.gcalWriteCalendarId,
+					gcal_busy_calendar_ids: settings.gcalBusyCalendarIds,
 					updated_at: new Date().toISOString()
 				})
 				.eq('id', true);
 			if (error) fail('updateSettings', error);
+		},
+
+		async setCalendarEventId(bookingId: string, eventId: string | null): Promise<void> {
+			const { data, error } = await db
+				.from('bookings')
+				.update({ gcal_event_id: eventId })
+				.eq('id', bookingId)
+				.select('id');
+			if (error) {
+				if (isMalformedId(error)) throw new AdminStoreError('not_found');
+				fail('setCalendarEventId', error);
+			}
+			if (!data || data.length === 0) throw new AdminStoreError('not_found');
 		},
 
 		async replaceWeeklyHours(hours: WeeklyHours[]): Promise<void> {
