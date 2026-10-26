@@ -7,6 +7,9 @@ SessionX can work with your Google Calendar in two ways:
 - **Busy calendars:** times that are busy on these calendars (doctor's visits, your own plans)
   can't be booked.
 
+Lessons approved before Google Calendar was set up are not added automatically; only lessons
+approved afterwards appear.
+
 A free personal Gmail account works. You don't need Google Workspace.
 
 Students and families don't get Google Calendar invites. They keep getting the confirmation email
@@ -67,9 +70,11 @@ the downloaded `.json` file.
 1. Open the `.json` file in a text editor such as Notepad or TextEdit, select everything, and copy
    it.
 2. In the Cloudflare dashboard, go to **Workers & Pages** and select the SessionX project.
-3. Go to **Settings** > **Variables and Secrets** and click **Add**.
-4. Enter the name `GOOGLE_SERVICE_ACCOUNT_JSON`, paste the file contents as the value, and click
-   **Encrypt** so it's stored as a secret.
+3. Go to **Settings** > **Variables and Secrets** for the **Production** environment (and
+   **Preview** too, if you use it) and click **Add**.
+4. Enter the name `GOOGLE_SERVICE_ACCOUNT_JSON`, choose the type **Secret**, and paste the file
+   contents as the value. (Older dashboards have an **Encrypt** button instead; click it so it's
+   stored as a secret.)
 5. Click **Save**.
 6. Deploy the site again. A new secret is only used by deployments made after it was saved.
 

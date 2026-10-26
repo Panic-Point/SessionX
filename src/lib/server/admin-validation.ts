@@ -40,6 +40,10 @@ export function dollarsToCents(s: string): number | null {
 	return Number(m[1]) * 100 + Number((m[2] ?? '').padEnd(2, '0'));
 }
 
+const MSG_PRIMARY =
+	'Use the calendar ID from Google Calendar → Settings → Integrate calendar (your Gmail address for your main calendar), not "primary".';
+const isPrimary = (id: string) => id.toLowerCase() === 'primary';
+
 export function validateSettings(form: Record<string, string | undefined>): Result<StudioSettings> {
 	const errors: Record<string, string> = {};
 	const timezone = (form.timezone ?? '').trim();
@@ -68,12 +72,16 @@ export function validateSettings(form: Record<string, string | undefined>): Resu
 	const writeCalendar = (form.gcalWriteCalendarId ?? '').trim();
 	if (writeCalendar.length > MAX_CALENDAR_ID) {
 		errors.gcalWriteCalendarId = 'Enter a calendar ID (usually an email address).';
+	} else if (isPrimary(writeCalendar)) {
+		errors.gcalWriteCalendarId = MSG_PRIMARY;
 	}
 	const busyCalendars = parseCalendarList(form.gcalBusyCalendarIds ?? '');
 	if (busyCalendars.length > MAX_BUSY_CALENDARS) {
 		errors.gcalBusyCalendarIds = 'Use at most 10 calendars.';
 	} else if (busyCalendars.some((id) => id.length > MAX_CALENDAR_ID)) {
 		errors.gcalBusyCalendarIds = 'Each calendar ID must be 254 characters or fewer.';
+	} else if (busyCalendars.some(isPrimary)) {
+		errors.gcalBusyCalendarIds = MSG_PRIMARY;
 	}
 
 	return finish(errors, () => ({

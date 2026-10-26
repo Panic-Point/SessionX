@@ -185,12 +185,21 @@
 		{:else if data.calendar.configError}
 			<p class="banner bad" role="alert">
 				Google Calendar is turned off because the server setting has a problem: {data.calendar
-					.configError}. See docs/google-calendar.md.
+					.configError}. See
+				<a
+					href="https://github.com/Panic-Point/SessionX/blob/main/docs/google-calendar.md"
+					target="_blank"
+					rel="noopener">the Google Calendar guide</a
+				>.
 			</p>
 		{:else}
 			<p class="hint not-configured">
 				Google Calendar is not set up on the server yet, so these calendars are saved but not used.
-				See docs/google-calendar.md to turn it on.
+				See <a
+					href="https://github.com/Panic-Point/SessionX/blob/main/docs/google-calendar.md"
+					target="_blank"
+					rel="noopener">the Google Calendar guide</a
+				> to turn it on.
 			</p>
 		{/if}
 

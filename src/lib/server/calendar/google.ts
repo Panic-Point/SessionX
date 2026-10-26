@@ -15,7 +15,7 @@ const EXPIRY_MARGIN_MS = 60_000;
 
 const NOT_CONFIGURED = 'Google Calendar is not configured';
 const INVALID_ENV = 'GOOGLE_SERVICE_ACCOUNT_JSON is invalid';
-const INVALID_KEY = 'Google service account private key is invalid';
+export const INVALID_KEY = 'Google service account private key is invalid';
 
 function base64UrlJson(value: unknown): string {
 	return toBase64Url(new TextEncoder().encode(JSON.stringify(value)));

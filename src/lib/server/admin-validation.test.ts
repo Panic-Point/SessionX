@@ -88,6 +88,26 @@ describe('validateSettings', () => {
 		expect(e.gcalBusyCalendarIds).toBe('Each calendar ID must be 254 characters or fewer.');
 	});
 
+	it('rejects the calendar ID "primary" in any case, for both fields', () => {
+		const msg =
+			'Use the calendar ID from Google Calendar → Settings → Integrate calendar (your Gmail address for your main calendar), not "primary".';
+		const e = errorsOf(
+			validateSettings({
+				...goodSettings,
+				gcalWriteCalendarId: 'Primary',
+				gcalBusyCalendarIds: 'a@x.com\nPRIMARY'
+			})
+		);
+		expect(e.gcalWriteCalendarId).toBe(msg);
+		expect(e.gcalBusyCalendarIds).toBe(msg);
+		const ok = validateSettings({
+			...goodSettings,
+			gcalWriteCalendarId: 'primary@x.com',
+			gcalBusyCalendarIds: 'primary@x.com'
+		});
+		expect(ok.ok).toBe(true);
+	});
+
 	it('blank email is null and missing checkbox is false', () => {
 		const r = validateSettings({ ...goodSettings, adminEmail: '  ', allowSameDay: undefined });
 		expect(r.ok && r.value.adminEmail).toBeNull();
