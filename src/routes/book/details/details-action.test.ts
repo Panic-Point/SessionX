@@ -1,17 +1,20 @@
 import { isActionFailure, isRedirect } from '@sveltejs/kit';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { fakeCalendar, type FakeCalendar } from '#lib/server/calendar/fake-client.test-helpers.ts';
 import type { EmailMessage } from '#lib/server/email/mailer.ts';
 import { MemoryBookingStore } from '#lib/server/store/memory.ts';
 import type { Account } from '#lib/server/store/types.ts';
 
 const ctx = vi.hoisted(() => ({
 	store: undefined as unknown as MemoryBookingStore,
-	sent: [] as EmailMessage[]
+	sent: [] as EmailMessage[],
+	calendar: undefined as unknown as FakeCalendar
 }));
 vi.mock('#lib/server/context.ts', () => ({
 	getStore: () => ctx.store,
 	getMailer: () => ({ send: async (m: EmailMessage) => void ctx.sent.push(m) }),
-	getAppUrl: () => 'https://example.test'
+	getAppUrl: () => 'https://example.test',
+	getCalendar: () => ctx.calendar
 }));
 
 const { actions } = await import('./+page.server');
@@ -58,6 +61,7 @@ describe('/book/details action, signed in', () => {
 	beforeEach(() => {
 		ctx.store = new MemoryBookingStore();
 		ctx.sent = [];
+		ctx.calendar = fakeCalendar(false);
 	});
 
 	it('reports the pending-request limit as a form error, not as an unavailable time', async () => {
@@ -68,5 +72,26 @@ describe('/book/details action, signed in', () => {
 		const data = (result as { data: { errors: Record<string, string> } }).data;
 		expect(data.errors).toEqual({ form: LIMIT });
 		expect(data.errors.startsAt).toBeUndefined();
+	});
+});
+
+describe('/book/details action, calendar wiring', () => {
+	beforeEach(() => {
+		ctx.store = new MemoryBookingStore();
+		ctx.sent = [];
+		ctx.calendar = fakeCalendar();
+	});
+
+	it('treats a time that is busy on a Google calendar as unavailable', async () => {
+		await ctx.store.updateSettings({
+			...(await ctx.store.getSettings()),
+			gcalBusyCalendarIds: ['busy@x.com']
+		});
+		const start = new Date(slot(0));
+		ctx.calendar.busyIntervals = [{ start, end: new Date(start.getTime() + 60 * 60_000) }];
+		const result = await submit(start.toISOString());
+		expect(isActionFailure(result)).toBe(true);
+		expect(ctx.calendar.busyCalls.length).toBeGreaterThan(0);
+		expect(ctx.sent).toEqual([]);
 	});
 });

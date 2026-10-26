@@ -1,16 +1,19 @@
 import { isActionFailure, isRedirect } from '@sveltejs/kit';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { fakeCalendar, type FakeCalendar } from '#lib/server/calendar/fake-client.test-helpers.ts';
 import type { EmailMessage } from '#lib/server/email/mailer.ts';
 import { MemoryBookingStore } from '#lib/server/store/memory.ts';
 
 const ctx = vi.hoisted(() => ({
 	store: undefined as unknown as MemoryBookingStore,
-	sent: [] as EmailMessage[]
+	sent: [] as EmailMessage[],
+	calendar: undefined as unknown as FakeCalendar
 }));
 vi.mock('#lib/server/context.ts', () => ({
 	getStore: () => ctx.store,
 	getMailer: () => ({ send: async (m: EmailMessage) => void ctx.sent.push(m) }),
-	getAppUrl: () => 'https://example.test'
+	getAppUrl: () => 'https://example.test',
+	getCalendar: () => ctx.calendar
 }));
 
 const { actions } = await import('./+page.server');
@@ -50,6 +53,7 @@ async function submit(token: string, shownLate: string): Promise<unknown> {
 beforeEach(() => {
 	ctx.store = new MemoryBookingStore();
 	ctx.sent = [];
+	ctx.calendar = fakeCalendar(false);
 });
 
 describe('/manage/[token]/cancel lateness check', () => {
@@ -66,5 +70,19 @@ describe('/manage/[token]/cancel lateness check', () => {
 		const b = await approvedBooking(72);
 		expect(isRedirect(await submit(b.token, 'false'))).toBe(true);
 		expect((await ctx.store.getBooking(b.id))!.status).toBe('cancelled');
+	});
+});
+
+describe('/manage/[token]/cancel calendar wiring', () => {
+	it('removes the lesson event from the calendar from getCalendar()', async () => {
+		ctx.calendar = fakeCalendar();
+		await ctx.store.updateSettings({
+			...(await ctx.store.getSettings()),
+			gcalWriteCalendarId: 'lessons@x.com'
+		});
+		const b = await approvedBooking(72);
+		await ctx.store.setCalendarEventId(b.id, 'evt-9');
+		expect(isRedirect(await submit(b.token, 'false'))).toBe(true);
+		expect(ctx.calendar.deleted).toEqual([{ calendarId: 'lessons@x.com', eventId: 'evt-9' }]);
 	});
 });

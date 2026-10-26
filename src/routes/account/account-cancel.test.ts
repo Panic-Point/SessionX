@@ -1,5 +1,6 @@
 import { isActionFailure, isHttpError, isRedirect } from '@sveltejs/kit';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { fakeCalendar, type FakeCalendar } from '#lib/server/calendar/fake-client.test-helpers.ts';
 import type { EmailMessage } from '#lib/server/email/mailer.ts';
 import { demoData } from '#lib/server/store/demo-data.ts';
 import { MemoryBookingStore } from '#lib/server/store/memory.ts';
@@ -7,12 +8,14 @@ import type { Account } from '#lib/server/store/types.ts';
 
 const ctx = vi.hoisted(() => ({
 	store: undefined as unknown as MemoryBookingStore,
-	sent: [] as EmailMessage[]
+	sent: [] as EmailMessage[],
+	calendar: undefined as unknown as FakeCalendar
 }));
 vi.mock('#lib/server/context.ts', () => ({
 	getStore: () => ctx.store,
 	getMailer: () => ({ send: async (m: EmailMessage) => void ctx.sent.push(m) }),
-	getAppUrl: () => 'https://example.test'
+	getAppUrl: () => 'https://example.test',
+	getCalendar: () => ctx.calendar
 }));
 
 const { actions, load } = await import('./cancel/[id]/+page.server');
@@ -73,6 +76,7 @@ beforeEach(() => {
 	data.accounts.push({ ...robin });
 	ctx.store = new MemoryBookingStore(data);
 	ctx.sent = [];
+	ctx.calendar = fakeCalendar(false);
 });
 
 describe('/account/cancel/[id] for another family', () => {

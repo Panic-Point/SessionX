@@ -36,5 +36,10 @@ export const variables = defineEnvVars({
 		schema: optional,
 		description:
 			'Secret for signing admin session cookies. Required in production; dev falls back to a fixed dev-only value.'
+	},
+	GOOGLE_SERVICE_ACCOUNT_JSON: {
+		schema: optional,
+		description:
+			'Google service-account key JSON (server only). Unset disables Google Calendar sync. See docs/google-calendar.md.'
 	}
 });

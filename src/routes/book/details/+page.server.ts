@@ -9,7 +9,7 @@ import {
 	type StudentChoice
 } from '#lib/server/booking-service.ts';
 import { formString } from '#lib/server/admin-actions.ts';
-import { getAppUrl, getMailer, getStore } from '#lib/server/context.ts';
+import { getAppUrl, getCalendar, getMailer, getStore } from '#lib/server/context.ts';
 import { formatDateTime } from '#lib/server/format.ts';
 import type { Actions, PageServerLoad } from './$types';
 
@@ -47,7 +47,14 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 	const date = local.toISODate()!;
 	const month = local.toFormat('yyyy-MM');
 
-	const availability = await getMonthAvailability(store, typeId, month, new Date(), choice);
+	const availability = await getMonthAvailability(
+		store,
+		typeId,
+		month,
+		new Date(),
+		choice,
+		getCalendar()
+	);
 	if (!availability) redirect(303, '/book');
 
 	const iso = startsAt.toISOString();
@@ -65,7 +72,12 @@ export const actions: Actions = {
 	default: async ({ locals, request }) => {
 		const data = await request.formData();
 		const field = (name: string) => formString(data, name);
-		const deps = { store: getStore(), mailer: getMailer(), appUrl: getAppUrl() };
+		const deps = {
+			store: getStore(),
+			mailer: getMailer(),
+			appUrl: getAppUrl(),
+			calendar: getCalendar()
+		};
 
 		// Signed in, always book as the account: never create a guest request for a signed-in user.
 		if (locals.account) {
