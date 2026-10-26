@@ -130,6 +130,7 @@ export interface BookingFilter {
 	from?: Date;
 	to?: Date;
 	unpaidOnly?: boolean;
+	lateCancelOnly?: boolean;
 	order: 'asc' | 'desc';
 }
 
@@ -172,3 +173,79 @@ export interface AdminStore {
 	/** Throws AdminStoreError not_found. */
 	updateLessonType(id: string, input: LessonTypeInput): Promise<AdminLessonType>;
 }
+
+export interface Student {
+	id: string;
+	accountId: string;
+	name: string;
+	notes: string;
+}
+
+export interface StudentPrice {
+	studentId: string;
+	lessonTypeId: string;
+	priceCents: number;
+}
+
+export interface AccountBookingInput {
+	accountId: string;
+	studentId: string;
+	lessonTypeId: string;
+	startsAt: Date;
+	note: string;
+}
+
+export interface AccountWithStudents extends Account {
+	adminNotes: string;
+	students: (Student & { prices: StudentPrice[] })[];
+}
+
+export type CancelTarget =
+	| { kind: 'account'; bookingId: string; accountId: string }
+	| { kind: 'token'; manageToken: string };
+
+export type AccountStoreErrorCode = 'not_found' | 'duplicate_student' | 'not_cancellable';
+
+export class AccountStoreError extends Error {
+	constructor(public readonly code: AccountStoreErrorCode) {
+		super(code);
+		this.name = 'AccountStoreError';
+	}
+}
+
+export interface AccountStore {
+	/** By name. */
+	listStudents(accountId: string): Promise<Student[]>;
+	/** Trims. Throws AccountStoreError duplicate_student (case-insensitive). */
+	addStudent(accountId: string, name: string): Promise<Student>;
+	/** Throws AccountStoreError not_found (not this account's student) or duplicate_student. */
+	renameStudent(accountId: string, studentId: string, name: string): Promise<Student>;
+	listStudentPrices(studentIds: string[]): Promise<StudentPrice[]>;
+	/** All statuses, all the account's students, startsAt descending. */
+	listAccountBookings(accountId: string): Promise<AdminBooking[]>;
+	/**
+	 * Price is the student's custom price, else the lesson type's. Throws AccountStoreError
+	 * not_found (student not in account), then BookingStoreError lesson_type_not_found,
+	 * too_many_pending, slot_taken, in that order.
+	 */
+	requestAccountBooking(input: AccountBookingInput, now: Date): Promise<CreatedBooking>;
+	/** Null when unknown, or when an account target names another account's booking. */
+	getBookingByTarget(target: CancelTarget): Promise<AdminBooking | null>;
+	/** Throws AccountStoreError not_found; not_cancellable (not pending/approved, or startsAt <= now). */
+	cancelBooking(target: CancelTarget, lateCancel: boolean, now: Date): Promise<AdminBooking>;
+	/** By name. */
+	listAccounts(): Promise<AccountWithStudents[]>;
+	getAccount(accountId: string): Promise<AccountWithStudents | null>;
+	/** Null removes the custom price. Throws AccountStoreError not_found. */
+	setStudentPrice(
+		studentId: string,
+		lessonTypeId: string,
+		priceCents: number | null
+	): Promise<void>;
+	/** Throws AccountStoreError not_found. */
+	updateAccountNotes(accountId: string, notes: string): Promise<void>;
+	/** Throws AccountStoreError not_found. */
+	updateStudentNotes(studentId: string, notes: string): Promise<void>;
+}
+
+export type AppStore = BookingStore & AdminStore & AccountStore;

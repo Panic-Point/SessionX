@@ -1,10 +1,17 @@
 import type { DateOverride, WeeklyHours } from '../availability';
 import { demoData, type DemoData } from './demo-data';
 import {
+	AccountStoreError,
 	AdminStoreError,
 	BookingStoreError,
 	type Account,
+	type AccountBookingInput,
+	type AccountStore,
+	type AccountWithStudents,
 	type AdminBooking,
+	type CancelTarget,
+	type Student,
+	type StudentPrice,
 	type AdminLessonType,
 	type AdminStore,
 	type BookingFilter,
@@ -49,11 +56,13 @@ interface StoredLoginToken {
 const isLive = (b: StoredBooking) => b.status === 'pending' || b.status === 'approved';
 
 /** In-memory BookingStore that mirrors the request_guest_booking SQL function's semantics. */
-export class MemoryBookingStore implements BookingStore, AdminStore {
+export class MemoryBookingStore implements BookingStore, AdminStore, AccountStore {
 	private readonly data: DemoData;
 	private readonly bookings: StoredBooking[] = [];
 	private readonly loginTokens = new Map<string, StoredLoginToken>();
 	private readonly overrideNotes = new Map<string, string>();
+	private readonly accountNotes = new Map<string, string>();
+	private readonly studentNotes = new Map<string, string>();
 
 	constructor(data: DemoData = demoData()) {
 		this.data = structuredClone(data);
@@ -106,12 +115,7 @@ export class MemoryBookingStore implements BookingStore, AdminStore {
 			if (pending >= MAX_PENDING) throw new BookingStoreError('too_many_pending');
 		}
 
-		const endsAt = new Date(input.startsAt.getTime() + lessonType.durationMin * MINUTE_MS);
-		const blockedUntil = new Date(endsAt.getTime() + this.data.settings.bufferMin * MINUTE_MS);
-		const clash = this.bookings.some(
-			(b) => isLive(b) && input.startsAt < b.blockedUntil && b.startsAt < blockedUntil
-		);
-		if (clash) throw new BookingStoreError('slot_taken');
+		const { endsAt, blockedUntil } = this.requireFreeSlot(input.startsAt, lessonType.durationMin);
 
 		// Existing accounts keep their name; only new ones take the submitted name.
 		let account = existingAccount;
@@ -205,7 +209,8 @@ export class MemoryBookingStore implements BookingStore, AdminStore {
 					filter.statuses.includes(b.status) &&
 					(!filter.from || b.startsAt >= filter.from) &&
 					(!filter.to || b.startsAt < filter.to) &&
-					(!filter.unpaidOnly || b.paidAt === null)
+					(!filter.unpaidOnly || b.paidAt === null) &&
+					(!filter.lateCancelOnly || b.lateCancel)
 			)
 			.sort((a, b) => sign * (a.startsAt.getTime() - b.startsAt.getTime()))
 			.map((b) => this.toAdminBooking(b));
@@ -281,6 +286,198 @@ export class MemoryBookingStore implements BookingStore, AdminStore {
 		if (!existing) throw new AdminStoreError('not_found');
 		Object.assign(existing, input);
 		return { ...existing };
+	}
+
+	// ---- AccountStore ----
+
+	async listStudents(accountId: string): Promise<Student[]> {
+		return this.data.students
+			.filter((s) => s.accountId === accountId)
+			.map((s) => this.toStudent(s))
+			.sort((a, b) => a.name.localeCompare(b.name));
+	}
+
+	async addStudent(accountId: string, name: string): Promise<Student> {
+		const trimmed = name.trim();
+		this.requireUniqueStudentName(accountId, trimmed);
+		const student = { id: crypto.randomUUID(), accountId, name: trimmed };
+		this.data.students.push(student);
+		return this.toStudent(student);
+	}
+
+	async renameStudent(accountId: string, studentId: string, name: string): Promise<Student> {
+		const student = this.data.students.find((s) => s.id === studentId && s.accountId === accountId);
+		if (!student) throw new AccountStoreError('not_found');
+		const trimmed = name.trim();
+		this.requireUniqueStudentName(accountId, trimmed, student.id);
+		student.name = trimmed;
+		return this.toStudent(student);
+	}
+
+	async listStudentPrices(studentIds: string[]): Promise<StudentPrice[]> {
+		return this.data.studentPrices
+			.filter((p) => studentIds.includes(p.studentId))
+			.map((p) => ({ ...p }));
+	}
+
+	async listAccountBookings(accountId: string): Promise<AdminBooking[]> {
+		const own = new Set(
+			this.data.students.filter((s) => s.accountId === accountId).map((s) => s.id)
+		);
+		return this.bookings
+			.filter((b) => own.has(b.studentId))
+			.sort((a, b) => b.startsAt.getTime() - a.startsAt.getTime())
+			.map((b) => this.toAdminBooking(b));
+	}
+
+	async requestAccountBooking(input: AccountBookingInput, now: Date): Promise<CreatedBooking> {
+		// Same check order as the request_account_booking SQL function.
+		const student = this.data.students.find(
+			(s) => s.id === input.studentId && s.accountId === input.accountId
+		);
+		if (!student) throw new AccountStoreError('not_found');
+
+		const lessonType = this.data.lessonTypes.find((t) => t.id === input.lessonTypeId);
+		if (!lessonType || !lessonType.active) throw new BookingStoreError('lesson_type_not_found');
+
+		const ownStudentIds = new Set(
+			this.data.students.filter((s) => s.accountId === input.accountId).map((s) => s.id)
+		);
+		const pending = this.bookings.filter(
+			(b) => b.status === 'pending' && ownStudentIds.has(b.studentId) && b.startsAt > now
+		).length;
+		if (pending >= MAX_PENDING) throw new BookingStoreError('too_many_pending');
+
+		const { endsAt, blockedUntil } = this.requireFreeSlot(input.startsAt, lessonType.durationMin);
+		const custom = this.data.studentPrices.find(
+			(p) => p.studentId === student.id && p.lessonTypeId === lessonType.id
+		);
+
+		const booking: StoredBooking = {
+			id: crypto.randomUUID(),
+			manageToken: crypto.randomUUID().replaceAll('-', ''),
+			studentId: student.id,
+			lessonTypeId: lessonType.id,
+			startsAt: input.startsAt,
+			endsAt,
+			blockedUntil,
+			status: 'pending',
+			priceCents: custom?.priceCents ?? lessonType.priceCents,
+			note: input.note ?? '',
+			paidAt: null,
+			declineReason: null,
+			decidedAt: null,
+			lateCancel: false
+		};
+		this.bookings.push(booking);
+		return {
+			bookingId: booking.id,
+			manageToken: booking.manageToken,
+			priceCents: booking.priceCents,
+			startsAt: booking.startsAt,
+			endsAt: booking.endsAt
+		};
+	}
+
+	async getBookingByTarget(target: CancelTarget): Promise<AdminBooking | null> {
+		const booking = this.findByTarget(target);
+		return booking ? this.toAdminBooking(booking) : null;
+	}
+
+	async cancelBooking(target: CancelTarget, lateCancel: boolean, now: Date): Promise<AdminBooking> {
+		const booking = this.findByTarget(target);
+		if (!booking) throw new AccountStoreError('not_found');
+		if (!isLive(booking) || booking.startsAt <= now) throw new AccountStoreError('not_cancellable');
+		booking.status = 'cancelled';
+		booking.lateCancel = lateCancel;
+		return this.toAdminBooking(booking);
+	}
+
+	async listAccounts(): Promise<AccountWithStudents[]> {
+		return this.data.accounts
+			.map((a) => this.toAccountWithStudents(a))
+			.sort((a, b) => a.name.localeCompare(b.name));
+	}
+
+	async getAccount(accountId: string): Promise<AccountWithStudents | null> {
+		const account = this.data.accounts.find((a) => a.id === accountId);
+		return account ? this.toAccountWithStudents(account) : null;
+	}
+
+	async setStudentPrice(
+		studentId: string,
+		lessonTypeId: string,
+		priceCents: number | null
+	): Promise<void> {
+		if (!this.data.students.some((s) => s.id === studentId)) {
+			throw new AccountStoreError('not_found');
+		}
+		if (!this.data.lessonTypes.some((t) => t.id === lessonTypeId)) {
+			throw new AccountStoreError('not_found');
+		}
+		this.data.studentPrices = this.data.studentPrices.filter(
+			(p) => !(p.studentId === studentId && p.lessonTypeId === lessonTypeId)
+		);
+		if (priceCents !== null) this.data.studentPrices.push({ studentId, lessonTypeId, priceCents });
+	}
+
+	async updateAccountNotes(accountId: string, notes: string): Promise<void> {
+		if (!this.data.accounts.some((a) => a.id === accountId)) {
+			throw new AccountStoreError('not_found');
+		}
+		this.accountNotes.set(accountId, notes);
+	}
+
+	async updateStudentNotes(studentId: string, notes: string): Promise<void> {
+		if (!this.data.students.some((s) => s.id === studentId)) {
+			throw new AccountStoreError('not_found');
+		}
+		this.studentNotes.set(studentId, notes);
+	}
+
+	/** Throws slot_taken on overlap with a live booking; otherwise returns the booked window. */
+	private requireFreeSlot(startsAt: Date, durationMin: number) {
+		const endsAt = new Date(startsAt.getTime() + durationMin * MINUTE_MS);
+		const blockedUntil = new Date(endsAt.getTime() + this.data.settings.bufferMin * MINUTE_MS);
+		const clash = this.bookings.some(
+			(b) => isLive(b) && startsAt < b.blockedUntil && b.startsAt < blockedUntil
+		);
+		if (clash) throw new BookingStoreError('slot_taken');
+		return { endsAt, blockedUntil };
+	}
+
+	/** Mirrors the unique index on (account, lower(btrim(name))); exceptId is the row being renamed. */
+	private requireUniqueStudentName(accountId: string, trimmed: string, exceptId?: string) {
+		const wanted = trimmed.toLowerCase();
+		const taken = this.data.students.some(
+			(s) =>
+				s.accountId === accountId && s.id !== exceptId && s.name.trim().toLowerCase() === wanted
+		);
+		if (taken) throw new AccountStoreError('duplicate_student');
+	}
+
+	private findByTarget(target: CancelTarget): StoredBooking | undefined {
+		if (target.kind === 'token') {
+			return this.bookings.find((b) => b.manageToken === target.manageToken);
+		}
+		const booking = this.bookings.find((b) => b.id === target.bookingId);
+		const student = booking && this.data.students.find((s) => s.id === booking.studentId);
+		return student?.accountId === target.accountId ? booking : undefined;
+	}
+
+	private toStudent(student: { id: string; accountId: string; name: string }): Student {
+		return { ...student, notes: this.studentNotes.get(student.id) ?? '' };
+	}
+
+	private toAccountWithStudents(account: Account): AccountWithStudents {
+		const students = this.data.students
+			.filter((s) => s.accountId === account.id)
+			.map((s) => ({
+				...this.toStudent(s),
+				prices: this.data.studentPrices.filter((p) => p.studentId === s.id).map((p) => ({ ...p }))
+			}))
+			.sort((a, b) => a.name.localeCompare(b.name));
+		return { ...account, adminNotes: this.accountNotes.get(account.id) ?? '', students };
 	}
 
 	private requireBooking(id: string): StoredBooking {

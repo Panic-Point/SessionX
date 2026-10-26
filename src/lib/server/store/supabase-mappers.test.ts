@@ -9,7 +9,11 @@ import {
 	mapAccountRow,
 	mapAdminBookingRow,
 	mapAdminLessonTypeRow,
-	mapOverridesWithNotes
+	mapOverridesWithNotes,
+	mapAccountRpcError,
+	mapStudentRow,
+	mapStudentPriceRow,
+	mapAccountWithStudentsRow
 } from './supabase-mappers';
 
 describe('supabase mappers', () => {
@@ -224,5 +228,62 @@ describe('supabase mappers', () => {
 				note: ''
 			}
 		]);
+	});
+
+	it.each([
+		['P0003', 'not_found'],
+		['P0004', 'not_found'],
+		['22P02', 'not_found'],
+		['23503', 'not_found'],
+		['P0005', 'not_cancellable'],
+		['23505', 'duplicate_student'],
+		['P0001', 'too_many_pending'],
+		['P0002', 'lesson_type_not_found'],
+		['23P01', 'slot_taken']
+	])('maps account RPC error %s to %s', (code, expected) => {
+		expect(mapAccountRpcError({ code, message: 'x' })?.code).toBe(expected);
+	});
+
+	it('returns null for unknown account RPC codes', () => {
+		expect(mapAccountRpcError({ code: '22023', message: 'x' })).toBeNull();
+		expect(mapAccountRpcError({ message: 'x' })).toBeNull();
+	});
+
+	it('maps student and student price rows', () => {
+		expect(mapStudentRow({ id: 's', account_id: 'a', name: 'Ava', notes: 'n' })).toEqual({
+			id: 's',
+			accountId: 'a',
+			name: 'Ava',
+			notes: 'n'
+		});
+		expect(mapStudentPriceRow({ student_id: 's', lesson_type_id: 'l', price_cents: 3000 })).toEqual(
+			{ studentId: 's', lessonTypeId: 'l', priceCents: 3000 }
+		);
+	});
+
+	it('maps an account with students and prices, sorted by name', () => {
+		const result = mapAccountWithStudentsRow({
+			id: 'a',
+			name: 'Pat',
+			email: 'p@x.com',
+			role: 'client',
+			admin_notes: 'vip',
+			students: [
+				{
+					id: 's2',
+					account_id: 'a',
+					name: 'Ben',
+					notes: '',
+					student_prices: [{ student_id: 's2', lesson_type_id: 'l', price_cents: 3000 }]
+				},
+				{ id: 's1', account_id: 'a', name: 'Ava', notes: 'n', student_prices: [] }
+			]
+		});
+		expect(result.adminNotes).toBe('vip');
+		expect(result.students.map((s) => s.name)).toEqual(['Ava', 'Ben']);
+		expect(result.students[1].prices).toEqual([
+			{ studentId: 's2', lessonTypeId: 'l', priceCents: 3000 }
+		]);
+		expect(result.students[0].notes).toBe('n');
 	});
 });

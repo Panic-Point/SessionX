@@ -6,9 +6,9 @@
 
 	let busyId = $state<string | null>(null);
 
-	function href(range: 'upcoming' | 'past', unpaidOnly: boolean): string {
+	function href(range: 'upcoming' | 'past' | 'late-cancels', unpaidOnly: boolean): string {
 		const params = new URLSearchParams();
-		if (range === 'past') params.set('range', 'past');
+		if (range !== 'upcoming') params.set('range', range);
 		if (unpaidOnly) params.set('unpaid', '1');
 		const query = params.toString();
 		return query ? `/admin/lessons?${query}` : '/admin/lessons';
@@ -43,16 +43,24 @@
 		>
 			Past
 		</a>
+		<a
+			href={href('late-cancels', false)}
+			aria-current={data.range === 'late-cancels' ? 'page' : undefined}
+		>
+			Late cancels
+		</a>
 	</nav>
-	<a
-		class="toggle"
-		href={href(data.range, !data.unpaidOnly)}
-		role="switch"
-		aria-checked={data.unpaidOnly}
-	>
-		<span class="box" aria-hidden="true">{data.unpaidOnly ? '✓' : ''}</span>
-		Unpaid only
-	</a>
+	{#if data.range !== 'late-cancels'}
+		<a
+			class="toggle"
+			href={href(data.range, !data.unpaidOnly)}
+			role="switch"
+			aria-checked={data.unpaidOnly}
+		>
+			<span class="box" aria-hidden="true">{data.unpaidOnly ? '✓' : ''}</span>
+			Unpaid only
+		</a>
+	{/if}
 </div>
 
 {#if form?.message}
@@ -65,7 +73,9 @@
 			? 'No unpaid lessons.'
 			: data.range === 'past'
 				? 'No past lessons.'
-				: 'No upcoming lessons.'}
+				: data.range === 'late-cancels'
+					? 'No late cancellations.'
+					: 'No upcoming lessons.'}
 	</p>
 {:else}
 	<ul class="list">

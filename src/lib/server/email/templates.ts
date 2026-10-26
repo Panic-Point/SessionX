@@ -55,12 +55,17 @@ export function requestReceivedEmail(d: BookingEmailData): EmailMessage {
 	};
 }
 
-export function newRequestEmail(d: BookingEmailData, adminEmail: string): EmailMessage {
+export function newRequestEmail(
+	d: BookingEmailData,
+	adminEmail: string,
+	/** Required: the family's manage link must never reach the admin as a fallback. */
+	adminUrl: string
+): EmailMessage {
 	const when = formatDateTime(d.startsAt, d.timezone);
 	const rows = details(d);
 	rows.push(['Booked by', d.accountName], ['Email', d.email], ['Note', d.note || '(none)']);
-	const text = `New lesson request.\n\n${textRows(rows)}\n\nManage: ${d.manageUrl}\n`;
-	const footer = `<p style="margin:16px 0 0">Manage: <a href="${escapeHtml(d.manageUrl)}">${escapeHtml(d.manageUrl)}</a></p>`;
+	const text = `New lesson request.\n\n${textRows(rows)}\n\nManage: ${adminUrl}\n`;
+	const footer = `<p style="margin:16px 0 0">Manage: <a href="${escapeHtml(adminUrl)}">${escapeHtml(adminUrl)}</a></p>`;
 	return {
 		to: adminEmail,
 		subject: `New lesson request: ${d.studentName}, ${when}`,
@@ -117,5 +122,54 @@ export function bookingDeclinedEmail(d: BookingEmailData, reason: string | null)
 		subject: `Lesson request declined – ${d.lessonTypeName} on ${when}`,
 		text,
 		html: wrap(`Hi ${d.accountName}, we could not accept your lesson request`, rows, '')
+	};
+}
+
+export function cancellationConfirmationEmail(d: BookingEmailData): EmailMessage {
+	const when = formatDateTime(d.startsAt, d.timezone);
+	const rows = details(d);
+	const text = `Hi ${d.accountName},
+
+Your lesson has been cancelled.
+
+${textRows(rows)}
+`;
+	return {
+		to: d.email,
+		subject: `Lesson cancelled – ${d.lessonTypeName} on ${when}`,
+		text,
+		html: wrap(`Hi ${d.accountName}, your lesson has been cancelled`, rows, '')
+	};
+}
+
+export function cancellationNoticeEmail(
+	d: BookingEmailData,
+	adminEmail: string,
+	adminUrl: string,
+	late: boolean,
+	cutoffHours: number
+): EmailMessage {
+	const when = formatDateTime(d.startsAt, d.timezone);
+	const rows = details(d);
+	rows.push(['Booked by', d.accountName], ['Email', d.email]);
+	const lateSentence = `This cancellation is less than ${cutoffHours} hours before the lesson.`;
+	const intro = late ? `A lesson was cancelled. ${lateSentence}` : 'A lesson was cancelled.';
+	const text = `${intro}
+
+${textRows(rows)}
+
+Lessons: ${adminUrl}
+`;
+	const latePara = late
+		? `<p style="margin:0 0 12px;color:#b00020">${escapeHtml(lateSentence)}</p>`
+		: '';
+	const footer = `<p style="margin:16px 0 0">Lessons: <a href="${escapeHtml(adminUrl)}">${escapeHtml(adminUrl)}</a></p>`;
+	return {
+		to: adminEmail,
+		subject: late
+			? `Late cancellation: ${d.studentName}, ${when}`
+			: `Lesson cancelled: ${d.studentName}, ${when}`,
+		text,
+		html: latePara + wrap('Lesson cancelled', rows, footer)
 	};
 }

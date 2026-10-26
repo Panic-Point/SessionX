@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest';
 import {
 	bookingApprovedEmail,
 	bookingDeclinedEmail,
+	cancellationConfirmationEmail,
+	cancellationNoticeEmail,
 	loginLinkEmail,
 	newRequestEmail,
 	requestReceivedEmail,
@@ -36,7 +38,7 @@ describe('templates', () => {
 	});
 
 	it('teacher email includes booker contact and note', () => {
-		const m = newRequestEmail(data, 'teacher@example.com');
+		const m = newRequestEmail(data, 'teacher@example.com', 'https://x.test/admin');
 		expect(m.to).toBe('teacher@example.com');
 		expect(m.subject).toBe('New lesson request: Sam, Monday, November 2, 2026 at 3:00 PM EST');
 		for (const part of [m.text, m.html]) {
@@ -49,14 +51,20 @@ describe('templates', () => {
 	it('escapes user input in html', () => {
 		const evil = '<script>x</script>';
 		const d = { ...data, studentName: evil, accountName: evil, note: evil, lessonTypeName: evil };
-		for (const m of [requestReceivedEmail(d), newRequestEmail(d, 't@e.com')]) {
+		for (const m of [
+			requestReceivedEmail(d),
+			newRequestEmail(d, 't@e.com', 'https://x.test/admin')
+		]) {
 			expect(m.html).toContain('&lt;script&gt;');
 			expect(m.html).not.toContain('<script>');
 		}
 	});
 
 	it('text part has no HTML tags', () => {
-		for (const m of [requestReceivedEmail(data), newRequestEmail(data, 't@e.com')]) {
+		for (const m of [
+			requestReceivedEmail(data),
+			newRequestEmail(data, 't@e.com', 'https://x.test/admin')
+		]) {
 			expect(m.text).not.toMatch(/<[a-z/][^>]*>/i);
 		}
 	});
@@ -92,5 +100,62 @@ describe('new templates', () => {
 		expect(m.subject).toBe('Your SessionX sign-in link');
 		expect(m.text).toContain('https://x.test/login/verify?token=abc');
 		expect(m.html).toContain('https://x.test/login/verify?token=abc');
+	});
+});
+
+describe('cancellation templates', () => {
+	const when = 'Monday, November 2, 2026 at 3:00 PM EST';
+
+	it('confirmation goes to the booker', () => {
+		const m = cancellationConfirmationEmail(data);
+		expect(m.to).toBe('pat@example.com');
+		expect(m.subject).toBe(`Lesson cancelled – Piano on ${when}`);
+	});
+
+	it('notice subject differs for late, and the late sentence appears only when late', () => {
+		const late = cancellationNoticeEmail(
+			data,
+			't@example.com',
+			'https://x.test/admin/lessons',
+			true,
+			24
+		);
+		const normal = cancellationNoticeEmail(
+			data,
+			't@example.com',
+			'https://x.test/admin/lessons',
+			false,
+			24
+		);
+		expect(late.to).toBe('t@example.com');
+		expect(late.subject).toBe(`Late cancellation: Sam, ${when}`);
+		expect(normal.subject).toBe(`Lesson cancelled: Sam, ${when}`);
+		expect(late.text).toContain('This cancellation is less than 24 hours before the lesson.');
+		expect(late.html).toContain('This cancellation is less than 24 hours before the lesson.');
+		expect(normal.text).not.toContain('less than 24 hours');
+		expect(normal.html).not.toContain('less than 24 hours');
+		expect(late.text).toContain('https://x.test/admin/lessons');
+	});
+
+	it('escapes names in html', () => {
+		const m = cancellationNoticeEmail(
+			{ ...data, studentName: '<b>Sam</b>' },
+			't@example.com',
+			'https://x.test/admin/lessons',
+			false,
+			24
+		);
+		expect(m.html).not.toContain('<b>Sam</b>');
+		expect(m.html).toContain('&lt;b&gt;Sam&lt;/b&gt;');
+	});
+
+	it('new request email links to the admin page, never the family manage link', () => {
+		const m = newRequestEmail(data, 't@example.com', 'https://x.test/admin');
+		for (const part of [m.text, m.html]) {
+			expect(part).toContain('https://x.test/admin');
+			expect(part).not.toContain('https://x.test/manage/abc');
+		}
+		// @ts-expect-error adminUrl is required so a family's manage link can never be the fallback.
+		expect(() => newRequestEmail(data, 't@example.com')).toBeTypeOf('function');
 	});
 });

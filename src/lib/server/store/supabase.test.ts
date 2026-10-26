@@ -1,5 +1,6 @@
 import { createClient } from '@supabase/supabase-js';
 import { describe } from 'vitest';
+import { runAccountStoreContract } from './account-contract';
 import { runAdminStoreContract } from './admin-contract';
 import { runBookingStoreContract } from './contract';
 import { demoData } from './demo-data';
@@ -40,6 +41,22 @@ async function resetToSeed() {
 		).error
 	);
 
+	// Seed students: restore names and notes; account notes cleared. Prices (cascaded away with
+	// deleted students) are reset to exactly the seed set once the lesson types exist.
+	check(
+		(
+			await db.from('students').upsert(
+				seed.students.map((st) => ({
+					id: st.id,
+					account_id: st.accountId,
+					name: st.name,
+					notes: ''
+				}))
+			)
+		).error
+	);
+	check((await db.from('accounts').update({ admin_notes: '' }).not('id', 'is', null)).error);
+
 	// Lesson types: drop non-seed ones, then restore the seed rows (active, names, prices).
 	check(
 		(
@@ -60,6 +77,19 @@ async function resetToSeed() {
 					price_cents: t.priceCents,
 					sort_order: t.sortOrder,
 					active: t.active
+				}))
+			)
+		).error
+	);
+
+	check((await db.from('student_prices').delete().not('student_id', 'is', null)).error);
+	check(
+		(
+			await db.from('student_prices').insert(
+				seed.studentPrices.map((p) => ({
+					student_id: p.studentId,
+					lesson_type_id: p.lessonTypeId,
+					price_cents: p.priceCents
 				}))
 			)
 		).error
@@ -98,6 +128,11 @@ describe.skipIf(!url || !key)('supabase store', () => {
 		resetToSeed
 	);
 	runAdminStoreContract(
+		'supabase',
+		async () => createSupabaseBookingStore(url!, key!),
+		resetToSeed
+	);
+	runAccountStoreContract(
 		'supabase',
 		async () => createSupabaseBookingStore(url!, key!),
 		resetToSeed

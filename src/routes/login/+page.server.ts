@@ -6,7 +6,7 @@ import { getAppUrl, getMailer, getStore } from '#lib/server/context.ts';
 import type { Actions, PageServerLoad } from './$types';
 
 export const load: PageServerLoad = ({ locals }) => {
-	if (locals.account) redirect(303, locals.account.role === 'admin' ? '/admin' : '/');
+	if (locals.account) redirect(303, locals.account.role === 'admin' ? '/admin' : '/account');
 };
 
 export const actions: Actions = {

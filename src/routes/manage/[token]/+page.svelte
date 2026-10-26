@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { page } from '$app/state';
 	import type { PageProps } from './$types';
 
 	let { data }: PageProps = $props();
@@ -45,6 +46,12 @@
 
 		{#if data.status === 'pending'}
 			<p class="next">You'll get an email when it's approved.</p>
+		{/if}
+
+		{#if data.canCancel}
+			<a class="cancel" href="/manage/{encodeURIComponent(page.params.token ?? '')}/cancel"
+				>Cancel this lesson</a
+			>
 		{/if}
 	</div>
 
@@ -116,6 +123,15 @@
 	.next {
 		margin: 1.25rem 0 0;
 		color: var(--muted);
+	}
+
+	.cancel {
+		display: inline-flex;
+		align-items: center;
+		min-height: var(--tap);
+		margin-top: 1rem;
+		color: var(--danger);
+		font-weight: 600;
 	}
 
 	.secondary {

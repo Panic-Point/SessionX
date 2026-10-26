@@ -6,8 +6,10 @@ import type { Actions, PageServerLoad } from './$types';
 
 export const load: PageServerLoad = async ({ locals, url }) => {
 	requireAdmin(locals.account);
-	const range: 'upcoming' | 'past' = url.searchParams.get('range') === 'past' ? 'past' : 'upcoming';
-	const unpaidOnly = url.searchParams.get('unpaid') === '1';
+	const param = url.searchParams.get('range');
+	const range: 'upcoming' | 'past' | 'late-cancels' =
+		param === 'past' || param === 'late-cancels' ? param : 'upcoming';
+	const unpaidOnly = range !== 'late-cancels' && url.searchParams.get('unpaid') === '1';
 	const lessons = await listLessons(getStore(), { range, unpaidOnly }, new Date());
 	return {
 		range,

@@ -5,14 +5,16 @@ import {
 } from './email/templates';
 import type { Mailer } from './email/mailer';
 import { formatDateTime, formatMoney } from './format';
+import { dollarsToCents, type Result } from './admin-validation';
 import {
+	AccountStoreError,
 	AdminStoreError,
 	type AdminBooking,
-	type AdminStore,
-	type BookingStore
+	type BookingFilter,
+	type AppStore
 } from './store/types';
 
-export type AdminDataStore = BookingStore & AdminStore;
+export type AdminDataStore = AppStore;
 
 export interface AdminDeps {
 	store: AdminDataStore;
@@ -56,15 +58,19 @@ export async function listPendingRequests(
 
 export async function listLessons(
 	store: AdminDataStore,
-	opts: { range: 'upcoming' | 'past'; unpaidOnly: boolean },
+	opts: { range: 'upcoming' | 'past' | 'late-cancels'; unpaidOnly: boolean },
 	now: Date
 ): Promise<AdminBookingView[]> {
 	const { timezone } = await store.getSettings();
-	const rows = await store.listBookings(
-		opts.range === 'upcoming'
-			? { statuses: ['approved'], from: now, unpaidOnly: opts.unpaidOnly, order: 'asc' }
-			: { statuses: ['approved'], to: now, unpaidOnly: opts.unpaidOnly, order: 'desc' }
-	);
+	let filter: BookingFilter;
+	if (opts.range === 'late-cancels') {
+		filter = { statuses: ['cancelled'], lateCancelOnly: true, order: 'desc' };
+	} else if (opts.range === 'upcoming') {
+		filter = { statuses: ['approved'], from: now, unpaidOnly: opts.unpaidOnly, order: 'asc' };
+	} else {
+		filter = { statuses: ['approved'], to: now, unpaidOnly: opts.unpaidOnly, order: 'desc' };
+	}
+	const rows = await store.listBookings(filter);
 	return rows.map((b) => toView(b, timezone));
 }
 
@@ -132,4 +138,148 @@ export async function setLessonPaid(
 		}
 		throw e;
 	}
+}
+
+export interface FamilyListItem {
+	id: string;
+	name: string;
+	email: string;
+	studentNames: string[];
+}
+
+export async function listFamilies(store: AdminDataStore): Promise<FamilyListItem[]> {
+	const accounts = await store.listAccounts();
+	return accounts
+		.filter((a) => a.role === 'client')
+		.map((a) => ({
+			id: a.id,
+			name: a.name,
+			email: a.email,
+			studentNames: a.students.map((s) => s.name)
+		}));
+}
+
+export interface FamilyView {
+	id: string;
+	name: string;
+	email: string;
+	adminNotes: string;
+	students: {
+		id: string;
+		name: string;
+		notes: string;
+		prices: {
+			lessonTypeId: string;
+			lessonTypeName: string;
+			listPriceLabel: string;
+			/** Dollars like "30.00"; '' when the student has no custom price. */
+			customPrice: string;
+		}[];
+	}[];
+}
+
+export async function getFamily(
+	store: AdminDataStore,
+	accountId: string
+): Promise<FamilyView | null> {
+	const account = await store.getAccount(accountId);
+	if (!account || account.role !== 'client') return null;
+	const types = [...(await store.listAllLessonTypes())].sort((a, b) => a.sortOrder - b.sortOrder);
+	return {
+		id: account.id,
+		name: account.name,
+		email: account.email,
+		adminNotes: account.adminNotes,
+		students: account.students.map((s) => ({
+			id: s.id,
+			name: s.name,
+			notes: s.notes,
+			prices: types.map((t) => {
+				const custom = s.prices.find((p) => p.lessonTypeId === t.id);
+				return {
+					lessonTypeId: t.id,
+					lessonTypeName: t.name,
+					listPriceLabel: formatMoney(t.priceCents),
+					customPrice: custom ? (custom.priceCents / 100).toFixed(2) : ''
+				};
+			})
+		}))
+	};
+}
+
+/** Validates every price first; saves nothing unless all are valid. */
+export async function saveStudentPrices(
+	store: AdminDataStore,
+	studentId: string,
+	form: Record<string, string>
+): Promise<Result<null>> {
+	const knownIds = new Set((await store.listAllLessonTypes()).map((t) => t.id));
+	const errors: Record<string, string> = {};
+	const updates: [string, number | null][] = [];
+	for (const [lessonTypeId, raw] of Object.entries(form)) {
+		if (!knownIds.has(lessonTypeId)) {
+			errors[lessonTypeId] = 'Unknown lesson type.';
+			continue;
+		}
+		if (raw.trim() === '') {
+			updates.push([lessonTypeId, null]);
+			continue;
+		}
+		const cents = dollarsToCents(raw);
+		if (cents === null || cents > 100000) {
+			errors[lessonTypeId] = 'Enter a price like 35 or 35.00.';
+			continue;
+		}
+		updates.push([lessonTypeId, cents]);
+	}
+	if (Object.keys(errors).length > 0) return { ok: false, errors };
+
+	try {
+		for (const [lessonTypeId, cents] of updates) {
+			await store.setStudentPrice(studentId, lessonTypeId, cents);
+		}
+	} catch (e) {
+		if (e instanceof AccountStoreError && e.code === 'not_found') {
+			return { ok: false, errors: { form: 'Student not found.' } };
+		}
+		throw e;
+	}
+	return { ok: true, value: null };
+}
+
+const MAX_NOTES = 2000;
+
+async function saveNotes(
+	notes: string,
+	notFound: string,
+	save: (notes: string) => Promise<void>
+): Promise<Result<null>> {
+	if (notes.trim().length > MAX_NOTES) {
+		return { ok: false, errors: { notes: 'Keep notes under 2000 characters.' } };
+	}
+	try {
+		await save(notes.trim());
+	} catch (e) {
+		if (e instanceof AccountStoreError && e.code === 'not_found') {
+			return { ok: false, errors: { form: notFound } };
+		}
+		throw e;
+	}
+	return { ok: true, value: null };
+}
+
+export function saveAccountNotes(
+	store: AdminDataStore,
+	accountId: string,
+	notes: string
+): Promise<Result<null>> {
+	return saveNotes(notes, 'Family not found.', (n) => store.updateAccountNotes(accountId, n));
+}
+
+export function saveStudentNotes(
+	store: AdminDataStore,
+	studentId: string,
+	notes: string
+): Promise<Result<null>> {
+	return saveNotes(notes, 'Student not found.', (n) => store.updateStudentNotes(studentId, n));
 }

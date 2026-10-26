@@ -6,12 +6,12 @@ import { createMailer, type Mailer } from './email/mailer';
 import { demoData } from './store/demo-data';
 import { MemoryBookingStore } from './store/memory';
 import { createSupabaseBookingStore } from './store/supabase';
-import type { AdminStore, BookingStore } from './store/types';
+import type { AppStore } from './store/types';
 
 let memoryStore: MemoryBookingStore | undefined;
 
 /** In-memory demo store only for `BOOKING_STORE=memory` or dev without Supabase; see `chooseStore`. */
-export function getStore(): BookingStore & AdminStore {
+export function getStore(): AppStore {
 	const choice = chooseStore(env, dev);
 	if (choice.kind === 'memory') {
 		memoryStore ??= new MemoryBookingStore(demoData());
