@@ -45,6 +45,7 @@ interface StoredBooking {
 	declineReason: string | null;
 	decidedAt: Date | null;
 	lateCancel: boolean;
+	gcalEventId: string | null;
 }
 
 interface StoredLoginToken {
@@ -148,7 +149,8 @@ export class MemoryBookingStore implements BookingStore, AdminStore, AccountStor
 			paidAt: null,
 			declineReason: null,
 			decidedAt: null,
-			lateCancel: false
+			lateCancel: false,
+			gcalEventId: null
 		};
 		this.bookings.push(booking);
 		return {
@@ -243,7 +245,11 @@ export class MemoryBookingStore implements BookingStore, AdminStore, AccountStor
 	}
 
 	async updateSettings(settings: StudioSettings): Promise<void> {
-		this.data.settings = { ...settings };
+		this.data.settings = { ...settings, gcalBusyCalendarIds: [...settings.gcalBusyCalendarIds] };
+	}
+
+	async setCalendarEventId(bookingId: string, eventId: string | null): Promise<void> {
+		this.requireBooking(bookingId).gcalEventId = eventId;
 	}
 
 	async replaceWeeklyHours(hours: WeeklyHours[]): Promise<void> {
@@ -367,7 +373,8 @@ export class MemoryBookingStore implements BookingStore, AdminStore, AccountStor
 			paidAt: null,
 			declineReason: null,
 			decidedAt: null,
-			lateCancel: false
+			lateCancel: false,
+			gcalEventId: null
 		};
 		this.bookings.push(booking);
 		return {
@@ -506,7 +513,8 @@ export class MemoryBookingStore implements BookingStore, AdminStore, AccountStor
 			note: booking.note,
 			declineReason: booking.declineReason,
 			lateCancel: booking.lateCancel,
-			manageToken: booking.manageToken
+			manageToken: booking.manageToken,
+			gcalEventId: booking.gcalEventId
 		};
 	}
 }

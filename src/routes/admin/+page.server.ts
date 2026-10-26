@@ -1,7 +1,7 @@
 import { fail } from '@sveltejs/kit';
 import { decideRequest, listPendingRequests } from '#lib/server/admin-service.ts';
 import { formString, requireAdmin } from '#lib/server/admin-actions.ts';
-import { getAppUrl, getMailer, getStore } from '#lib/server/context.ts';
+import { getAppUrl, getCalendar, getMailer, getStore } from '#lib/server/context.ts';
 import type { Actions, PageServerLoad } from './$types';
 
 export const load: PageServerLoad = async ({ locals }) => {
@@ -27,7 +27,7 @@ async function decide(locals: App.Locals, request: Request, decision: 'approved'
 	const data = await request.formData();
 	const id = formString(data, 'id');
 	const result = await decideRequest(
-		{ store: getStore(), mailer: getMailer(), appUrl: getAppUrl() },
+		{ store: getStore(), mailer: getMailer(), appUrl: getAppUrl(), calendar: getCalendar() },
 		id,
 		decision,
 		formString(data, 'reason'),

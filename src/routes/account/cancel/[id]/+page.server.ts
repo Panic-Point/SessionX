@@ -2,7 +2,7 @@ import { error, fail, redirect } from '@sveltejs/kit';
 import { requireAccount } from '#lib/server/account-guard.ts';
 import { cancelLesson, getCancelView } from '#lib/server/account-service.ts';
 import { readShownLate, toCancelPageData } from '#lib/server/cancel-page.ts';
-import { getAppUrl, getMailer, getStore } from '#lib/server/context.ts';
+import { getAppUrl, getCalendar, getMailer, getStore } from '#lib/server/context.ts';
 import type { CancelTarget } from '#lib/server/store/types.ts';
 import type { Actions, PageServerLoad } from './$types';
 
@@ -21,7 +21,7 @@ export const actions: Actions = {
 		const account = requireAccount(locals.account);
 		const target: CancelTarget = { kind: 'account', bookingId: params.id, accountId: account.id };
 		const result = await cancelLesson(
-			{ store: getStore(), mailer: getMailer(), appUrl: getAppUrl() },
+			{ store: getStore(), mailer: getMailer(), appUrl: getAppUrl(), calendar: getCalendar() },
 			target,
 			new Date(),
 			readShownLate(await request.formData())

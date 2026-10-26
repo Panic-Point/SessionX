@@ -5,9 +5,11 @@
 	let { data, form }: PageProps = $props();
 
 	let submitting = $state(false);
+	let checking = $state(false);
 
 	const values = $derived(form?.values ?? data.values);
 	const errors: Partial<Record<string, string>> = $derived(form?.errors ?? {});
+	const check = $derived(form?.check);
 
 	const US_ZONES = [
 		'America/New_York',
@@ -36,7 +38,7 @@
 
 {#if form?.saved}
 	<p class="banner" role="status">Settings saved.</p>
-{:else if form && !form.saved}
+{:else if form?.saved === false}
 	<p class="banner bad" role="alert">Please fix the highlighted fields.</p>
 {/if}
 
@@ -62,6 +64,7 @@
 <form
 	class="card"
 	method="POST"
+	action="?/save"
 	novalidate
 	use:enhance={() => {
 		submitting = true;
@@ -173,14 +176,137 @@
 		{/if}
 	</div>
 
+	<fieldset class="calendar" aria-labelledby="calendar-heading">
+		<h2 id="calendar-heading">Google Calendar</h2>
+		{#if data.calendar.serviceAccountEmail}
+			<p class="share">
+				Share your calendars with: <strong>{data.calendar.serviceAccountEmail}</strong>
+			</p>
+		{:else if data.calendar.configError}
+			<p class="banner bad" role="alert">
+				Google Calendar is turned off because the server setting has a problem: {data.calendar
+					.configError}. See
+				<a
+					href="https://github.com/Panic-Point/SessionX/blob/main/docs/google-calendar.md"
+					target="_blank"
+					rel="noopener">the Google Calendar guide</a
+				>.
+			</p>
+		{:else}
+			<p class="hint not-configured">
+				Google Calendar is not set up on the server yet, so these calendars are saved but not used.
+				See <a
+					href="https://github.com/Panic-Point/SessionX/blob/main/docs/google-calendar.md"
+					target="_blank"
+					rel="noopener">the Google Calendar guide</a
+				> to turn it on.
+			</p>
+		{/if}
+
+		<div class="field">
+			<label for="gcalWriteCalendarId">
+				Lesson calendar <span class="optional">(optional)</span>
+			</label>
+			<input
+				id="gcalWriteCalendarId"
+				name="gcalWriteCalendarId"
+				autocomplete="off"
+				spellcheck="false"
+				maxlength="254"
+				value={values.gcalWriteCalendarId}
+				aria-invalid={errors.gcalWriteCalendarId ? 'true' : undefined}
+				aria-describedby={describedBy('gcalWriteCalendarId', true)}
+			/>
+			<p class="hint" id="gcalWriteCalendarId-hint">
+				Approved lessons are added here. Use the calendar ID, usually an email address.
+			</p>
+			{#if errors.gcalWriteCalendarId}
+				<p class="error" id="gcalWriteCalendarId-error">{errors.gcalWriteCalendarId}</p>
+			{/if}
+		</div>
+
+		<div class="field">
+			<label for="gcalBusyCalendarIds">
+				Busy calendars <span class="optional">(optional)</span>
+			</label>
+			<textarea
+				id="gcalBusyCalendarIds"
+				name="gcalBusyCalendarIds"
+				rows="3"
+				spellcheck="false"
+				value={values.gcalBusyCalendarIds}
+				aria-invalid={errors.gcalBusyCalendarIds ? 'true' : undefined}
+				aria-describedby={describedBy('gcalBusyCalendarIds', true)}></textarea>
+			<p class="hint" id="gcalBusyCalendarIds-hint">
+				Times that are busy on these calendars can't be booked. One calendar ID per line, up to 10.
+			</p>
+			{#if errors.gcalBusyCalendarIds}
+				<p class="error" id="gcalBusyCalendarIds-error">{errors.gcalBusyCalendarIds}</p>
+			{/if}
+		</div>
+	</fieldset>
+
 	<button class="button" type="submit" disabled={submitting}>
 		{submitting ? 'Saving…' : 'Save settings'}
+	</button>
+</form>
+
+<form
+	class="card"
+	method="POST"
+	action="?/checkConnection"
+	aria-labelledby="check-heading"
+	use:enhance={() => {
+		checking = true;
+		return async ({ update }) => {
+			await update({ reset: false });
+			checking = false;
+		};
+	}}
+>
+	<h2 id="check-heading">Check connection</h2>
+	<p class="hint intro">Tries to read each saved calendar. Save any changes first.</p>
+	{#if check}
+		<div class={check.ok ? 'banner' : 'banner bad'} role={check.ok ? 'status' : 'alert'}>
+			<ul class="lines">
+				{#each check.lines as line, i (i)}
+					<li>{line}</li>
+				{/each}
+			</ul>
+		</div>
+	{/if}
+	<button class="button secondary" type="submit" disabled={checking}>
+		{checking ? 'Checking…' : 'Check connection'}
 	</button>
 </form>
 
 <style>
 	form {
 		max-width: 560px;
+	}
+
+	.calendar {
+		margin: 0.5rem 0 1rem;
+		padding: 1rem 0 0;
+		border: 0;
+		border-top: 1px solid var(--border);
+		min-width: 0;
+	}
+
+	.share {
+		margin: 0 0 1rem;
+		overflow-wrap: anywhere;
+	}
+
+	.not-configured,
+	.intro {
+		margin: 0 0 1rem;
+	}
+
+	.lines {
+		margin: 0;
+		padding-left: 1.25rem;
+		overflow-wrap: anywhere;
 	}
 
 	.optional {

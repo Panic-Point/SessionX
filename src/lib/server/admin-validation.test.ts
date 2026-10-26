@@ -37,9 +37,75 @@ describe('validateSettings', () => {
 				allowSameDay: true,
 				cancelCutoffHours: 48,
 				cancellationPolicyText: 'Be kind.',
-				adminEmail: 'teacher@example.com'
+				adminEmail: 'teacher@example.com',
+				gcalWriteCalendarId: null,
+				gcalBusyCalendarIds: []
 			}
 		});
+	});
+
+	it('blank calendar fields are null and empty', () => {
+		const r = validateSettings({
+			...goodSettings,
+			gcalWriteCalendarId: '   ',
+			gcalBusyCalendarIds: ' \n , \n'
+		});
+		expect(r.ok && r.value.gcalWriteCalendarId).toBeNull();
+		expect(r.ok && r.value.gcalBusyCalendarIds).toEqual([]);
+	});
+
+	it('trims the lesson calendar and parses, trims, and dedupes busy calendars', () => {
+		const r = validateSettings({
+			...goodSettings,
+			gcalWriteCalendarId: '  teacher@gmail.com ',
+			gcalBusyCalendarIds: 'a@x.com\n b@x.com , c@x.com\r\n\na@x.com,'
+		});
+		expect(r.ok && r.value.gcalWriteCalendarId).toBe('teacher@gmail.com');
+		expect(r.ok && r.value.gcalBusyCalendarIds).toEqual(['a@x.com', 'b@x.com', 'c@x.com']);
+	});
+
+	it('allows 10 busy calendars and rejects 11', () => {
+		const ids = (n: number) => Array.from({ length: n }, (_, i) => `c${i}@x.com`).join('\n');
+		expect(validateSettings({ ...goodSettings, gcalBusyCalendarIds: ids(10) }).ok).toBe(true);
+		const e = errorsOf(validateSettings({ ...goodSettings, gcalBusyCalendarIds: ids(11) }));
+		expect(e.gcalBusyCalendarIds).toBe('Use at most 10 calendars.');
+	});
+
+	it('rejects calendar IDs longer than 254 characters', () => {
+		const long = 'x'.repeat(255);
+		const ok = 'x'.repeat(254);
+		expect(
+			validateSettings({ ...goodSettings, gcalWriteCalendarId: ok, gcalBusyCalendarIds: ok }).ok
+		).toBe(true);
+		const e = errorsOf(
+			validateSettings({
+				...goodSettings,
+				gcalWriteCalendarId: long,
+				gcalBusyCalendarIds: `a@x.com\n${long}`
+			})
+		);
+		expect(e.gcalWriteCalendarId).toBe('Enter a calendar ID (usually an email address).');
+		expect(e.gcalBusyCalendarIds).toBe('Each calendar ID must be 254 characters or fewer.');
+	});
+
+	it('rejects the calendar ID "primary" in any case, for both fields', () => {
+		const msg =
+			'Use the calendar ID from Google Calendar → Settings → Integrate calendar (your Gmail address for your main calendar), not "primary".';
+		const e = errorsOf(
+			validateSettings({
+				...goodSettings,
+				gcalWriteCalendarId: 'Primary',
+				gcalBusyCalendarIds: 'a@x.com\nPRIMARY'
+			})
+		);
+		expect(e.gcalWriteCalendarId).toBe(msg);
+		expect(e.gcalBusyCalendarIds).toBe(msg);
+		const ok = validateSettings({
+			...goodSettings,
+			gcalWriteCalendarId: 'primary@x.com',
+			gcalBusyCalendarIds: 'primary@x.com'
+		});
+		expect(ok.ok).toBe(true);
 	});
 
 	it('blank email is null and missing checkbox is false', () => {

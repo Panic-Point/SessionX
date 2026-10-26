@@ -1,7 +1,8 @@
 import { fail } from '@sveltejs/kit';
 import { validateSettings } from '#lib/server/admin-validation.ts';
 import { formString, requireAdmin } from '#lib/server/admin-actions.ts';
-import { getStore } from '#lib/server/context.ts';
+import { checkCalendarConnection } from '#lib/server/calendar/check.ts';
+import { getCalendar, getCalendarStatus, getStore } from '#lib/server/context.ts';
 import type { Actions, PageServerLoad } from './$types';
 
 const FIELDS = [
@@ -13,7 +14,9 @@ const FIELDS = [
 	'allowSameDay',
 	'cancelCutoffHours',
 	'cancellationPolicyText',
-	'adminEmail'
+	'adminEmail',
+	'gcalWriteCalendarId',
+	'gcalBusyCalendarIds'
 ] as const;
 
 type SettingsValues = Record<(typeof FIELDS)[number], string>;
@@ -30,13 +33,17 @@ export const load: PageServerLoad = async ({ locals }) => {
 		allowSameDay: s.allowSameDay ? 'on' : '',
 		cancelCutoffHours: String(s.cancelCutoffHours),
 		cancellationPolicyText: s.cancellationPolicyText,
-		adminEmail: s.adminEmail ?? ''
+		adminEmail: s.adminEmail ?? '',
+		gcalWriteCalendarId: s.gcalWriteCalendarId ?? '',
+		gcalBusyCalendarIds: s.gcalBusyCalendarIds.join('\n')
 	};
-	return { values };
+	// Only the public service-account email and a secret-free error: never the key or raw env.
+	const { serviceAccountEmail, configError } = getCalendarStatus();
+	return { values, calendar: { serviceAccountEmail, configError } };
 };
 
 export const actions: Actions = {
-	default: async ({ locals, request }) => {
+	save: async ({ locals, request }) => {
 		requireAdmin(locals.account);
 		const data = await request.formData();
 		const values = Object.fromEntries(
@@ -47,5 +54,12 @@ export const actions: Actions = {
 		if (!result.ok) return fail(400, { values, errors: result.errors, saved: false });
 		await getStore().updateSettings(result.value);
 		return { values: null, errors: {}, saved: true };
+	},
+
+	/** Checks the saved calendars (not unsaved form edits) against Google. */
+	checkConnection: async ({ locals }) => {
+		requireAdmin(locals.account);
+		const settings = await getStore().getSettings();
+		return { check: await checkCalendarConnection(getCalendar(), settings, new Date()) };
 	}
 };

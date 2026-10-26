@@ -3,6 +3,7 @@ import {
 	cancellationNoticeEmail,
 	type BookingEmailData
 } from './email/templates';
+import { removeLessonFromCalendar } from './calendar/sync';
 import type { EmailMessage } from './email/mailer';
 import { formatDateTime, formatMoney } from './format';
 import type { ServiceDeps } from './booking-service';
@@ -245,6 +246,11 @@ export async function cancelLesson(
 		}
 	} catch (e) {
 		console.error('Failed to build cancellation emails', e);
+	}
+	try {
+		await removeLessonFromCalendar(deps, existing, settings);
+	} catch (e) {
+		console.error('Failed to remove lesson from Google Calendar', e);
 	}
 	return { ok: true, late };
 }

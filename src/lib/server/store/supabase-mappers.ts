@@ -26,6 +26,8 @@ export interface SettingsRow {
 	cancel_cutoff_hours: number;
 	cancellation_policy_text: string;
 	admin_email: string | null;
+	gcal_write_calendar_id: string | null;
+	gcal_busy_calendar_ids: string[];
 }
 
 export interface WeeklyHoursRow {
@@ -84,6 +86,7 @@ export interface AdminBookingRow {
 	decline_reason: string | null;
 	late_cancel: boolean;
 	manage_token: string;
+	gcal_event_id: string | null;
 	lesson_types: { name: string; duration_min: number } | null;
 	students: { name: string; accounts: { name: string; email: string } | null } | null;
 }
@@ -101,7 +104,9 @@ export function mapSettingsRow(row: SettingsRow): StudioSettings {
 		allowSameDay: row.allow_same_day,
 		cancelCutoffHours: row.cancel_cutoff_hours,
 		cancellationPolicyText: row.cancellation_policy_text,
-		adminEmail: row.admin_email
+		adminEmail: row.admin_email,
+		gcalWriteCalendarId: row.gcal_write_calendar_id,
+		gcalBusyCalendarIds: row.gcal_busy_calendar_ids
 	};
 }
 
@@ -188,7 +193,8 @@ export function mapAdminBookingRow(row: AdminBookingRow): AdminBooking {
 		note: row.note,
 		declineReason: row.decline_reason,
 		lateCancel: row.late_cancel,
-		manageToken: row.manage_token
+		manageToken: row.manage_token,
+		gcalEventId: row.gcal_event_id
 	};
 }
 

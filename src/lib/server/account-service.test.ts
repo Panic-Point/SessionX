@@ -11,6 +11,7 @@ import {
 } from './account-service';
 import type { EmailMessage, Mailer } from './email/mailer';
 import { MemoryBookingStore } from './store/memory';
+import { fakeCalendar } from './calendar/fake-client.test-helpers';
 
 const now = DateTime.fromISO('2026-11-01T12:00', { zone: 'America/New_York' }).toJSDate();
 const LESSON_30 = '11111111-0000-0000-0000-000000000030';
@@ -255,5 +256,60 @@ describe('cancelLesson', () => {
 		expect(r.ok).toBe(true);
 		expect(spy).toHaveBeenCalled();
 		spy.mockRestore();
+	});
+});
+
+describe('cancelLesson google calendar', () => {
+	async function calSetup() {
+		const { store, deps } = setup();
+		const settings = await store.getSettings();
+		await store.updateSettings({ ...settings, gcalWriteCalendarId: 'teacher@example.com' });
+		const calendar = fakeCalendar();
+		return { store, calendar, deps: { ...deps, calendar } };
+	}
+	const target = (id: string) => ({ kind: 'account' as const, bookingId: id, accountId: PAT });
+
+	it('cancel deletes event and clears id', async () => {
+		const { store, calendar, deps } = await calSetup();
+		const b = await book(store, AVA, hoursFromNow(72), true);
+		await store.setCalendarEventId(b.id, 'evt-9');
+		const r = await cancelLesson(deps, target(b.id), now);
+		expect(r).toEqual({ ok: true, late: false });
+		expect(calendar.deleted).toEqual([{ calendarId: 'teacher@example.com', eventId: 'evt-9' }]);
+		expect((await store.getBooking(b.id))!.gcalEventId).toBeNull();
+	});
+
+	it('cancel clears event id even if Google says gone', async () => {
+		// The real client resolves for 404 and 410, so the fake simply resolves.
+		const { store, calendar, deps } = await calSetup();
+		const b = await book(store, AVA, hoursFromNow(72), true);
+		await store.setCalendarEventId(b.id, 'evt-gone');
+		await cancelLesson(deps, target(b.id), now);
+		expect(calendar.deleted).toHaveLength(1);
+		expect((await store.getBooking(b.id))!.gcalEventId).toBeNull();
+	});
+
+	it('cancel keeps id and succeeds when delete fails', async () => {
+		const err = vi.spyOn(console, 'error').mockImplementation(() => {});
+		const { store, calendar, deps } = await calSetup();
+		calendar.fail.delete = true;
+		const b = await book(store, AVA, hoursFromNow(72), true);
+		await store.setCalendarEventId(b.id, 'evt-9');
+		const r = await cancelLesson(deps, target(b.id), now);
+		expect(r).toEqual({ ok: true, late: false });
+		expect(err).toHaveBeenCalled();
+		const saved = (await store.getBooking(b.id))!;
+		expect(saved.status).toBe('cancelled');
+		expect(saved.gcalEventId).toBe('evt-9');
+		err.mockRestore();
+	});
+
+	it('cancel of pending request never touches calendar', async () => {
+		const { store, calendar, deps } = await calSetup();
+		const b = await book(store, AVA, hoursFromNow(72));
+		const r = await cancelLesson(deps, target(b.id), now);
+		expect(r.ok).toBe(true);
+		expect(calendar.deleted).toEqual([]);
+		expect(calendar.created).toEqual([]);
 	});
 });

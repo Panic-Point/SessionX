@@ -8,6 +8,8 @@ const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const TIME_PATTERN = /^([01]\d|2[0-3]):[0-5]\d$/;
 const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 const SLOT_INCREMENTS = [5, 10, 15, 20, 30, 60];
+const MAX_CALENDAR_ID = 254;
+const MAX_BUSY_CALENDARS = 10;
 
 const MSG_TIME = 'Use a time like 15:00.';
 const MSG_ORDER = 'End time must be after start time.';
@@ -38,6 +40,10 @@ export function dollarsToCents(s: string): number | null {
 	return Number(m[1]) * 100 + Number((m[2] ?? '').padEnd(2, '0'));
 }
 
+const MSG_PRIMARY =
+	'Use the calendar ID from Google Calendar → Settings → Integrate calendar (your Gmail address for your main calendar), not "primary".';
+const isPrimary = (id: string) => id.toLowerCase() === 'primary';
+
 export function validateSettings(form: Record<string, string | undefined>): Result<StudioSettings> {
 	const errors: Record<string, string> = {};
 	const timezone = (form.timezone ?? '').trim();
@@ -63,6 +69,21 @@ export function validateSettings(form: Record<string, string | undefined>): Resu
 	const email = (form.adminEmail ?? '').trim();
 	if (email && !EMAIL_PATTERN.test(email)) errors.adminEmail = 'Enter a valid email address.';
 
+	const writeCalendar = (form.gcalWriteCalendarId ?? '').trim();
+	if (writeCalendar.length > MAX_CALENDAR_ID) {
+		errors.gcalWriteCalendarId = 'Enter a calendar ID (usually an email address).';
+	} else if (isPrimary(writeCalendar)) {
+		errors.gcalWriteCalendarId = MSG_PRIMARY;
+	}
+	const busyCalendars = parseCalendarList(form.gcalBusyCalendarIds ?? '');
+	if (busyCalendars.length > MAX_BUSY_CALENDARS) {
+		errors.gcalBusyCalendarIds = 'Use at most 10 calendars.';
+	} else if (busyCalendars.some((id) => id.length > MAX_CALENDAR_ID)) {
+		errors.gcalBusyCalendarIds = 'Each calendar ID must be 254 characters or fewer.';
+	} else if (busyCalendars.some(isPrimary)) {
+		errors.gcalBusyCalendarIds = MSG_PRIMARY;
+	}
+
 	return finish(errors, () => ({
 		timezone,
 		minNoticeHours: minNotice!,
@@ -72,8 +93,19 @@ export function validateSettings(form: Record<string, string | undefined>): Resu
 		allowSameDay: form.allowSameDay === 'on',
 		cancelCutoffHours: cutoff!,
 		cancellationPolicyText: policy,
-		adminEmail: email || null
+		adminEmail: email || null,
+		gcalWriteCalendarId: writeCalendar || null,
+		gcalBusyCalendarIds: busyCalendars
 	}));
+}
+
+/** Calendar IDs from a textarea: one per line or comma-separated; trimmed, blanks dropped, deduped. */
+function parseCalendarList(raw: string): string[] {
+	const ids = raw
+		.split(/[\n,]/)
+		.map((s) => s.trim())
+		.filter(Boolean);
+	return [...new Set(ids)];
 }
 
 /** Format and order error for one range, or null when it is well formed. */

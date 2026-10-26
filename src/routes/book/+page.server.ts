@@ -10,7 +10,7 @@ import {
 	type StudentChoice
 } from '#lib/server/booking-service.ts';
 import { pickSelectedDate } from '#lib/booking-page.ts';
-import { getStore } from '#lib/server/context.ts';
+import { getCalendar, getStore } from '#lib/server/context.ts';
 import type { AppStore } from '#lib/server/store/types.ts';
 import type { Actions, PageServerLoad } from './$types';
 
@@ -89,7 +89,7 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 			? requested
 			: currentMonth;
 
-	const availability = await getMonthAvailability(store, typeId, month, now, choice);
+	const availability = await getMonthAvailability(store, typeId, month, now, choice, getCalendar());
 	if (!availability) {
 		redirect(303, student ? `/book?${new URLSearchParams({ student: student.id })}` : '/book');
 	}

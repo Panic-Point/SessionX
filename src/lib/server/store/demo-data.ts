@@ -44,7 +44,9 @@ export function demoData(): DemoData {
 			cancelCutoffHours: 24,
 			cancellationPolicyText:
 				'Please cancel at least 24 hours before your lesson. Late cancellations may still be charged.',
-			adminEmail: 'admin@sessionx.local'
+			adminEmail: 'admin@sessionx.local',
+			gcalWriteCalendarId: null,
+			gcalBusyCalendarIds: []
 		},
 		weeklyHours: [...weekdays, { weekday: 6, start: '09:00', end: '13:00' }],
 		dateOverrides: [],
