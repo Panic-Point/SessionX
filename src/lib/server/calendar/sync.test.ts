@@ -64,15 +64,30 @@ describe('calendarBusy', () => {
 });
 
 describe('lessonEvent', () => {
-	it('has summary, times, and admin link but no manage link', () => {
+	it('has exact summary, times, description, and no family manage link', () => {
 		const e = lessonEvent(booking, settings, 'https://example.test');
-		expect(e.summary).toBe('30 minute lesson: Ava');
+		expect(e.summary).toBe('30 minute lesson – Ava');
 		expect(e.start).toEqual(booking.startsAt);
 		expect(e.end).toEqual(booking.endsAt);
 		expect(e.timeZone).toBe(settings.timezone);
-		expect(e.description).toContain('https://example.test/admin/lessons');
-		expect(e.description).toContain('Pat Parent');
-		expect(e.description).not.toContain('manage');
+		expect(e.description).toBe(
+			[
+				'Booked by Pat Parent (parent@example.com)',
+				'Bring the red book',
+				'Manage in SessionX: https://example.test/admin/lessons'
+			].join('\n')
+		);
+		expect(e.description).not.toContain('/manage/');
 		expect(e.description).not.toContain('secret-token');
+	});
+
+	it('omits the note line when the note is empty', () => {
+		const e = lessonEvent({ ...booking, note: '' }, settings, 'https://example.test');
+		expect(e.description).toBe(
+			[
+				'Booked by Pat Parent (parent@example.com)',
+				'Manage in SessionX: https://example.test/admin/lessons'
+			].join('\n')
+		);
 	});
 });

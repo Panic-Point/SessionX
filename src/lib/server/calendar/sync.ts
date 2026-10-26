@@ -1,5 +1,4 @@
 import type { Interval } from '../availability';
-import { formatDateTime } from '../format';
 import type { AdminBooking, AppStore, StudioSettings } from '../store/types';
 import type { CalendarClient, CalendarEventInput } from './types';
 
@@ -25,15 +24,11 @@ export function lessonEvent(
 	settings: StudioSettings,
 	appUrl: string
 ): CalendarEventInput {
-	const lines = [
-		`Family: ${b.accountName} (${b.accountEmail})`,
-		`Student: ${b.studentName}`,
-		`When: ${formatDateTime(b.startsAt, settings.timezone)}`
-	];
-	if (b.note) lines.push(`Note: ${b.note}`);
-	lines.push(`Admin: ${appUrl}/admin/lessons`);
+	const lines = [`Booked by ${b.accountName} (${b.accountEmail})`];
+	if (b.note) lines.push(b.note);
+	lines.push(`Manage in SessionX: ${appUrl}/admin/lessons`);
 	return {
-		summary: `${b.lessonTypeName}: ${b.studentName}`,
+		summary: `${b.lessonTypeName} – ${b.studentName}`,
 		description: lines.join('\n'),
 		start: b.startsAt,
 		end: b.endsAt,
