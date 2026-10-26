@@ -2,6 +2,8 @@ import { isHttpError, isRedirect } from '@sveltejs/kit';
 import { describe, expect, it } from 'vitest';
 import type { Account } from '#lib/server/store/types.ts';
 import { load as requestsLoad } from './+page.server';
+import { actions as familyActions, load as familyLoad } from './families/[id]/+page.server';
+import { load as familiesLoad } from './families/+page.server';
 import { load as hoursLoad } from './hours/+page.server';
 import { load as lessonsLoad } from './lessons/+page.server';
 import { load as lessonTypesLoad } from './lesson-types/+page.server';
@@ -14,13 +16,19 @@ const loads = {
 	'/admin/hours': hoursLoad,
 	'/admin/lessons': lessonsLoad,
 	'/admin/lesson-types': lessonTypesLoad,
-	'/admin/settings': settingsLoad
+	'/admin/settings': settingsLoad,
+	'/admin/families': familiesLoad,
+	'/admin/families/f1': familyLoad
 } as const;
 
 const client: Account = { id: 'c1', name: 'Pat', email: 'pat@example.com', role: 'client' };
 
 async function run(route: keyof typeof loads, account: Account | null): Promise<unknown> {
-	const event = { locals: { account }, url: new URL(`http://localhost${route}`) };
+	const event = {
+		locals: { account },
+		url: new URL(`http://localhost${route}`),
+		params: { id: 'f1' }
+	};
 	try {
 		// eslint-disable-next-line @typescript-eslint/no-explicit-any
 		return await (loads[route] as any)(event);
@@ -46,4 +54,26 @@ describe('admin page loads', () => {
 			expect(result).toMatchObject({ status: 403 });
 		}
 	);
+});
+
+describe('admin family actions', () => {
+	const names = ['accountNotes', 'studentNotes', 'prices'] as const;
+	function event(account: Account | null) {
+		return {
+			locals: { account },
+			request: new Request('http://localhost/', { method: 'POST', body: new FormData() }),
+			params: { id: 'f1' }
+		};
+	}
+	it.each(names)('%s redirects a signed-out visitor', async (name) => {
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
+		const result = await (familyActions[name] as any)(event(null)).catch((e: unknown) => e);
+		expect(isRedirect(result)).toBe(true);
+	});
+	it.each(names)('%s forbids a client', async (name) => {
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
+		const result = await (familyActions[name] as any)(event(client)).catch((e: unknown) => e);
+		expect(isHttpError(result)).toBe(true);
+		expect(result).toMatchObject({ status: 403 });
+	});
 });

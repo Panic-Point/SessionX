@@ -7,6 +7,7 @@
 	const links = [
 		{ href: '/admin', label: 'Requests' },
 		{ href: '/admin/lessons', label: 'Lessons' },
+		{ href: '/admin/families', label: 'Families' },
 		{ href: '/admin/hours', label: 'Hours' },
 		{ href: '/admin/lesson-types', label: 'Lesson types' },
 		{ href: '/admin/settings', label: 'Settings' }
