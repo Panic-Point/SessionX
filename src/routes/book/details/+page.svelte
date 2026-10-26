@@ -10,11 +10,17 @@
 		form?.values ?? { accountName: '', email: '', studentName: '', note: '' }
 	);
 	const errors: Partial<Record<string, string>> = $derived(form?.errors ?? {});
+	// Signed-in families see form errors (account limits) as a notice in place of the form. A guest's
+	// form error (the spam check) keeps the form so they can retry.
+	const formNotice = $derived(data.student ? errors.form : undefined);
 	const unavailable = $derived(!data.available || Boolean(errors.startsAt));
 </script>
 
 <svelte:head>
 	<title>Your details · SessionX</title>
+	{#if data.turnstileSiteKey}
+		<script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>
+	{/if}
 </svelte:head>
 
 <main>
@@ -29,9 +35,9 @@
 		{/if}
 	</section>
 
-	{#if errors.form}
+	{#if formNotice}
 		<div class="notice" role="alert">
-			<p>{errors.form}</p>
+			<p>{formNotice}</p>
 			<a class="button" href="/account">See your lessons</a>
 		</div>
 	{:else if unavailable}
@@ -47,6 +53,8 @@
 				submitting = true;
 				return async ({ update }) => {
 					await update({ reset: false });
+					// A Turnstile token is single-use; get a fresh one for any retry.
+					(window as { turnstile?: { reset: () => void } }).turnstile?.reset();
 					submitting = false;
 				};
 			}}
@@ -63,6 +71,9 @@
 					</p>
 				{/if}
 			{:else}
+				{#if errors.form}
+					<p class="error form-error" role="alert">{errors.form}</p>
+				{/if}
 				<div class="field">
 					<label for="accountName">Your name</label>
 					<input
@@ -115,6 +126,9 @@
 						<p class="error" id="studentName-error">{errors.studentName}</p>
 					{/if}
 				</div>
+				{#if data.turnstileSiteKey}
+					<div class="cf-turnstile" data-sitekey={data.turnstileSiteKey}></div>
+				{/if}
 			{/if}
 
 			<div class="field">
