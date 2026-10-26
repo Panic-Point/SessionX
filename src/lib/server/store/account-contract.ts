@@ -249,6 +249,18 @@ export function runAccountStoreContract(
 			expect((await store.getBooking(created.bookingId))?.lateCancel).toBe(false);
 		});
 
+		it('cancelling a declined booking is not_cancellable', async () => {
+			const store = await makeStore();
+			const created = await store.requestAccountBooking(booking(), NOW);
+			await store.decideBooking(created.bookingId, 'declined', null, NOW);
+			const target = { kind: 'account', bookingId: created.bookingId, accountId: PAT } as const;
+			expect(await accountCode(store.cancelBooking(target, false, NOW))).toBe('not_cancellable');
+			expect(await store.getBooking(created.bookingId)).toMatchObject({
+				status: 'declined',
+				lateCancel: false
+			});
+		});
+
 		it('cancelling a past booking is not_cancellable', async () => {
 			const store = await makeStore();
 			const created = await store.requestAccountBooking(booking(), NOW);

@@ -31,3 +31,14 @@ export function toCancelPageData(view: CancelView): CancelPageData {
 		policyText: view.policyText
 	};
 }
+
+/**
+ * The cancel form's hidden `shownLate` field: whether the page showed the late warning.
+ * Undefined when absent or malformed, so the lateness check is skipped rather than guessed.
+ */
+export function readShownLate(data: FormData): boolean | undefined {
+	const value = data.get('shownLate');
+	if (value === 'true') return true;
+	if (value === 'false') return false;
+	return undefined;
+}

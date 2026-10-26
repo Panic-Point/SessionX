@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { enhance } from '$app/forms';
+	import { invalidateAll } from '$app/navigation';
 
 	interface Props {
 		lesson: {
@@ -72,12 +73,16 @@
 				method="POST"
 				use:enhance={() => {
 					submitting = true;
-					return async ({ update }) => {
+					return async ({ result, update }) => {
 						await update();
+						// A failed cancel (for example, lateness changed) must show the current warning.
+						if (result.type === 'failure') await invalidateAll();
 						submitting = false;
 					};
 				}}
 			>
+				<!-- Lets the server refuse to cancel if lateness changed since this page was shown. -->
+				<input type="hidden" name="shownLate" value={lesson.lateWarning ? 'true' : 'false'} />
 				<button class="button danger" type="submit" disabled={submitting}>
 					{submitting ? 'Cancelling…' : 'Cancel lesson'}
 				</button>

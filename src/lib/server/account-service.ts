@@ -170,16 +170,31 @@ export async function getCancelView(
 	};
 }
 
+export const LATE_CHANGED_MESSAGE =
+	'Please review: this cancellation is now inside the cancellation policy.';
+
+export type CancelResult =
+	{ ok: true; late: boolean } | { ok: false; message: string; lateChanged?: true };
+
+/**
+ * `expectedLate` is whether the page showed the late warning. Lateness is decided at submit, so
+ * when it no longer matches what the family saw, nothing is cancelled and the page re-renders
+ * with the current warning.
+ */
 export async function cancelLesson(
 	deps: ServiceDeps & { store: AppStore },
 	target: CancelTarget,
-	now: Date
-): Promise<{ ok: true; late: boolean } | { ok: false; message: string }> {
+	now: Date,
+	expectedLate?: boolean
+): Promise<CancelResult> {
 	const { store, mailer, appUrl } = deps;
 	const existing = await store.getBookingByTarget(target);
 	if (!existing) return { ok: false, message: 'Booking not found.' };
 	const settings = await store.getSettings();
 	const late = isLateCancel(existing.status, existing.startsAt, now, settings.cancelCutoffHours);
+	if (expectedLate !== undefined && expectedLate !== late) {
+		return { ok: false, message: LATE_CHANGED_MESSAGE, lateChanged: true };
+	}
 
 	let booking: AdminBooking;
 	try {

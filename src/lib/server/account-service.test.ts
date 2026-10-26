@@ -210,6 +210,43 @@ describe('cancelLesson', () => {
 		expect(sent).toEqual([]);
 	});
 
+	it('does not cancel when lateness changed since the page was shown', async () => {
+		const { deps, store, sent } = setup();
+		const b = await book(store, AVA, hoursFromNow(23 + 59 / 60), true);
+		const target = { kind: 'account', bookingId: b.id, accountId: PAT } as const;
+		const r = await cancelLesson(deps, target, now, false);
+		expect(r).toEqual({
+			ok: false,
+			message: 'Please review: this cancellation is now inside the cancellation policy.',
+			lateChanged: true
+		});
+		expect((await store.getBookingByTarget(target))!.status).toBe('approved');
+		expect(sent).toEqual([]);
+	});
+
+	it('cancels normally when the shown lateness still holds', async () => {
+		const { deps, store, sent } = setup();
+		const late = await book(store, AVA, hoursFromNow(5), true);
+		const onTime = await book(store, BEN, hoursFromNow(72), true);
+		expect(await cancelLesson(deps, { kind: 'token', manageToken: late.token }, now, true)).toEqual(
+			{ ok: true, late: true }
+		);
+		expect(
+			await cancelLesson(deps, { kind: 'token', manageToken: onTime.token }, now, false)
+		).toEqual({ ok: true, late: false });
+		expect(sent).toHaveLength(4);
+	});
+
+	it('cancel on declined booking sends nothing', async () => {
+		const { deps, store, sent } = setup();
+		const b = await book(store, AVA, hoursFromNow(72));
+		await store.decideBooking(b.id, 'declined', null, now);
+		const r = await cancelLesson(deps, { kind: 'token', manageToken: b.token }, now);
+		expect(r).toEqual({ ok: false, message: 'This lesson can no longer be cancelled online.' });
+		expect((await store.getBooking(b.id))!.status).toBe('declined');
+		expect(sent).toEqual([]);
+	});
+
 	it('email failure does not fail cancellation', async () => {
 		const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
 		const { deps, store } = setup(true);
