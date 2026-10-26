@@ -1,7 +1,7 @@
 # SessionX
 
 Booking app for a one-teacher lesson studio. Families request lessons online, the teacher approves
-them, and everyone gets email confirmations and reminders.
+them, and everyone gets email confirmations.
 
 ## Features
 
@@ -9,7 +9,7 @@ them, and everyone gets email confirmations and reminders.
 - Teacher admin area: approve or decline requests, set weekly hours, date overrides, lesson types,
   and the cancellation policy
 - Family accounts with several students and per-student pricing
-- Email notifications and reminders (Resend in production)
+- Email notifications (Resend in production)
 - Optional Google Calendar sync
 - Turnstile spam check on guest bookings
 - Installable on phones (home-screen app with an offline fallback)
@@ -29,6 +29,9 @@ npm run dev
 With no configuration the app runs on built-in sample data (nothing is saved between restarts).
 Sign-in links are printed in the terminal where `npm run dev` is running, so no email setup is
 needed. Open http://localhost:5173.
+
+Sample sign-in emails for development: `admin@sessionx.local` (the teacher/admin) and
+`parent@example.com` (a family with students Ava and Ben).
 
 ## Tests
 

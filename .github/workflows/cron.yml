@@ -25,4 +25,4 @@ jobs:
       - name: Trigger scheduled jobs
         if: steps.gate.outputs.skip != 'true'
         run: >-
-          curl -fsS --max-time 60 -X POST -H "Authorization: Bearer $CRON_SECRET" "$APP_URL/api/cron"
+          curl -fsS --max-time 60 -X POST -H "Authorization: Bearer $CRON_SECRET" "${APP_URL%/}/api/cron"
