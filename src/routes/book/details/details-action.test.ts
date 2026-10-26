@@ -176,6 +176,13 @@ describe('/book/details action, Turnstile', () => {
 		expect(siteverify).not.toHaveBeenCalled();
 	});
 
+	it('does no check when the site key is unset but the secret is set', async () => {
+		ctx.env.TURNSTILE_SITE_KEY = undefined;
+		const result = await guestSubmit();
+		expect(isRedirect(result)).toBe(true);
+		expect(siteverify).not.toHaveBeenCalled();
+	});
+
 	it('does no check when unconfigured', async () => {
 		ctx.env.TURNSTILE_SECRET_KEY = undefined;
 		const result = await guestSubmit();

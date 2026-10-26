@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { enhance } from '$app/forms';
+	import { loadTurnstile, type TurnstileApi } from '#lib/turnstile-client.ts';
 	import type { PageProps } from './$types';
 
 	let { data, form }: PageProps = $props();
@@ -14,13 +15,35 @@
 	// form error (the spam check) keeps the form so they can retry.
 	const formNotice = $derived(data.student ? errors.form : undefined);
 	const unavailable = $derived(!data.available || Boolean(errors.startsAt));
+
+	let turnstileEl = $state<HTMLElement>();
+	let turnstile: TurnstileApi | undefined;
+	let widgetId: string | undefined;
+
+	// Explicit render: the script is injected programmatically so it also works after client-side
+	// navigation, where scripts in <svelte:head> may not execute.
+	$effect(() => {
+		const sitekey = data.turnstileSiteKey;
+		const el = turnstileEl;
+		if (!sitekey || !el) return;
+		let cancelled = false;
+		loadTurnstile()
+			.then((api) => {
+				if (cancelled) return;
+				turnstile = api;
+				widgetId = api.render(el, { sitekey });
+			})
+			.catch((e) => console.error('Turnstile failed to load', e));
+		return () => {
+			cancelled = true;
+			if (widgetId !== undefined) turnstile?.remove(widgetId);
+			widgetId = undefined;
+		};
+	});
 </script>
 
 <svelte:head>
 	<title>Your details · SessionX</title>
-	{#if data.turnstileSiteKey}
-		<script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>
-	{/if}
 </svelte:head>
 
 <main>
@@ -54,7 +77,7 @@
 				return async ({ update }) => {
 					await update({ reset: false });
 					// A Turnstile token is single-use; get a fresh one for any retry.
-					(window as { turnstile?: { reset: () => void } }).turnstile?.reset();
+					if (widgetId !== undefined) turnstile?.reset(widgetId);
 					submitting = false;
 				};
 			}}
@@ -127,7 +150,7 @@
 					{/if}
 				</div>
 				{#if data.turnstileSiteKey}
-					<div class="cf-turnstile" data-sitekey={data.turnstileSiteKey}></div>
+					<div class="cf-turnstile" bind:this={turnstileEl}></div>
 				{/if}
 			{/if}
 
