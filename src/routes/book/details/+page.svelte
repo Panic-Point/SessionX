@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { enhance } from '$app/forms';
+	import { loadTurnstile, type TurnstileApi } from '#lib/turnstile-client.ts';
 	import type { PageProps } from './$types';
 
 	let { data, form }: PageProps = $props();
@@ -10,7 +11,35 @@
 		form?.values ?? { accountName: '', email: '', studentName: '', note: '' }
 	);
 	const errors: Partial<Record<string, string>> = $derived(form?.errors ?? {});
+	// Signed-in families see form errors (account limits) as a notice in place of the form. A guest's
+	// form error (the spam check) keeps the form so they can retry.
+	const formNotice = $derived(data.student ? errors.form : undefined);
 	const unavailable = $derived(!data.available || Boolean(errors.startsAt));
+
+	let turnstileEl = $state<HTMLElement>();
+	let turnstile: TurnstileApi | undefined;
+	let widgetId: string | undefined;
+
+	// Explicit render: the script is injected programmatically so it also works after client-side
+	// navigation, where scripts in <svelte:head> may not execute.
+	$effect(() => {
+		const sitekey = data.turnstileSiteKey;
+		const el = turnstileEl;
+		if (!sitekey || !el) return;
+		let cancelled = false;
+		loadTurnstile()
+			.then((api) => {
+				if (cancelled) return;
+				turnstile = api;
+				widgetId = api.render(el, { sitekey });
+			})
+			.catch((e) => console.error('Turnstile failed to load', e));
+		return () => {
+			cancelled = true;
+			if (widgetId !== undefined) turnstile?.remove(widgetId);
+			widgetId = undefined;
+		};
+	});
 </script>
 
 <svelte:head>
@@ -29,9 +58,9 @@
 		{/if}
 	</section>
 
-	{#if errors.form}
+	{#if formNotice}
 		<div class="notice" role="alert">
-			<p>{errors.form}</p>
+			<p>{formNotice}</p>
 			<a class="button" href="/account">See your lessons</a>
 		</div>
 	{:else if unavailable}
@@ -47,6 +76,8 @@
 				submitting = true;
 				return async ({ update }) => {
 					await update({ reset: false });
+					// A Turnstile token is single-use; get a fresh one for any retry.
+					if (widgetId !== undefined) turnstile?.reset(widgetId);
 					submitting = false;
 				};
 			}}
@@ -63,6 +94,9 @@
 					</p>
 				{/if}
 			{:else}
+				{#if errors.form}
+					<p class="error form-error" role="alert">{errors.form}</p>
+				{/if}
 				<div class="field">
 					<label for="accountName">Your name</label>
 					<input
@@ -115,6 +149,9 @@
 						<p class="error" id="studentName-error">{errors.studentName}</p>
 					{/if}
 				</div>
+				{#if data.turnstileSiteKey}
+					<div class="cf-turnstile" bind:this={turnstileEl}></div>
+				{/if}
 			{/if}
 
 			<div class="field">

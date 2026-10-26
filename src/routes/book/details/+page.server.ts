@@ -1,4 +1,5 @@
 import { fail, redirect } from '@sveltejs/kit';
+import { TURNSTILE_SECRET_KEY, TURNSTILE_SITE_KEY } from '$app/env/private';
 import { DateTime } from 'luxon';
 import {
 	getMonthAvailability,
@@ -11,6 +12,7 @@ import {
 import { formString } from '#lib/server/admin-actions.ts';
 import { getAppUrl, getCalendar, getMailer, getStore } from '#lib/server/context.ts';
 import { formatDateTime } from '#lib/server/format.ts';
+import { verifyTurnstile } from '#lib/server/turnstile.ts';
 import type { Actions, PageServerLoad } from './$types';
 
 export const load: PageServerLoad = async ({ locals, url }) => {
@@ -64,12 +66,15 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 		startsAt: iso,
 		whenLabel: formatDateTime(startsAt, timezone),
 		available: (availability.days[date] ?? []).some((t) => t.iso === iso),
-		backHref: `/book?${withStudent({ type: typeId, month, date })}`
+		backHref: `/book?${withStudent({ type: typeId, month, date })}`,
+		// Only guests are checked, and only when both keys are configured.
+		turnstileSiteKey:
+			!account && TURNSTILE_SITE_KEY && TURNSTILE_SECRET_KEY ? TURNSTILE_SITE_KEY : undefined
 	};
 };
 
 export const actions: Actions = {
-	default: async ({ locals, request }) => {
+	default: async ({ locals, request, getClientAddress }) => {
 		const data = await request.formData();
 		const field = (name: string) => formString(data, name);
 		const deps = {
@@ -106,15 +111,35 @@ export const actions: Actions = {
 			note: field('note')
 		};
 
+		const values = {
+			accountName: form.accountName,
+			email: form.email,
+			studentName: form.studentName,
+			note: form.note
+		};
+
+		let remoteIp: string | null = null;
+		try {
+			remoteIp = getClientAddress();
+		} catch {
+			// No client address available (some adapters/local runs); siteverify accepts it absent.
+		}
+		const spam = await verifyTurnstile(
+			field('cf-turnstile-response') || null,
+			remoteIp,
+			TURNSTILE_SITE_KEY ? TURNSTILE_SECRET_KEY : undefined
+		);
+		if (!spam.ok) {
+			return fail(400, {
+				values,
+				errors: { form: 'Please complete the spam check and try again.' }
+			});
+		}
+
 		const result = await submitGuestRequest(deps, form, new Date());
 		if (!result.ok) {
 			return fail(400, {
-				values: {
-					accountName: form.accountName,
-					email: form.email,
-					studentName: form.studentName,
-					note: form.note
-				},
+				values,
 				errors: result.errors
 			});
 		}

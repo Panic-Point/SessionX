@@ -355,6 +355,17 @@ export function createSupabaseBookingStore(url: string, serviceRoleKey: string):
 			if (!data || data.length === 0) throw new AdminStoreError('not_found');
 		},
 
+		async expirePendingBookings(now: Date): Promise<number> {
+			const { data, error } = await db
+				.from('bookings')
+				.update({ status: 'expired' })
+				.eq('status', 'pending')
+				.lte('starts_at', now.toISOString())
+				.select('id');
+			if (error) fail('expirePendingBookings', error);
+			return data?.length ?? 0;
+		},
+
 		async replaceWeeklyHours(hours: WeeklyHours[]): Promise<void> {
 			const { error } = await db.rpc('replace_weekly_hours', { p_hours: hours });
 			if (error) fail('replaceWeeklyHours', error);

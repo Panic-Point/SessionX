@@ -41,5 +41,19 @@ export const variables = defineEnvVars({
 		schema: optional,
 		description:
 			'Google service-account key JSON (server only). Unset disables Google Calendar sync. See docs/google-calendar.md.'
+	},
+	CRON_SECRET: {
+		schema: optional,
+		description:
+			'Shared secret for POST /api/cron (`Authorization: Bearer <secret>`). Unset disables the endpoint (503).'
+	},
+	TURNSTILE_SITE_KEY: {
+		schema: optional,
+		description:
+			'Cloudflare Turnstile site key. The guest-booking spam check is active only when this and TURNSTILE_SECRET_KEY are both set.'
+	},
+	TURNSTILE_SECRET_KEY: {
+		schema: optional,
+		description: 'Cloudflare Turnstile secret key (server only).'
 	}
 });

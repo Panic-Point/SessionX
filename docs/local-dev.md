@@ -36,6 +36,10 @@ All commands work from PowerShell and bash.
 lesson types, and a family account (`parent@example.com`) with two students, Ava and Ben. Ben has a
 custom price on the 30-minute lesson.
 
+## Deploying
+
+See [deploy.md](deploy.md) for putting the app on the internet.
+
 ## Running the app without Docker
 
 `npm run dev` works too, as long as the Supabase stack is up (`npx supabase start`) and
