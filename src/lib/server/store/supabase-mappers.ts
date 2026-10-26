@@ -1,14 +1,18 @@
 import type { DateOverride, TimeRange, WeeklyHours } from '../availability';
 import {
+	AccountStoreError,
 	BookingStoreError,
 	type Account,
 	type AccountRole,
+	type AccountWithStudents,
 	type AdminBooking,
 	type AdminLessonType,
 	type BookingStatus,
 	type DateOverrideWithNote,
 	type LessonType,
 	type LiveBooking,
+	type Student,
+	type StudentPrice,
 	type StudioSettings
 } from './types';
 
@@ -197,4 +201,68 @@ export function mapOverridesWithNotes(
 		...o,
 		note: notes.get(o.date) ?? ''
 	}));
+}
+
+export interface StudentRow {
+	id: string;
+	account_id: string;
+	name: string;
+	notes: string;
+}
+
+export interface StudentPriceRow {
+	student_id: string;
+	lesson_type_id: string;
+	price_cents: number;
+}
+
+/** Accounts select with students and their student_prices embedded. */
+export interface AccountWithStudentsRow extends AccountRow {
+	admin_notes: string;
+	students: (StudentRow & { student_prices: StudentPriceRow[] })[];
+}
+
+export function mapStudentRow(row: StudentRow): Student {
+	return { id: row.id, accountId: row.account_id, name: row.name, notes: row.notes };
+}
+
+export function mapStudentPriceRow(row: StudentPriceRow): StudentPrice {
+	return {
+		studentId: row.student_id,
+		lessonTypeId: row.lesson_type_id,
+		priceCents: row.price_cents
+	};
+}
+
+export function mapAccountWithStudentsRow(row: AccountWithStudentsRow): AccountWithStudents {
+	return {
+		...mapAccountRow(row),
+		adminNotes: row.admin_notes,
+		students: row.students
+			.map((s) => ({ ...mapStudentRow(s), prices: s.student_prices.map(mapStudentPriceRow) }))
+			.sort((a, b) => a.name.localeCompare(b.name))
+	};
+}
+
+/**
+ * Translates request_account_booking / cancel_booking / student-write SQLSTATEs into store
+ * errors; null when unrecognised. 22P02 (malformed uuid) and 23503 (unknown foreign key) are treated as not found.
+ */
+export function mapAccountRpcError(error: {
+	code?: string;
+	message?: string;
+}): AccountStoreError | BookingStoreError | null {
+	switch (error.code) {
+		case 'P0003':
+		case 'P0004':
+		case '22P02':
+		case '23503':
+			return new AccountStoreError('not_found');
+		case 'P0005':
+			return new AccountStoreError('not_cancellable');
+		case '23505':
+			return new AccountStoreError('duplicate_student');
+		default:
+			return mapRpcError(error);
+	}
 }

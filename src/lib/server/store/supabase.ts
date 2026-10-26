@@ -2,6 +2,8 @@ import { createClient } from '@supabase/supabase-js';
 import type { DateOverride, WeeklyHours } from '../availability';
 import {
 	mapAccountRow,
+	mapAccountRpcError,
+	mapAccountWithStudentsRow,
 	mapAdminBookingRow,
 	mapAdminLessonTypeRow,
 	mapLessonTypeRow,
@@ -10,8 +12,11 @@ import {
 	mapOverridesWithNotes,
 	mapRpcError,
 	mapSettingsRow,
+	mapStudentPriceRow,
+	mapStudentRow,
 	mapWeeklyHoursRow,
 	type AccountRow,
+	type AccountWithStudentsRow,
 	type AdminBookingRow,
 	type AdminLessonTypeRow,
 	type DateOverrideRangeRow,
@@ -19,17 +24,22 @@ import {
 	type LessonTypeRow,
 	type LiveBookingRow,
 	type SettingsRow,
+	type StudentPriceRow,
+	type StudentRow,
 	type WeeklyHoursRow
 } from './supabase-mappers';
 import {
+	AccountStoreError,
 	AdminStoreError,
 	type Account,
+	type AccountBookingInput,
+	type AccountWithStudents,
+	type AppStore,
+	type CancelTarget,
 	type AdminBooking,
 	type AdminLessonType,
-	type AdminStore,
 	type BookingFilter,
 	type BookingStatus,
-	type BookingStore,
 	type BookingSummary,
 	type CreatedBooking,
 	type DateOverrideWithNote,
@@ -37,6 +47,8 @@ import {
 	type LessonType,
 	type LessonTypeInput,
 	type LiveBooking,
+	type Student,
+	type StudentPrice,
 	type StudioSettings
 } from './types';
 
@@ -67,6 +79,11 @@ const LESSON_TYPE_COLUMNS = 'id, name, description, duration_min, price_cents, s
 const BOOKING_COLUMNS =
 	'id, status, starts_at, ends_at, price_cents, paid_at, note, decline_reason, late_cancel, manage_token, lesson_types(name, duration_min), students(name, accounts(name, email))';
 
+const STUDENT_COLUMNS = 'id, account_id, name, notes';
+const ACCOUNT_WITH_STUDENTS_COLUMNS = `${ACCOUNT_COLUMNS}, admin_notes, students(${STUDENT_COLUMNS}, student_prices(student_id, lesson_type_id, price_cents))`;
+// !inner so that filtering on students.account_id drops other accounts' bookings.
+const OWNED_BOOKING_COLUMNS = BOOKING_COLUMNS.replace('students(', 'students!inner(');
+
 const lessonTypeColumns = (input: LessonTypeInput) => ({
 	name: input.name,
 	description: input.description,
@@ -76,11 +93,8 @@ const lessonTypeColumns = (input: LessonTypeInput) => ({
 	active: input.active
 });
 
-/** BookingStore and AdminStore backed by Supabase. Uses the service-role key, so server-side only. */
-export function createSupabaseBookingStore(
-	url: string,
-	serviceRoleKey: string
-): BookingStore & AdminStore {
+/** BookingStore, AdminStore and AccountStore backed by Supabase. Uses the service-role key, so server-side only. */
+export function createSupabaseBookingStore(url: string, serviceRoleKey: string): AppStore {
 	const db = createClient(url, serviceRoleKey, { auth: { persistSession: false } });
 
 	async function getAdminBooking(id: string): Promise<AdminBooking | null> {
@@ -91,6 +105,13 @@ export function createSupabaseBookingStore(
 			.maybeSingle();
 		if (error) fail('getBooking', error);
 		return data ? mapAdminBookingRow(data as unknown as AdminBookingRow) : null;
+	}
+
+	const isMalformedId = (error: { code?: string }) => error.code === '22P02';
+
+	/** Throws the mapped store error, or a generic Error carrying the context. */
+	function failAccount(context: string, error: { code?: string; message?: string }): never {
+		throw mapAccountRpcError(error) ?? new Error(`${context}: ${error.message ?? 'unknown error'}`);
 	}
 
 	return {
@@ -251,6 +272,7 @@ export function createSupabaseBookingStore(
 			if (filter.from) query = query.gte('starts_at', filter.from.toISOString());
 			if (filter.to) query = query.lt('starts_at', filter.to.toISOString());
 			if (filter.unpaidOnly) query = query.is('paid_at', null);
+			if (filter.lateCancelOnly) query = query.eq('late_cancel', true);
 			const { data, error } = await query;
 			if (error) fail('listBookings', error);
 			return (data as unknown as AdminBookingRow[]).map(mapAdminBookingRow);
@@ -382,6 +404,199 @@ export function createSupabaseBookingStore(
 			const row = (data as AdminLessonTypeRow[])[0];
 			if (!row) throw new AdminStoreError('not_found');
 			return mapAdminLessonTypeRow(row);
+		},
+
+		// ---- AccountStore ----
+
+		async listStudents(accountId: string): Promise<Student[]> {
+			const { data, error } = await db
+				.from('students')
+				.select(STUDENT_COLUMNS)
+				.eq('account_id', accountId)
+				.order('name');
+			if (error) {
+				if (isMalformedId(error)) return [];
+				fail('listStudents', error);
+			}
+			return (data as StudentRow[]).map(mapStudentRow);
+		},
+
+		async addStudent(accountId: string, name: string): Promise<Student> {
+			const { data, error } = await db
+				.from('students')
+				.insert({ account_id: accountId, name: name.trim() })
+				.select(STUDENT_COLUMNS)
+				.single();
+			if (error) failAccount('addStudent', error);
+			return mapStudentRow(data as StudentRow);
+		},
+
+		async renameStudent(accountId: string, studentId: string, name: string): Promise<Student> {
+			const { data, error } = await db
+				.from('students')
+				.update({ name: name.trim() })
+				.eq('id', studentId)
+				.eq('account_id', accountId)
+				.select(STUDENT_COLUMNS);
+			if (error) failAccount('renameStudent', error);
+			const row = (data as StudentRow[])[0];
+			if (!row) throw new AccountStoreError('not_found');
+			return mapStudentRow(row);
+		},
+
+		async listStudentPrices(studentIds: string[]): Promise<StudentPrice[]> {
+			if (studentIds.length === 0) return [];
+			const { data, error } = await db
+				.from('student_prices')
+				.select('student_id, lesson_type_id, price_cents')
+				.in('student_id', studentIds);
+			if (error) {
+				if (isMalformedId(error)) return [];
+				fail('listStudentPrices', error);
+			}
+			return (data as StudentPriceRow[]).map(mapStudentPriceRow);
+		},
+
+		async listAccountBookings(accountId: string): Promise<AdminBooking[]> {
+			const { data, error } = await db
+				.from('bookings')
+				.select(OWNED_BOOKING_COLUMNS)
+				.eq('students.account_id', accountId)
+				.order('starts_at', { ascending: false });
+			if (error) {
+				if (isMalformedId(error)) return [];
+				fail('listAccountBookings', error);
+			}
+			return (data as unknown as AdminBookingRow[]).map(mapAdminBookingRow);
+		},
+
+		async requestAccountBooking(input: AccountBookingInput): Promise<CreatedBooking> {
+			// The database clock is authoritative for the pending-request check.
+			const { data, error } = await db.rpc('request_account_booking', {
+				p_account_id: input.accountId,
+				p_student_id: input.studentId,
+				p_lesson_type_id: input.lessonTypeId,
+				p_starts_at: input.startsAt.toISOString(),
+				p_note: input.note
+			});
+			if (error) failAccount('requestAccountBooking', error);
+			const row = (data as RpcBookingRow[] | null)?.[0];
+			if (!row) throw new Error('requestAccountBooking: no row returned');
+			return {
+				bookingId: row.booking_id,
+				manageToken: row.manage_token,
+				priceCents: row.price_cents,
+				startsAt: new Date(row.starts_at),
+				endsAt: new Date(row.ends_at)
+			};
+		},
+
+		async getBookingByTarget(target: CancelTarget): Promise<AdminBooking | null> {
+			const query =
+				target.kind === 'token'
+					? db.from('bookings').select(BOOKING_COLUMNS).eq('manage_token', target.manageToken)
+					: db
+							.from('bookings')
+							.select(OWNED_BOOKING_COLUMNS)
+							.eq('id', target.bookingId)
+							.eq('students.account_id', target.accountId);
+			const { data, error } = await query.maybeSingle();
+			if (error) {
+				if (isMalformedId(error)) return null;
+				fail('getBookingByTarget', error);
+			}
+			return data ? mapAdminBookingRow(data as unknown as AdminBookingRow) : null;
+		},
+
+		async cancelBooking(
+			target: CancelTarget,
+			lateCancel: boolean,
+			now: Date
+		): Promise<AdminBooking> {
+			const { data, error } = await db.rpc('cancel_booking', {
+				p_booking_id: target.kind === 'account' ? target.bookingId : null,
+				p_account_id: target.kind === 'account' ? target.accountId : null,
+				p_manage_token: target.kind === 'token' ? target.manageToken : null,
+				p_late: lateCancel,
+				p_now: now.toISOString()
+			});
+			if (error) failAccount('cancelBooking', error);
+			// The RPC returns only the id; re-read the full booking.
+			const booking = await getAdminBooking(data as string);
+			if (!booking) throw new AccountStoreError('not_found');
+			return booking;
+		},
+
+		async listAccounts(): Promise<AccountWithStudents[]> {
+			const { data, error } = await db
+				.from('accounts')
+				.select(ACCOUNT_WITH_STUDENTS_COLUMNS)
+				.order('name');
+			if (error) fail('listAccounts', error);
+			return (data as unknown as AccountWithStudentsRow[]).map(mapAccountWithStudentsRow);
+		},
+
+		async getAccount(accountId: string): Promise<AccountWithStudents | null> {
+			const { data, error } = await db
+				.from('accounts')
+				.select(ACCOUNT_WITH_STUDENTS_COLUMNS)
+				.eq('id', accountId)
+				.maybeSingle();
+			if (error) {
+				if (isMalformedId(error)) return null;
+				fail('getAccount', error);
+			}
+			return data ? mapAccountWithStudentsRow(data as unknown as AccountWithStudentsRow) : null;
+		},
+
+		async setStudentPrice(
+			studentId: string,
+			lessonTypeId: string,
+			priceCents: number | null
+		): Promise<void> {
+			// Both ids must exist even when removing, matching the memory store. An unknown id
+			// surfaces as 23503 (upsert) or an empty lookup (delete); malformed ids as 22P02.
+			const [student, lessonType] = await Promise.all([
+				db.from('students').select('id').eq('id', studentId).maybeSingle(),
+				db.from('lesson_types').select('id').eq('id', lessonTypeId).maybeSingle()
+			]);
+			if (student.error) failAccount('setStudentPrice', student.error);
+			if (lessonType.error) failAccount('setStudentPrice', lessonType.error);
+			if (!student.data || !lessonType.data) throw new AccountStoreError('not_found');
+
+			const { error } =
+				priceCents === null
+					? await db
+							.from('student_prices')
+							.delete()
+							.eq('student_id', studentId)
+							.eq('lesson_type_id', lessonTypeId)
+					: await db.from('student_prices').upsert({
+							student_id: studentId,
+							lesson_type_id: lessonTypeId,
+							price_cents: priceCents
+						});
+			if (error) failAccount('setStudentPrice', error);
+		},
+
+		async updateAccountNotes(accountId: string, notes: string): Promise<void> {
+			const { data, error } = await db
+				.from('accounts')
+				.update({ admin_notes: notes })
+				.eq('id', accountId)
+				.select('id');
+			if (error) failAccount('updateAccountNotes', error);
+			if ((data as { id: string }[]).length === 0) throw new AccountStoreError('not_found');
+		},
+
+		async updateStudentNotes(studentId: string, notes: string): Promise<void> {
+			const { data, error } = await db
+				.from('students')
+				.update({ notes })
+				.eq('id', studentId)
+				.select('id');
+			if (error) failAccount('updateStudentNotes', error);
+			if ((data as { id: string }[]).length === 0) throw new AccountStoreError('not_found');
 		}
 	};
 }
