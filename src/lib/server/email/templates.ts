@@ -58,14 +58,14 @@ export function requestReceivedEmail(d: BookingEmailData): EmailMessage {
 export function newRequestEmail(
 	d: BookingEmailData,
 	adminEmail: string,
-	adminUrl?: string
+	/** Required: the family's manage link must never reach the admin as a fallback. */
+	adminUrl: string
 ): EmailMessage {
-	const link = adminUrl ?? d.manageUrl;
 	const when = formatDateTime(d.startsAt, d.timezone);
 	const rows = details(d);
 	rows.push(['Booked by', d.accountName], ['Email', d.email], ['Note', d.note || '(none)']);
-	const text = `New lesson request.\n\n${textRows(rows)}\n\nManage: ${link}\n`;
-	const footer = `<p style="margin:16px 0 0">Manage: <a href="${escapeHtml(link)}">${escapeHtml(link)}</a></p>`;
+	const text = `New lesson request.\n\n${textRows(rows)}\n\nManage: ${adminUrl}\n`;
+	const footer = `<p style="margin:16px 0 0">Manage: <a href="${escapeHtml(adminUrl)}">${escapeHtml(adminUrl)}</a></p>`;
 	return {
 		to: adminEmail,
 		subject: `New lesson request: ${d.studentName}, ${when}`,

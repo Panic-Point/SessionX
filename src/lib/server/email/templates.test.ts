@@ -38,7 +38,7 @@ describe('templates', () => {
 	});
 
 	it('teacher email includes booker contact and note', () => {
-		const m = newRequestEmail(data, 'teacher@example.com');
+		const m = newRequestEmail(data, 'teacher@example.com', 'https://x.test/admin');
 		expect(m.to).toBe('teacher@example.com');
 		expect(m.subject).toBe('New lesson request: Sam, Monday, November 2, 2026 at 3:00 PM EST');
 		for (const part of [m.text, m.html]) {
@@ -51,14 +51,20 @@ describe('templates', () => {
 	it('escapes user input in html', () => {
 		const evil = '<script>x</script>';
 		const d = { ...data, studentName: evil, accountName: evil, note: evil, lessonTypeName: evil };
-		for (const m of [requestReceivedEmail(d), newRequestEmail(d, 't@e.com')]) {
+		for (const m of [
+			requestReceivedEmail(d),
+			newRequestEmail(d, 't@e.com', 'https://x.test/admin')
+		]) {
 			expect(m.html).toContain('&lt;script&gt;');
 			expect(m.html).not.toContain('<script>');
 		}
 	});
 
 	it('text part has no HTML tags', () => {
-		for (const m of [requestReceivedEmail(data), newRequestEmail(data, 't@e.com')]) {
+		for (const m of [
+			requestReceivedEmail(data),
+			newRequestEmail(data, 't@e.com', 'https://x.test/admin')
+		]) {
 			expect(m.text).not.toMatch(/<[a-z/][^>]*>/i);
 		}
 	});
@@ -143,10 +149,13 @@ describe('cancellation templates', () => {
 		expect(m.html).toContain('&lt;b&gt;Sam&lt;/b&gt;');
 	});
 
-	it('new request email links to adminUrl when given', () => {
+	it('new request email links to the admin page, never the family manage link', () => {
 		const m = newRequestEmail(data, 't@example.com', 'https://x.test/admin');
-		expect(m.text).toContain('https://x.test/admin');
-		expect(m.text).not.toContain('https://x.test/manage/abc');
-		expect(newRequestEmail(data, 't@example.com').text).toContain('https://x.test/manage/abc');
+		for (const part of [m.text, m.html]) {
+			expect(part).toContain('https://x.test/admin');
+			expect(part).not.toContain('https://x.test/manage/abc');
+		}
+		// @ts-expect-error adminUrl is required so a family's manage link can never be the fallback.
+		expect(() => newRequestEmail(data, 't@example.com')).toBeTypeOf('function');
 	});
 });
