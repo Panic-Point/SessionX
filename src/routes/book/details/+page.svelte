@@ -29,7 +29,12 @@
 		{/if}
 	</section>
 
-	{#if unavailable}
+	{#if errors.form}
+		<div class="notice" role="alert">
+			<p>{errors.form}</p>
+			<a class="button" href="/account">See your lessons</a>
+		</div>
+	{:else if unavailable}
 		<div class="notice" role="alert">
 			<p>{errors.startsAt ?? 'Sorry, that time is no longer available. Please pick another.'}</p>
 			<a class="button" href={data.backHref}>Pick another time</a>

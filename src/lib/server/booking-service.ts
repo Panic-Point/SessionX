@@ -43,7 +43,9 @@ export interface GuestRequestForm {
 	note: string;
 }
 
-export type FormField = 'accountName' | 'email' | 'studentName' | 'studentId' | 'note' | 'startsAt';
+/** `form` is a request-level error that is not about any one field (for example, the pending limit). */
+export type FormField =
+	'accountName' | 'email' | 'studentName' | 'studentId' | 'note' | 'startsAt' | 'form';
 export type SubmitResult =
 	{ ok: true; manageToken: string } | { ok: false; errors: Partial<Record<FormField, string>> };
 
@@ -361,7 +363,8 @@ export async function submitAccountRequest(
 		if (e instanceof AccountStoreError) {
 			return { ok: false, errors: { studentId: 'Choose who the lesson is for.' } };
 		}
-		const mapped = mapBookingStoreError(e, 'startsAt');
+		// The pending limit is about the family, not this time: picking another slot would not help.
+		const mapped = mapBookingStoreError(e, 'form');
 		if (mapped) return mapped;
 		throw e;
 	}

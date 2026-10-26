@@ -242,6 +242,28 @@ describe('signed-in booking', () => {
 		expect(view!.studentName).toBe('Ben');
 	});
 
+	it('account too_many_pending is a form-level error, not a slot error', async () => {
+		const { deps, sent } = setup();
+		const req = (startsAt: string, studentId: string) =>
+			submitAccountRequest(
+				deps,
+				PAT,
+				{ lessonTypeId: LESSON_30, startsAt, studentId, note: '' },
+				now
+			);
+		expect((await req(MON_3PM, AVA)).ok).toBe(true);
+		expect((await req(MON_330PM, BEN)).ok).toBe(true);
+		sent.length = 0;
+		const r = await req('2026-11-02T21:00:00.000Z', AVA);
+		expect(r).toEqual({
+			ok: false,
+			errors: {
+				form: 'You already have 2 lesson requests waiting for approval. Please wait for a reply before requesting more.'
+			}
+		});
+		expect(sent).toEqual([]);
+	});
+
 	it('rejects student from another account', async () => {
 		const { deps, sent } = setup();
 		const r = await submitAccountRequest(
