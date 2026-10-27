@@ -35,9 +35,9 @@ async function approvedBooking(hours: number) {
 	return { id: created.bookingId, token: created.manageToken };
 }
 
-async function submit(token: string, shownLate: string): Promise<unknown> {
+async function submit(token: string, shownLate?: string): Promise<unknown> {
 	const body = new FormData();
-	body.set('shownLate', shownLate);
+	if (shownLate !== undefined) body.set('shownLate', shownLate);
 	const event = {
 		params: { token },
 		request: new Request(`http://localhost/manage/${token}/cancel`, { method: 'POST', body })
@@ -64,6 +64,20 @@ describe('/manage/[token]/cancel lateness check', () => {
 		expect(result).toMatchObject({ status: 400, data: { lateChanged: true } });
 		expect((await ctx.store.getBooking(b.id))!.status).toBe('approved');
 		expect(ctx.sent).toEqual([]);
+	});
+
+	it('treats a missing shownLate as no warning shown, so a late cancel re-renders', async () => {
+		const b = await approvedBooking(5);
+		const result = await submit(b.token);
+		expect(result).toMatchObject({ status: 400, data: { lateChanged: true } });
+		expect((await ctx.store.getBooking(b.id))!.status).toBe('approved');
+		expect(ctx.sent).toEqual([]);
+	});
+
+	it('cancels with a missing shownLate when the lesson is outside the cutoff', async () => {
+		const b = await approvedBooking(72);
+		expect(isRedirect(await submit(b.token))).toBe(true);
+		expect((await ctx.store.getBooking(b.id))!.status).toBe('cancelled');
 	});
 
 	it('cancels when the shown warning still matches', async () => {

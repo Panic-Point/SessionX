@@ -34,11 +34,9 @@ export function toCancelPageData(view: CancelView): CancelPageData {
 
 /**
  * The cancel form's hidden `shownLate` field: whether the page showed the late warning.
- * Undefined when absent or malformed, so the lateness check is skipped rather than guessed.
+ * Anything but `true` (including a missing field) counts as no warning shown, so a request that
+ * leaves it out can never cancel late without the family having seen the warning.
  */
-export function readShownLate(data: FormData): boolean | undefined {
-	const value = data.get('shownLate');
-	if (value === 'true') return true;
-	if (value === 'false') return false;
-	return undefined;
+export function readShownLate(data: FormData): boolean {
+	return data.get('shownLate') === 'true';
 }
