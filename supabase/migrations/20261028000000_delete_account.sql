@@ -2,12 +2,13 @@
 -- its students with on delete restrict and the teacher keeps the lesson history: the name,
 -- students and bookings remain, while the email is replaced so the address is free for a fresh
 -- account and the password and unused sign-in links are removed.
+-- Safe to run twice: production migrations are applied by hand (#39).
 -- Called only by the SvelteKit server with the service-role key, after it has cancelled the
 -- account's upcoming lessons.
 
-alter table accounts add column deleted_at timestamptz;
+alter table accounts add column if not exists deleted_at timestamptz;
 
-create function delete_account(p_account_id uuid, p_now timestamptz)
+create or replace function delete_account(p_account_id uuid, p_now timestamptz)
 returns void
 language plpgsql
 security definer
