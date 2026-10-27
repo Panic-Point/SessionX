@@ -58,20 +58,21 @@ Throughout this guide the site address is written `https://lessons.example.com`.
 
 ## 4. Make the teacher an admin (#10)
 
-Open the Supabase dashboard, then SQL Editor, and run the following with the teacher's real email
-in place of `teacher@example.com`. Change the timezone to the studio's.
+Open the Supabase dashboard, then SQL Editor, and run the following. It uses the teacher's sign-in
+email, `brendawhite.sings@gmail.com`. Put the teacher's name in place of `Teacher Name`, and change
+the timezone to the studio's.
 
 ```sql
 -- Studio settings (exactly one row). admin_email receives new-request notifications.
 insert into settings (id, timezone, admin_email)
-values (true, 'America/Los_Angeles', 'teacher@example.com')
+values (true, 'America/Los_Angeles', 'brendawhite.sings@gmail.com')
 on conflict (id) do update
   set admin_email = excluded.admin_email,
       timezone = excluded.timezone;
 
 -- The teacher's account, with the admin role.
 insert into accounts (name, email, role)
-values ('Teacher Name', 'teacher@example.com', 'admin')
+values ('Teacher Name', 'brendawhite.sings@gmail.com', 'admin')
 on conflict (email) do update set role = 'admin';
 ```
 
