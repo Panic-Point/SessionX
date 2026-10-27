@@ -5,6 +5,7 @@ import { runAdminStoreContract } from './admin-contract';
 import { runBookingStoreContract } from './contract';
 import { runSeriesStoreContract } from './series-contract';
 import { demoData } from './demo-data';
+import { runPasswordStoreContract } from './password-contract';
 import { createSupabaseBookingStore } from './supabase';
 
 const url = process.env.SUPABASE_URL;
@@ -24,6 +25,8 @@ async function resetToSeed() {
 
 	// Tokens and bookings are never seeded, so remove all of them.
 	check((await db.from('login_tokens').delete().not('token_hash', 'is', null)).error);
+	check((await db.from('password_tokens').delete().not('token_hash', 'is', null)).error);
+	check((await db.from('password_failures').delete().not('id', 'is', null)).error);
 	check((await db.from('bookings').delete().not('id', 'is', null)).error);
 	// Only the seed's series stays, un-materialised (its seeded occurrences went with the bookings).
 	check(
@@ -73,7 +76,20 @@ async function resetToSeed() {
 			)
 		).error
 	);
-	check((await db.from('accounts').update({ admin_notes: '' }).not('id', 'is', null)).error);
+	check(
+		(
+			await db
+				.from('accounts')
+				.update({ admin_notes: '', password_hash: null })
+				.not('id', 'is', null)
+		).error
+	);
+	for (const p of seed.passwords) {
+		check(
+			(await db.from('accounts').update({ password_hash: p.passwordHash }).eq('id', p.accountId))
+				.error
+		);
+	}
 
 	// Lesson types: drop non-seed ones, then restore the seed rows (active, names, prices).
 	check(
@@ -158,6 +174,11 @@ describe.skipIf(!url || !key)('supabase store', () => {
 		resetToSeed
 	);
 	runSeriesStoreContract(
+		'supabase',
+		async () => createSupabaseBookingStore(url!, key!),
+		resetToSeed
+	);
+	runPasswordStoreContract(
 		'supabase',
 		async () => createSupabaseBookingStore(url!, key!),
 		resetToSeed

@@ -20,6 +20,15 @@ export interface DemoStudentPrice {
 	priceCents: number;
 }
 
+export interface DemoPassword {
+	accountId: string;
+	passwordHash: string;
+}
+
+/** PBKDF2 hash of `sessionx-parent-dev`, the dev password for parent@example.com. */
+export const DEMO_PARENT_PASSWORD_HASH =
+	'pbkdf2-sha256$100000$Gdn8ZFyVGVjo3_9Mvebwbg$yIhLzGXbDC1e7kTUeENArJ5AllBcXi8dKeKzYRg4V1o';
+
 export interface DemoData {
 	settings: StudioSettings;
 	weeklyHours: WeeklyHours[];
@@ -28,6 +37,7 @@ export interface DemoData {
 	accounts: DemoAccount[];
 	students: DemoStudent[];
 	studentPrices: DemoStudentPrice[];
+	passwords: DemoPassword[];
 	lessonSeries: DemoSeries[];
 }
 
@@ -117,6 +127,12 @@ export function demoData(): DemoData {
 				studentId: '33333333-0000-0000-0000-0000000000b1',
 				lessonTypeId: '11111111-0000-0000-0000-000000000030',
 				priceCents: 3000
+			}
+		],
+		passwords: [
+			{
+				accountId: '22222222-0000-0000-0000-00000000000b',
+				passwordHash: DEMO_PARENT_PASSWORD_HASH
 			}
 		],
 		// Ben's standing weekly lesson: Tuesdays at 4:00pm, no end date. Occurrences are created

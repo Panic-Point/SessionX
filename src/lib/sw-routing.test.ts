@@ -39,8 +39,12 @@ describe('swStrategy: network-only rules', () => {
 		['/account/cancel/123'],
 		['/login'],
 		['/login/verify'],
+		['/login/reset'],
+		['/login/reset/complete'],
 		['/logout'],
-		['/manage/abc']
+		['/manage/abc'],
+		['/register'],
+		['/register/verify']
 	])('%s is network-only, even as a navigation', (path) => {
 		expect(swStrategy(get(path), precached, origin)).toBe('network-only');
 		expect(swStrategy(get(path, { mode: 'navigate' }), precached, origin)).toBe('network-only');

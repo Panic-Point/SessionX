@@ -24,6 +24,12 @@ insert into accounts (id, name, email, role) values
 	('22222222-0000-0000-0000-00000000000a', 'Studio Admin', 'admin@sessionx.local', 'admin'),
 	('22222222-0000-0000-0000-00000000000b', 'Pat Parent', 'parent@example.com', 'client');
 
+-- Dev password for parent@example.com: sessionx-parent-dev (see docs/local-dev.md).
+update accounts
+   set password_hash = 'pbkdf2-sha256$100000$Gdn8ZFyVGVjo3_9Mvebwbg$yIhLzGXbDC1e7kTUeENArJ5AllBcXi8dKeKzYRg4V1o',
+       email_verified_at = now()
+ where id = '22222222-0000-0000-0000-00000000000b';
+
 insert into students (id, account_id, name) values
 	('33333333-0000-0000-0000-0000000000a1', '22222222-0000-0000-0000-00000000000b', 'Ava'),
 	('33333333-0000-0000-0000-0000000000b1', '22222222-0000-0000-0000-00000000000b', 'Ben');

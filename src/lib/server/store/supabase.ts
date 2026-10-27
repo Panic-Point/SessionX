@@ -17,6 +17,7 @@ import {
 	mapStudentPriceRow,
 	mapStudentRow,
 	mapWeeklyHoursRow,
+	toPasswordTokenRow,
 	type AccountRow,
 	type AccountWithStudentsRow,
 	type AdminBookingRow,
@@ -52,6 +53,7 @@ import {
 	type LessonTypeInput,
 	type LiveBooking,
 	type OccurrenceResult,
+	type PasswordTokenData,
 	type SeriesInput,
 	type Student,
 	type StudentPrice,
@@ -298,6 +300,92 @@ export function createSupabaseBookingStore(url: string, serviceRoleKey: string):
 				.select('account_id');
 			if (error) fail('consumeLoginToken', error);
 			return (data as { account_id: string }[])[0]?.account_id ?? null;
+		},
+
+		async getPasswordHash(accountId: string): Promise<string | null> {
+			const { data, error } = await db
+				.from('accounts')
+				.select('password_hash')
+				.eq('id', accountId)
+				.maybeSingle();
+			if (error) fail('getPasswordHash', error);
+			return (data as { password_hash: string | null } | null)?.password_hash ?? null;
+		},
+
+		async setPasswordHash(accountId: string, passwordHash: string): Promise<void> {
+			const { data, error } = await db
+				.from('accounts')
+				.update({ password_hash: passwordHash })
+				.eq('id', accountId)
+				.select('id');
+			if (error) fail('setPasswordHash', error);
+			if ((data as unknown[]).length === 0) throw new AdminStoreError('not_found');
+		},
+
+		async createPasswordToken(
+			tokenHash: string,
+			data: PasswordTokenData,
+			expiresAt: Date
+		): Promise<void> {
+			const { error } = await db
+				.from('password_tokens')
+				.insert(toPasswordTokenRow(tokenHash, data, expiresAt));
+			if (error) fail('createPasswordToken', error);
+		},
+
+		async completeRegistration(tokenHash: string, now: Date): Promise<string | null> {
+			const { data, error } = await db.rpc('complete_registration', {
+				p_token_hash: tokenHash,
+				p_now: now.toISOString()
+			});
+			if (error) fail('completeRegistration', error);
+			return (data as string | null) ?? null;
+		},
+
+		async completePasswordReset(
+			tokenHash: string,
+			passwordHash: string,
+			now: Date
+		): Promise<string | null> {
+			const { data, error } = await db.rpc('complete_password_reset', {
+				p_token_hash: tokenHash,
+				p_password_hash: passwordHash,
+				p_now: now.toISOString()
+			});
+			if (error) fail('completePasswordReset', error);
+			return (data as string | null) ?? null;
+		},
+
+		async countPasswordFailures(email: string, since: Date): Promise<number> {
+			const { count, error } = await db
+				.from('password_failures')
+				.select('id', { count: 'exact', head: true })
+				.eq('email', email.trim().toLowerCase())
+				.gt('failed_at', since.toISOString());
+			if (error) fail('countPasswordFailures', error);
+			return count ?? 0;
+		},
+
+		async recordPasswordFailure(email: string, failedAt: Date): Promise<void> {
+			const { error } = await db
+				.from('password_failures')
+				.insert({ email: email.trim().toLowerCase(), failed_at: failedAt.toISOString() });
+			if (error) fail('recordPasswordFailure', error);
+			// Housekeeping: rows only matter for the 15-minute lockout window.
+			const dayAgo = new Date(failedAt.getTime() - 24 * 60 * 60 * 1000);
+			const pruned = await db
+				.from('password_failures')
+				.delete()
+				.lt('failed_at', dayAgo.toISOString());
+			if (pruned.error) console.error('Failed to prune password_failures', pruned.error.message);
+		},
+
+		async clearPasswordFailures(email: string): Promise<void> {
+			const { error } = await db
+				.from('password_failures')
+				.delete()
+				.eq('email', email.trim().toLowerCase());
+			if (error) fail('clearPasswordFailures', error);
 		},
 
 		async listBookings(filter: BookingFilter): Promise<AdminBooking[]> {

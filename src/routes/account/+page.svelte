@@ -13,6 +13,8 @@
 			: null;
 	}
 
+	const passwordErrors: Errors = $derived(form?.target === 'password' ? form.errors : {});
+
 	let busy = $state<string | null>(null);
 	const track =
 		(name: string): SubmitFunction =>
@@ -128,6 +130,82 @@
 				{/if}
 			</form>
 		{/key}
+	</section>
+
+	<section class="card" aria-labelledby="password-heading">
+		<h2 id="password-heading">Password</h2>
+		<p class="empty">
+			{data.hasPassword
+				? 'You can sign in with your password or an emailed link.'
+				: 'You sign in with an emailed link. Set a password to sign in with it too.'}
+		</p>
+		<form
+			class="password"
+			method="POST"
+			action="?/password"
+			novalidate
+			use:enhance={() => {
+				busy = 'password';
+				return async ({ update }) => {
+					// Never keep password values in the form after a submit.
+					await update({ reset: true });
+					busy = null;
+				};
+			}}
+		>
+			<!-- Lets password managers file the new password under the right account. -->
+			<input type="hidden" name="username" autocomplete="username" value={data.email} />
+			{#if data.hasPassword}
+				<div class="field">
+					<label for="currentPassword">Current password</label>
+					<input
+						id="currentPassword"
+						name="currentPassword"
+						type="password"
+						autocomplete="current-password"
+						aria-invalid={passwordErrors.currentPassword ? 'true' : undefined}
+						aria-describedby={passwordErrors.currentPassword ? 'currentPassword-error' : undefined}
+					/>
+					{#if passwordErrors.currentPassword}
+						<p class="error" id="currentPassword-error">{passwordErrors.currentPassword}</p>
+					{/if}
+				</div>
+			{/if}
+			<div class="field">
+				<label for="password">{data.hasPassword ? 'New password' : 'Password'}</label>
+				<input
+					id="password"
+					name="password"
+					type="password"
+					autocomplete="new-password"
+					maxlength="128"
+					aria-invalid={passwordErrors.password ? 'true' : undefined}
+					aria-describedby={passwordErrors.password ? 'password-error' : 'password-hint'}
+				/>
+				{#if passwordErrors.password}
+					<p class="error" id="password-error">{passwordErrors.password}</p>
+				{:else}
+					<p class="hint" id="password-hint">At least 10 characters.</p>
+				{/if}
+			</div>
+			<div class="field">
+				<label for="confirmPassword">Confirm password</label>
+				<input
+					id="confirmPassword"
+					name="confirmPassword"
+					type="password"
+					autocomplete="new-password"
+					aria-invalid={passwordErrors.confirmPassword ? 'true' : undefined}
+					aria-describedby={passwordErrors.confirmPassword ? 'confirmPassword-error' : undefined}
+				/>
+				{#if passwordErrors.confirmPassword}
+					<p class="error" id="confirmPassword-error">{passwordErrors.confirmPassword}</p>
+				{/if}
+			</div>
+			<button class="button" type="submit" disabled={busy === 'password'}>
+				{busy === 'password' ? 'Saving…' : data.hasPassword ? 'Change password' : 'Set password'}
+			</button>
+		</form>
 	</section>
 
 	<section class="card" aria-labelledby="past-heading">
@@ -262,6 +340,14 @@
 		display: block;
 		font-weight: 600;
 		margin-bottom: 0.25rem;
+	}
+
+	.password .field {
+		margin: 1rem 0;
+	}
+
+	.password input {
+		width: 100%;
 	}
 
 	.inline {

@@ -85,6 +85,28 @@ export function loginLinkEmail(to: string, name: string, url: string): EmailMess
 	};
 }
 
+export function verifyRegistrationEmail(to: string, name: string, url: string): EmailMessage {
+	const text = `Hi ${name},\n\nUse this link to confirm your email and finish creating your SessionX account. Your password starts working once you do. The link expires in 24 hours and can be used once.\n\n${url}\n\nIf you did not try to create an account, you can ignore this email and nothing will change.\n`;
+	const footer = `<p style="margin:0 0 12px">Confirm your email to finish creating your account. Your password starts working once you do.</p><p style="margin:16px 0 0"><a href="${escapeHtml(url)}">${escapeHtml(url)}</a></p><p style="color:#555">It expires in 24 hours and can be used once. If you did not try to create an account, you can ignore this email and nothing will change.</p>`;
+	return {
+		to,
+		subject: 'Finish creating your SessionX account',
+		text,
+		html: wrap(`Hi ${name}, confirm your email`, [], footer)
+	};
+}
+
+export function passwordResetEmail(to: string, name: string, url: string): EmailMessage {
+	const text = `Hi ${name},\n\nUse this link to choose a new SessionX password. It expires in 30 minutes and can be used once.\n\n${url}\n\nIf you did not ask to reset your password, you can ignore this email and your password will not change.\n`;
+	const footer = `<p style="margin:16px 0 0"><a href="${escapeHtml(url)}">${escapeHtml(url)}</a></p><p style="color:#555">It expires in 30 minutes and can be used once. If you did not ask to reset your password, you can ignore this email and your password will not change.</p>`;
+	return {
+		to,
+		subject: 'Reset your SessionX password',
+		text,
+		html: wrap(`Hi ${name}, reset your password`, [], footer)
+	};
+}
+
 export function bookingApprovedEmail(
 	d: BookingEmailData,
 	bookingId: string,

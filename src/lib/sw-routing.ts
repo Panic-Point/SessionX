@@ -9,7 +9,15 @@
 export type SwStrategy = 'precache' | 'network-first-navigation' | 'network-only';
 
 /** Path prefixes whose pages or endpoints can carry personal or admin data. */
-const PRIVATE_SECTIONS = ['/api', '/admin', '/account', '/login', '/logout', '/manage'];
+const PRIVATE_SECTIONS = [
+	'/api',
+	'/admin',
+	'/account',
+	'/login',
+	'/logout',
+	'/manage',
+	'/register'
+];
 
 function isPrivatePath(pathname: string): boolean {
 	// Match on the decoded, lower-cased path so `/%61dmin` or `/ADMIN` can't slip past.

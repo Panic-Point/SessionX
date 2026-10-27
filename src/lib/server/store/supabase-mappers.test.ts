@@ -15,7 +15,8 @@ import {
 	mapStudentPriceRow,
 	mapAccountWithStudentsRow,
 	mapLessonSeriesRow,
-	mapSeriesRpcError
+	mapSeriesRpcError,
+	toPasswordTokenRow
 } from './supabase-mappers';
 import { SeriesStoreError } from './types';
 
@@ -359,5 +360,39 @@ describe('supabase mappers', () => {
 			{ studentId: 's2', lessonTypeId: 'l', priceCents: 3000 }
 		]);
 		expect(result.students[0].notes).toBe('n');
+	});
+});
+
+describe('toPasswordTokenRow', () => {
+	const expires = new Date('2026-11-01T00:30:00Z');
+
+	it('fills only registration columns for a registration', () => {
+		expect(
+			toPasswordTokenRow(
+				'h',
+				{ purpose: 'register', email: ' A@B.com ', name: 'Ann', passwordHash: 'p' },
+				expires
+			)
+		).toEqual({
+			token_hash: 'h',
+			purpose: 'register',
+			account_id: null,
+			email: 'a@b.com',
+			name: 'Ann',
+			password_hash: 'p',
+			expires_at: '2026-11-01T00:30:00.000Z'
+		});
+	});
+
+	it('fills only the account for a reset', () => {
+		expect(toPasswordTokenRow('h', { purpose: 'reset', accountId: 'acc' }, expires)).toEqual({
+			token_hash: 'h',
+			purpose: 'reset',
+			account_id: 'acc',
+			email: null,
+			name: null,
+			password_hash: null,
+			expires_at: '2026-11-01T00:30:00.000Z'
+		});
 	});
 });

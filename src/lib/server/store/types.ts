@@ -157,6 +157,11 @@ export class AdminStoreError extends Error {
 	}
 }
 
+/** What a password token is for. Registrations name an email that may not have an account yet. */
+export type PasswordTokenData =
+	| { purpose: 'register'; email: string; name: string; passwordHash: string }
+	| { purpose: 'reset'; accountId: string };
+
 export interface AdminStore {
 	/** Trim + case-insensitive. */
 	findAccountByEmail(email: string): Promise<Account | null>;
@@ -164,6 +169,24 @@ export interface AdminStore {
 	createLoginToken(accountId: string, tokenHash: string, expiresAt: Date): Promise<void>;
 	/** Returns the accountId and marks the token used; null if unknown, used or expired (expiresAt <= now). */
 	consumeLoginToken(tokenHash: string, now: Date): Promise<string | null>;
+	/** Null when the account has no password (or does not exist). */
+	getPasswordHash(accountId: string): Promise<string | null>;
+	/** Throws AdminStoreError not_found. */
+	setPasswordHash(accountId: string, passwordHash: string): Promise<void>;
+	createPasswordToken(tokenHash: string, data: PasswordTokenData, expiresAt: Date): Promise<void>;
+	/**
+	 * Uses a registration token: creates the account (role client) if its email has none, otherwise
+	 * keeps the account's name and role; sets the pending password, voids the account's other unused
+	 * password tokens and clears the email's failures. Returns the accountId; null if unknown, used,
+	 * expired (expiresAt <= now) or not a registration token.
+	 */
+	completeRegistration(tokenHash: string, now: Date): Promise<string | null>;
+	/** Like completeRegistration, for a reset token, setting `passwordHash`. */
+	completePasswordReset(tokenHash: string, passwordHash: string, now: Date): Promise<string | null>;
+	/** Failed password sign-ins for the email (trim + case-insensitive) with failedAt > since. */
+	countPasswordFailures(email: string, since: Date): Promise<number>;
+	recordPasswordFailure(email: string, failedAt: Date): Promise<void>;
+	clearPasswordFailures(email: string): Promise<void>;
 	listBookings(filter: BookingFilter): Promise<AdminBooking[]>;
 	getBooking(id: string): Promise<AdminBooking | null>;
 	/** Throws AdminStoreError: not_found; not_pending; in_past when approving a booking with startsAt <= now. */
