@@ -92,7 +92,7 @@ describe('admin lessons period', () => {
 	const PAT = '22222222-0000-0000-0000-00000000000b';
 	// Ten days out at 4pm studio time, so it is in the future and not in this week.
 	const start = DateTime.now()
-		.setZone('America/New_York')
+		.setZone(demoData().settings.timezone)
 		.plus({ days: 10 })
 		.set({ hour: 16, minute: 0, second: 0, millisecond: 0 });
 

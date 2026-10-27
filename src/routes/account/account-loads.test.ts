@@ -57,7 +57,7 @@ describe('account lessons period', () => {
 	const LESSON_30 = '11111111-0000-0000-0000-000000000030';
 	const AVA = '33333333-0000-0000-0000-0000000000a1';
 	const start = DateTime.now()
-		.setZone('America/New_York')
+		.setZone(demoData().settings.timezone)
 		.plus({ days: 10 })
 		.set({ hour: 16, minute: 0, second: 0, millisecond: 0 });
 	let patBooking = '';
