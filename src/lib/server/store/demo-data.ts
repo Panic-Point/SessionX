@@ -1,5 +1,5 @@
 import type { DateOverride, WeeklyHours } from '../availability';
-import type { AdminLessonType, StudioSettings } from './types';
+import type { AdminLessonType, SeriesInput, StudioSettings } from './types';
 
 export interface DemoAccount {
 	id: string;
@@ -38,6 +38,12 @@ export interface DemoData {
 	students: DemoStudent[];
 	studentPrices: DemoStudentPrice[];
 	passwords: DemoPassword[];
+	lessonSeries: DemoSeries[];
+}
+
+export interface DemoSeries extends SeriesInput {
+	id: string;
+	priceCents: number;
 }
 
 /** Mirrors supabase/seed.sql (plus the column defaults from the init migration). */
@@ -127,6 +133,23 @@ export function demoData(): DemoData {
 			{
 				accountId: '22222222-0000-0000-0000-00000000000b',
 				passwordHash: DEMO_PARENT_PASSWORD_HASH
+			}
+		],
+		// Ben's standing weekly lesson: Tuesdays at 4:00pm, no end date. Occurrences are created
+		// by the daily top-up (or the seed, in Supabase).
+		lessonSeries: [
+			{
+				id: '44444444-0000-0000-0000-0000000000b1',
+				studentId: '33333333-0000-0000-0000-0000000000b1',
+				lessonTypeId: '11111111-0000-0000-0000-000000000030',
+				weekday: 2,
+				startTime: '16:00',
+				intervalWeeks: 1,
+				startsOn: '2026-11-03',
+				endsOn: null,
+				occurrenceCount: null,
+				priceCents: 3000,
+				note: ''
 			}
 		]
 	};

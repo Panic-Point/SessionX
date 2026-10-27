@@ -23,7 +23,9 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 			durationMin: l.durationMin,
 			whenLabel: l.whenLabel,
 			priceLabel: l.priceLabel,
-			paid: l.paid
+			paid: l.paid,
+			seriesId: l.series?.id ?? null,
+			seriesLabel: l.seriesLabel
 		}))
 	};
 };

@@ -5,6 +5,7 @@ import { configureCalendar, type ConfiguredCalendar } from './calendar/configure
 import type { CalendarClient } from './calendar/types';
 import { chooseStore, getSessionSecret as pickSessionSecret } from './choose-store';
 import { createMailer, type Mailer } from './email/mailer';
+import { topUpSeries } from './series-service';
 import { demoData } from './store/demo-data';
 import { MemoryBookingStore } from './store/memory';
 import { createSupabaseBookingStore } from './store/supabase';
@@ -17,7 +18,13 @@ let calendar: ConfiguredCalendar | undefined;
 export function getStore(): AppStore {
 	const choice = chooseStore(env, dev);
 	if (choice.kind === 'memory') {
-		memoryStore ??= new MemoryBookingStore(demoData());
+		if (!memoryStore) {
+			memoryStore = new MemoryBookingStore(demoData());
+			// Materialise the demo series, as the seed does for Supabase (the cron extends it).
+			topUpSeries({ store: memoryStore, appUrl: '' }, new Date()).catch((e) =>
+				console.error('Failed to create demo series lessons', e)
+			);
+		}
 		return memoryStore;
 	}
 	return createSupabaseBookingStore(choice.url, choice.key);

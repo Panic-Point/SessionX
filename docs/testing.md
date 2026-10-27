@@ -32,6 +32,7 @@ Both modes start with the same data:
 | Weekly hours  | Monday to Friday 3pm to 8pm, Saturday 9am to 1pm (Eastern Time). Closed Sunday.         |
 | Booking rules | 24 hours minimum notice, up to 60 days ahead, start times every 30 minutes, no same-day |
 | Cancellation  | Cancelling less than 24 hours before an approved lesson counts as a late cancellation   |
+| Recurring     | Ben has a weekly 30-minute lesson every Tuesday at 4pm, booked 12 weeks ahead           |
 
 ### Where the emails go
 
@@ -342,10 +343,38 @@ it is off until you set a secret.
    curl -X POST -H "Authorization: Bearer local-test-secret" http://localhost:5173/api/cron
    ```
 
-3. The response is `{"ok":true,"expired":0}`, where the number is how many requests were expired.
-   A wrong secret gives a 401, and no secret configured gives a 503.
+3. The response is `{"ok":true,"expired":0,"seriesToppedUp":1,"lessonsAdded":0}`. `expired` is how
+   many requests were expired; the other two count recurring series extended (see section 14). A
+   wrong secret gives a 401, and no secret configured gives a 503.
 
 A request only expires once its lesson time has passed, so the count is usually 0 locally.
+
+## 14. Recurring lessons (admin)
+
+1. Sign in as the admin, open **Families**, then **Pat Parent**. Under **Ben**, **Recurring
+   lessons** lists the sample **Weekly · Tue 4:00pm** series.
+2. Open **Set up recurring lessons** under Ben. Choose the 30-minute lesson, **Tuesday**, `15:00`,
+   **Every week**, a start date this week, **After a number of lessons**, `10`. Click **Preview
+   dates**: you see 10 Tuesdays at 3:00 PM, each marked **OK** (dates after a clock change still
+   say 3:00 PM).
+3. To see clashes: book a guest lesson on one of those Tuesdays at 3pm (section 4), add a closed
+   date override on another (section 3), then preview again. Those dates are crossed out with the
+   reason, and the button says how many will be booked.
+4. Click **Book N lessons**. The page lists what was booked and skipped. The skipped guest booking
+   is unchanged. Pat gets one email listing every date with a `lessons.ics` attachment, and the
+   lessons appear in **Lessons** (tagged **Weekly · Tue 3:00pm**), on Pat's **My lessons** (tagged
+   **Weekly**) and, with Google Calendar set up, one event per lesson.
+5. Go to **Book a lesson** as a guest: those Tuesday 3pm times are not offered.
+6. Open the series (from the family page or the tag in **Lessons**). **Cancel this lesson** cancels
+   one (Pat gets the usual cancellation email); the rest stay. **Cancel this and later** or **Cancel
+   remaining lessons** ends the series: future lessons are cancelled, past ones stay, and Pat gets
+   one email listing the cancelled dates.
+7. As Pat, cancel one series lesson from **My lessons**: it works like any lesson, including the
+   late-cancel warning. Families can't cancel a whole series.
+
+A series with no end, or one that runs past 12 weeks, only has lessons 12 weeks ahead. The daily
+scheduled job (section 13) adds the next ones; with `npm run dev` the sample series is filled in
+when the server starts.
 
 ## Automated tests
 

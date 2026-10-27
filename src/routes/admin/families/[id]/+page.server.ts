@@ -6,15 +6,41 @@ import {
 	saveStudentPrices
 } from '#lib/server/admin-service.ts';
 import { formString, requireAdmin } from '#lib/server/admin-actions.ts';
-import { getStore } from '#lib/server/context.ts';
+import { getAppUrl, getCalendar, getMailer, getStore } from '#lib/server/context.ts';
+import { localToday } from '#lib/server/recurrence.ts';
+import {
+	createSeries,
+	listFamilySeries,
+	previewSeries,
+	SERIES_FORM_FIELDS,
+	type SeriesForm
+} from '#lib/server/series-service.ts';
 import type { Actions, PageServerLoad } from './$types';
 
 export const load: PageServerLoad = async ({ locals, params }) => {
 	requireAdmin(locals.account);
-	const family = await getFamily(getStore(), params.id);
+	const store = getStore();
+	const family = await getFamily(store, params.id);
 	if (!family) error(404, 'Family not found.');
-	return { family };
+	const now = new Date();
+	const [series, lessonTypes, settings] = await Promise.all([
+		listFamilySeries(store, params.id, now),
+		store.getActiveLessonTypes(),
+		store.getSettings()
+	]);
+	return {
+		family,
+		series,
+		lessonTypes: lessonTypes.map((t) => ({ id: t.id, name: t.name, durationMin: t.durationMin })),
+		today: localToday(now, settings.timezone)
+	};
 };
+
+function seriesForm(data: FormData): SeriesForm {
+	const form = {} as SeriesForm;
+	for (const field of SERIES_FORM_FIELDS) form[field] = formString(data, field);
+	return form;
+}
 
 const PRICE_PREFIX = 'price-';
 
@@ -51,5 +77,53 @@ export const actions: Actions = {
 		if (!result.ok)
 			return fail(400, { kind: 'prices', target: studentId, errors: result.errors, prices });
 		return { kind: 'prices', target: studentId, saved: true };
+	},
+	seriesPreview: async ({ locals, request, params }) => {
+		requireAdmin(locals.account);
+		const values = seriesForm(await request.formData());
+		const deps = { store: getStore(), calendar: getCalendar() };
+		const result = await previewSeries(deps, params.id, values, new Date());
+		if (!result.ok) {
+			return fail(400, { kind: 'series', target: values.studentId, errors: result.errors, values });
+		}
+		const p = result.preview;
+		return {
+			kind: 'series',
+			target: values.studentId,
+			values,
+			preview: {
+				scheduleLabel: p.scheduleLabel,
+				lessonTypeName: p.lessonTypeName,
+				priceLabel: p.priceLabel,
+				endLabel: p.endLabel,
+				bookable: p.bookable,
+				continues: p.continues,
+				dates: p.dates.map((d) => ({
+					date: d.date,
+					whenLabel: d.whenLabel,
+					status: d.status,
+					statusLabel: d.statusLabel
+				}))
+			}
+		};
+	},
+	seriesCreate: async ({ locals, request, params }) => {
+		requireAdmin(locals.account);
+		const values = seriesForm(await request.formData());
+		const deps = {
+			store: getStore(),
+			mailer: getMailer(),
+			appUrl: getAppUrl(),
+			calendar: getCalendar()
+		};
+		const result = await createSeries(deps, params.id, values, new Date());
+		if (!result.ok) {
+			return fail(400, { kind: 'series', target: values.studentId, errors: result.errors, values });
+		}
+		return {
+			kind: 'series',
+			target: values.studentId,
+			created: { seriesId: result.seriesId, booked: result.booked, skipped: result.skipped }
+		};
 	}
 };

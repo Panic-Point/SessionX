@@ -125,6 +125,17 @@ export interface AdminBooking {
 	lateCancel: boolean;
 	manageToken: string;
 	gcalEventId: string | null;
+	/** Set when the booking is an occurrence of a recurring series. */
+	series: SeriesTag | null;
+}
+
+/** The parts of a series a booking list needs to label and link an occurrence. */
+export interface SeriesTag {
+	id: string;
+	weekday: number;
+	/** HH:mm */
+	startTime: string;
+	intervalWeeks: 1 | 2;
 }
 
 /** `from` is inclusive and `to` exclusive, both on startsAt. */
@@ -278,4 +289,83 @@ export interface AccountStore {
 	updateStudentNotes(studentId: string, notes: string): Promise<void>;
 }
 
-export type AppStore = BookingStore & AdminStore & AccountStore;
+export interface SeriesInput {
+	studentId: string;
+	lessonTypeId: string;
+	/** ISO weekday: 1 = Monday ... 7 = Sunday */
+	weekday: number;
+	/** HH:mm, studio local time */
+	startTime: string;
+	intervalWeeks: 1 | 2;
+	/** yyyy-MM-dd */
+	startsOn: string;
+	endsOn: string | null;
+	occurrenceCount: number | null;
+	note: string;
+}
+
+export interface LessonSeries extends SeriesInput {
+	id: string;
+	studentName: string;
+	accountId: string;
+	accountName: string;
+	accountEmail: string;
+	lessonTypeName: string;
+	durationMin: number;
+	priceCents: number;
+	/** Last date whose occurrence was created or skipped; null before the first. */
+	materializedThrough: string | null;
+	createdAt: Date;
+	endedAt: Date | null;
+}
+
+/** One requested start: bookingId is null when it was skipped (clash, or not after now). */
+export interface OccurrenceResult {
+	startsAt: Date;
+	bookingId: string | null;
+}
+
+export type SeriesStoreErrorCode = 'not_found' | 'ended';
+
+export class SeriesStoreError extends Error {
+	constructor(public readonly code: SeriesStoreErrorCode) {
+		super(code);
+		this.name = 'SeriesStoreError';
+	}
+}
+
+export interface SeriesStore {
+	/**
+	 * Creates the series and its approved occurrences in one step, skipping (not failing) any
+	 * start that overlaps a live booking or is not after now. Price is the student's custom price,
+	 * else the lesson type's. `through` (yyyy-MM-dd) becomes materializedThrough. Throws
+	 * AccountStoreError not_found (unknown student), then BookingStoreError lesson_type_not_found.
+	 */
+	createSeries(
+		input: SeriesInput,
+		startsAt: Date[],
+		through: string,
+		now: Date
+	): Promise<{ series: LessonSeries; occurrences: OccurrenceResult[] }>;
+	/** Same skipping rules as createSeries. Throws SeriesStoreError not_found; ended. */
+	addSeriesOccurrences(
+		seriesId: string,
+		startsAt: Date[],
+		through: string,
+		now: Date
+	): Promise<OccurrenceResult[]>;
+	getSeries(id: string): Promise<LessonSeries | null>;
+	/** Every series for the account's students, newest first. */
+	listSeriesForAccount(accountId: string): Promise<LessonSeries[]>;
+	/** All the series' bookings, any status, startsAt ascending. */
+	listSeriesBookings(seriesId: string): Promise<AdminBooking[]>;
+	/** Series not ended whose materializedThrough is null or before `through`. */
+	listSeriesNeedingTopUp(through: string): Promise<LessonSeries[]>;
+	/**
+	 * Sets endedAt (kept if already set) and cancels live occurrences with startsAt >= from and
+	 * > now, never late. Returns the cancelled bookings. Throws SeriesStoreError not_found.
+	 */
+	endSeries(id: string, from: Date, now: Date): Promise<AdminBooking[]>;
+}
+
+export type AppStore = BookingStore & AdminStore & AccountStore & SeriesStore;

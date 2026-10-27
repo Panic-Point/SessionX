@@ -7,6 +7,7 @@ import { addLessonToCalendar } from './calendar/sync';
 import type { CalendarClient } from './calendar/types';
 import type { Mailer } from './email/mailer';
 import { formatDateTime, formatMoney } from './format';
+import { seriesLabel } from './recurrence';
 import { dollarsToCents, type Result } from './admin-validation';
 import {
 	AccountStoreError,
@@ -30,6 +31,8 @@ export interface AdminBookingView extends AdminBooking {
 	whenLabel: string;
 	priceLabel: string;
 	paid: boolean;
+	/** e.g. "Weekly · Tue 3:00pm" for an occurrence of a recurring series. */
+	seriesLabel: string | null;
 }
 
 export type ActionResult = { ok: true } | { ok: false; message: string };
@@ -47,7 +50,8 @@ function toView(b: AdminBooking, timezone: string): AdminBookingView {
 		...b,
 		whenLabel: formatDateTime(b.startsAt, timezone),
 		priceLabel: formatMoney(b.priceCents),
-		paid: b.paidAt !== null
+		paid: b.paidAt !== null,
+		seriesLabel: b.series ? seriesLabel(b.series) : null
 	};
 }
 

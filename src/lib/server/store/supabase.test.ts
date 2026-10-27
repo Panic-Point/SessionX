@@ -3,6 +3,7 @@ import { describe } from 'vitest';
 import { runAccountStoreContract } from './account-contract';
 import { runAdminStoreContract } from './admin-contract';
 import { runBookingStoreContract } from './contract';
+import { runSeriesStoreContract } from './series-contract';
 import { demoData } from './demo-data';
 import { runPasswordStoreContract } from './password-contract';
 import { createSupabaseBookingStore } from './supabase';
@@ -27,6 +28,23 @@ async function resetToSeed() {
 	check((await db.from('password_tokens').delete().not('token_hash', 'is', null)).error);
 	check((await db.from('password_failures').delete().not('id', 'is', null)).error);
 	check((await db.from('bookings').delete().not('id', 'is', null)).error);
+	// Only the seed's series stays, un-materialised (its seeded occurrences went with the bookings).
+	check(
+		(
+			await db
+				.from('lesson_series')
+				.delete()
+				.not('id', 'in', list(seed.lessonSeries.map((x) => x.id)))
+		).error
+	);
+	check(
+		(
+			await db
+				.from('lesson_series')
+				.update({ materialized_through: null, ended_at: null })
+				.not('id', 'is', null)
+		).error
+	);
 	check(
 		(
 			await db
@@ -151,6 +169,11 @@ describe.skipIf(!url || !key)('supabase store', () => {
 		resetToSeed
 	);
 	runAccountStoreContract(
+		'supabase',
+		async () => createSupabaseBookingStore(url!, key!),
+		resetToSeed
+	);
+	runSeriesStoreContract(
 		'supabase',
 		async () => createSupabaseBookingStore(url!, key!),
 		resetToSeed

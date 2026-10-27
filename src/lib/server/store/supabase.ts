@@ -6,11 +6,13 @@ import {
 	mapAccountWithStudentsRow,
 	mapAdminBookingRow,
 	mapAdminLessonTypeRow,
+	mapLessonSeriesRow,
 	mapLessonTypeRow,
 	mapLiveBookingRow,
 	mapOverrides,
 	mapOverridesWithNotes,
 	mapRpcError,
+	mapSeriesRpcError,
 	mapSettingsRow,
 	mapStudentPriceRow,
 	mapStudentRow,
@@ -22,6 +24,7 @@ import {
 	type AdminLessonTypeRow,
 	type DateOverrideRangeRow,
 	type DateOverrideRow,
+	type LessonSeriesRow,
 	type LessonTypeRow,
 	type LiveBookingRow,
 	type SettingsRow,
@@ -45,10 +48,13 @@ import {
 	type CreatedBooking,
 	type DateOverrideWithNote,
 	type GuestBookingInput,
+	type LessonSeries,
 	type LessonType,
 	type LessonTypeInput,
 	type LiveBooking,
+	type OccurrenceResult,
 	type PasswordTokenData,
+	type SeriesInput,
 	type Student,
 	type StudentPrice,
 	type StudioSettings
@@ -68,6 +74,16 @@ interface BookingByTokenRow {
 	students: { name: string } | null;
 }
 
+interface RpcOccurrenceRow {
+	starts_at: string;
+	booking_id: string | null;
+}
+
+const mapOccurrences = (rows: RpcOccurrenceRow[]): OccurrenceResult[] =>
+	rows
+		.map((r) => ({ startsAt: new Date(r.starts_at), bookingId: r.booking_id }))
+		.sort((a, b) => a.startsAt.getTime() - b.startsAt.getTime());
+
 interface RpcBookingRow {
 	booking_id: string;
 	manage_token: string;
@@ -79,7 +95,11 @@ interface RpcBookingRow {
 const ACCOUNT_COLUMNS = 'id, name, email, role';
 const LESSON_TYPE_COLUMNS = 'id, name, description, duration_min, price_cents, sort_order, active';
 const BOOKING_COLUMNS =
-	'id, status, starts_at, ends_at, price_cents, paid_at, note, decline_reason, late_cancel, manage_token, gcal_event_id, lesson_types(name, duration_min), students(name, accounts(name, email))';
+	'id, status, starts_at, ends_at, price_cents, paid_at, note, decline_reason, late_cancel, manage_token, gcal_event_id, lesson_types(name, duration_min), students(name, accounts(name, email)), lesson_series(id, weekday, start_time, interval_weeks)';
+const SERIES_COLUMNS =
+	'id, student_id, lesson_type_id, weekday, start_time, interval_weeks, starts_on, ends_on, occurrence_count, price_cents, note, materialized_through, created_at, ended_at, lesson_types(name, duration_min), students(name, account_id, accounts(name, email))';
+// !inner so that filtering on students.account_id drops other accounts' series.
+const OWNED_SERIES_COLUMNS = SERIES_COLUMNS.replace('students(', 'students!inner(');
 
 const STUDENT_COLUMNS = 'id, account_id, name, notes';
 const ACCOUNT_WITH_STUDENTS_COLUMNS = `${ACCOUNT_COLUMNS}, admin_notes, students(${STUDENT_COLUMNS}, student_prices(student_id, lesson_type_id, price_cents))`;
@@ -110,6 +130,23 @@ export function createSupabaseBookingStore(url: string, serviceRoleKey: string):
 	}
 
 	const isMalformedId = (error: { code?: string }) => error.code === '22P02';
+
+	async function getLessonSeries(id: string): Promise<LessonSeries | null> {
+		const { data, error } = await db
+			.from('lesson_series')
+			.select(SERIES_COLUMNS)
+			.eq('id', id)
+			.maybeSingle();
+		if (error) {
+			if (isMalformedId(error)) return null;
+			fail('getSeries', error);
+		}
+		return data ? mapLessonSeriesRow(data as unknown as LessonSeriesRow) : null;
+	}
+
+	function failSeries(context: string, error: { code?: string; message?: string }): never {
+		throw mapSeriesRpcError(error) ?? new Error(`${context}: ${error.message ?? 'unknown error'}`);
+	}
 
 	/** Throws the mapped store error, or a generic Error carrying the context. */
 	function failAccount(context: string, error: { code?: string; message?: string }): never {
@@ -711,6 +748,109 @@ export function createSupabaseBookingStore(url: string, serviceRoleKey: string):
 				.select('id');
 			if (error) failAccount('updateStudentNotes', error);
 			if ((data as { id: string }[]).length === 0) throw new AccountStoreError('not_found');
+		},
+
+		// ---- SeriesStore ----
+
+		async createSeries(
+			input: SeriesInput,
+			startsAt: Date[],
+			through: string,
+			now: Date
+		): Promise<{ series: LessonSeries; occurrences: OccurrenceResult[] }> {
+			const { data, error } = await db.rpc('create_lesson_series', {
+				p_student_id: input.studentId,
+				p_lesson_type_id: input.lessonTypeId,
+				p_weekday: input.weekday,
+				p_start_time: input.startTime,
+				p_interval_weeks: input.intervalWeeks,
+				p_starts_on: input.startsOn,
+				p_ends_on: input.endsOn,
+				p_occurrence_count: input.occurrenceCount,
+				p_note: input.note,
+				p_starts_at: startsAt.map((d) => d.toISOString()),
+				p_through: through,
+				p_now: now.toISOString()
+			});
+			if (error) failAccount('createSeries', error);
+			const result = data as { series_id: string; occurrences: RpcOccurrenceRow[] };
+			const series = await getLessonSeries(result.series_id);
+			if (!series) throw new Error('createSeries: series not found after insert');
+			return { series, occurrences: mapOccurrences(result.occurrences) };
+		},
+
+		async addSeriesOccurrences(
+			seriesId: string,
+			startsAt: Date[],
+			through: string,
+			now: Date
+		): Promise<OccurrenceResult[]> {
+			const { data, error } = await db.rpc('create_series_occurrences', {
+				p_series_id: seriesId,
+				p_starts_at: startsAt.map((d) => d.toISOString()),
+				p_through: through,
+				p_now: now.toISOString()
+			});
+			if (error) failSeries('addSeriesOccurrences', error);
+			return mapOccurrences((data as RpcOccurrenceRow[] | null) ?? []);
+		},
+
+		async getSeries(id: string): Promise<LessonSeries | null> {
+			return getLessonSeries(id);
+		},
+
+		async listSeriesForAccount(accountId: string): Promise<LessonSeries[]> {
+			const { data, error } = await db
+				.from('lesson_series')
+				.select(OWNED_SERIES_COLUMNS)
+				.eq('students.account_id', accountId)
+				.order('created_at', { ascending: false });
+			if (error) {
+				if (isMalformedId(error)) return [];
+				fail('listSeriesForAccount', error);
+			}
+			return (data as unknown as LessonSeriesRow[]).map(mapLessonSeriesRow);
+		},
+
+		async listSeriesBookings(seriesId: string): Promise<AdminBooking[]> {
+			const { data, error } = await db
+				.from('bookings')
+				.select(BOOKING_COLUMNS)
+				.eq('series_id', seriesId)
+				.order('starts_at');
+			if (error) {
+				if (isMalformedId(error)) return [];
+				fail('listSeriesBookings', error);
+			}
+			return (data as unknown as AdminBookingRow[]).map(mapAdminBookingRow);
+		},
+
+		async listSeriesNeedingTopUp(through: string): Promise<LessonSeries[]> {
+			const { data, error } = await db
+				.from('lesson_series')
+				.select(SERIES_COLUMNS)
+				.is('ended_at', null)
+				.or(`materialized_through.is.null,materialized_through.lt.${through}`);
+			if (error) fail('listSeriesNeedingTopUp', error);
+			return (data as unknown as LessonSeriesRow[]).map(mapLessonSeriesRow);
+		},
+
+		async endSeries(id: string, from: Date, now: Date): Promise<AdminBooking[]> {
+			const { data, error } = await db.rpc('end_series', {
+				p_series_id: id,
+				p_from: from.toISOString(),
+				p_now: now.toISOString()
+			});
+			if (error) failSeries('endSeries', error);
+			const ids = (data as string[] | null) ?? [];
+			if (ids.length === 0) return [];
+			const rows = await db
+				.from('bookings')
+				.select(BOOKING_COLUMNS)
+				.in('id', ids)
+				.order('starts_at');
+			if (rows.error) fail('endSeries', rows.error);
+			return (rows.data as unknown as AdminBookingRow[]).map(mapAdminBookingRow);
 		}
 	};
 }

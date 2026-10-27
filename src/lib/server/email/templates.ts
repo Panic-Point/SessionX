@@ -1,5 +1,5 @@
 import { escapeHtml, formatDateTime, formatMoney, formatTime } from '../format';
-import { buildIcs } from './ics';
+import { buildIcs, buildIcsCalendar } from './ics';
 import type { EmailMessage } from './mailer';
 
 export interface BookingEmailData {
@@ -193,5 +193,121 @@ Lessons: ${adminUrl}
 			: `Lesson cancelled: ${d.studentName}, ${when}`,
 		text,
 		html: latePara + wrap('Lesson cancelled', rows, footer)
+	};
+}
+
+export interface SeriesEmailData {
+	accountName: string;
+	email: string;
+	studentName: string;
+	lessonTypeName: string;
+	durationMin: number;
+	timezone: string;
+	priceCents: number;
+	/** e.g. "Weekly · Tue 3:00pm" */
+	scheduleLabel: string;
+}
+
+export interface SeriesLesson {
+	bookingId: string;
+	startsAt: Date;
+	manageUrl: string;
+}
+
+export interface SkippedLesson {
+	startsAt: Date;
+	reason: string;
+}
+
+function seriesRows(d: SeriesEmailData): [string, string][] {
+	return [
+		['Lesson', `${d.lessonTypeName} (${d.durationMin} min)`],
+		['Student', d.studentName],
+		['Schedule', d.scheduleLabel],
+		['Price per lesson', formatMoney(d.priceCents)]
+	];
+}
+
+function htmlList(items: string[]): string {
+	return `<ul style="margin:4px 0 0;padding-left:20px">${items.map((i) => `<li>${i}</li>`).join('')}</ul>`;
+}
+
+/**
+ * One email for a whole new series: the dates booked (each with its own manage link), any dates
+ * skipped and why, and one .ics holding every booked lesson.
+ */
+export function seriesCreatedEmail(
+	d: SeriesEmailData,
+	booked: SeriesLesson[],
+	skipped: SkippedLesson[],
+	opts: { policyText: string; continues: boolean; now: Date }
+): EmailMessage {
+	const when = (at: Date) => formatDateTime(at, d.timezone);
+	const rows = seriesRows(d);
+	const more = opts.continues
+		? 'More lessons are added automatically as the dates get closer. We will skip any date the studio is already booked or closed.'
+		: '';
+
+	const textParts = [
+		`Hi ${d.accountName},`,
+		`${d.studentName} is booked for recurring lessons. A calendar file with every lesson is attached.`,
+		textRows(rows),
+		`Lessons booked:\n${booked.map((b) => `- ${when(b.startsAt)} (manage: ${b.manageUrl})`).join('\n')}`
+	];
+	if (skipped.length > 0) {
+		textParts.push(
+			`Dates skipped:\n${skipped.map((s) => `- ${when(s.startsAt)}: ${s.reason}`).join('\n')}`
+		);
+	}
+	if (more) textParts.push(more);
+	if (opts.policyText) textParts.push(`Cancellation policy: ${opts.policyText}`);
+
+	let footer = `<p style="margin:16px 0 0">Lessons booked:</p>${htmlList(
+		booked.map(
+			(b) => `${escapeHtml(when(b.startsAt))} · <a href="${escapeHtml(b.manageUrl)}">Manage</a>`
+		)
+	)}`;
+	if (skipped.length > 0) {
+		footer += `<p style="margin:16px 0 0">Dates skipped:</p>${htmlList(
+			skipped.map((s) => `${escapeHtml(when(s.startsAt))}: ${escapeHtml(s.reason)}`)
+		)}`;
+	}
+	footer += '<p style="margin:16px 0 0">A calendar file with every lesson is attached.</p>';
+	if (more) footer += `<p style="margin:8px 0 0">${escapeHtml(more)}</p>`;
+	if (opts.policyText) {
+		footer += `<p style="margin:8px 0 0;color:#555">Cancellation policy: ${escapeHtml(opts.policyText)}</p>`;
+	}
+
+	const ics = buildIcsCalendar(
+		booked.map((b) => ({
+			uid: `${b.bookingId}@sessionx`,
+			start: b.startsAt,
+			end: new Date(b.startsAt.getTime() + d.durationMin * 60_000),
+			summary: `${d.lessonTypeName} – ${d.studentName}`,
+			description: `${d.lessonTypeName} for ${d.studentName}. Manage: ${b.manageUrl}`,
+			url: b.manageUrl,
+			now: opts.now
+		}))
+	);
+	return {
+		to: d.email,
+		subject: `Recurring lessons booked – ${d.studentName}, ${d.scheduleLabel}`,
+		text: textParts.join('\n\n') + '\n',
+		html: wrap(`Hi ${d.accountName}, recurring lessons are booked`, rows, footer),
+		attachments: [{ filename: 'lessons.ics', contentType: 'text/calendar', content: ics }]
+	};
+}
+
+/** One email when the admin ends a series, listing the lessons that were cancelled. */
+export function seriesEndedEmail(d: SeriesEmailData, cancelled: Date[]): EmailMessage {
+	const when = (at: Date) => formatDateTime(at, d.timezone);
+	const rows = seriesRows(d);
+	const text = `Hi ${d.accountName},\n\n${d.studentName}'s recurring lessons have been cancelled.\n\n${textRows(rows)}\n\nLessons cancelled:\n${cancelled.map((c) => `- ${when(c)}`).join('\n')}\n`;
+	const footer = `<p style="margin:16px 0 0">Lessons cancelled:</p>${htmlList(cancelled.map((c) => escapeHtml(when(c))))}`;
+	return {
+		to: d.email,
+		subject: `Recurring lessons cancelled – ${d.studentName}, ${d.scheduleLabel}`,
+		text,
+		html: wrap(`Hi ${d.accountName}, recurring lessons have been cancelled`, rows, footer)
 	};
 }

@@ -6,6 +6,7 @@ import {
 import { removeLessonFromCalendar } from './calendar/sync';
 import type { EmailMessage } from './email/mailer';
 import { formatDateTime, formatMoney } from './format';
+import { cadenceLabel } from './recurrence';
 import type { ServiceDeps } from './booking-service';
 import {
 	AccountStoreError,
@@ -26,6 +27,8 @@ export interface AccountBookingView {
 	priceLabel: string;
 	lateCancel: boolean;
 	canCancel: boolean;
+	/** "Weekly" or "Every 2 weeks" for a recurring lesson. */
+	seriesLabel: string | null;
 }
 
 export type FieldResult = { ok: true } | { ok: false; errors: Record<string, string> };
@@ -76,7 +79,8 @@ function toView(b: AdminBooking, now: Date, timezone: string): AccountBookingVie
 		studentName: b.studentName,
 		priceLabel: formatMoney(b.priceCents),
 		lateCancel: b.lateCancel,
-		canCancel: isLive(b) && b.startsAt.getTime() > now.getTime()
+		canCancel: isLive(b) && b.startsAt.getTime() > now.getTime(),
+		seriesLabel: b.series ? cadenceLabel(b.series.intervalWeeks) : null
 	};
 }
 

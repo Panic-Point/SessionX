@@ -30,7 +30,8 @@ const booking: AdminBooking = {
 	declineReason: null,
 	lateCancel: false,
 	manageToken: 'secret-token',
-	gcalEventId: null
+	gcalEventId: null,
+	series: null
 };
 
 describe('calendarBusy', () => {

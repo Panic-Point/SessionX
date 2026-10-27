@@ -24,7 +24,13 @@ import {
 	type LessonType,
 	type LessonTypeInput,
 	type LiveBooking,
+	type LessonSeries,
+	type OccurrenceResult,
 	type PasswordTokenData,
+	type SeriesInput,
+	type SeriesStore,
+	type SeriesTag,
+	SeriesStoreError,
 	type StudioSettings
 } from './types';
 
@@ -47,6 +53,15 @@ interface StoredBooking {
 	decidedAt: Date | null;
 	lateCancel: boolean;
 	gcalEventId: string | null;
+	seriesId: string | null;
+}
+
+interface StoredSeries extends SeriesInput {
+	id: string;
+	priceCents: number;
+	materializedThrough: string | null;
+	createdAt: Date;
+	endedAt: Date | null;
 }
 
 interface StoredLoginToken {
@@ -64,9 +79,10 @@ interface StoredPasswordToken {
 const isLive = (b: StoredBooking) => b.status === 'pending' || b.status === 'approved';
 
 /** In-memory BookingStore that mirrors the request_guest_booking SQL function's semantics. */
-export class MemoryBookingStore implements BookingStore, AdminStore, AccountStore {
+export class MemoryBookingStore implements BookingStore, AdminStore, AccountStore, SeriesStore {
 	private readonly data: DemoData;
 	private readonly bookings: StoredBooking[] = [];
+	private readonly series: StoredSeries[];
 	private readonly loginTokens = new Map<string, StoredLoginToken>();
 	// Kept apart from the account rows so a hash never leaks into a returned Account.
 	private readonly passwordHashes = new Map<string, string>();
@@ -78,6 +94,12 @@ export class MemoryBookingStore implements BookingStore, AdminStore, AccountStor
 
 	constructor(data: DemoData = demoData()) {
 		this.data = structuredClone(data);
+		this.series = this.data.lessonSeries.map((x) => ({
+			...x,
+			materializedThrough: null,
+			createdAt: new Date(0),
+			endedAt: null
+		}));
 		for (const p of this.data.passwords) this.passwordHashes.set(p.accountId, p.passwordHash);
 	}
 
@@ -162,7 +184,8 @@ export class MemoryBookingStore implements BookingStore, AdminStore, AccountStor
 			declineReason: null,
 			decidedAt: null,
 			lateCancel: false,
-			gcalEventId: null
+			gcalEventId: null,
+			seriesId: null
 		};
 		this.bookings.push(booking);
 		return {
@@ -491,7 +514,8 @@ export class MemoryBookingStore implements BookingStore, AdminStore, AccountStor
 			declineReason: null,
 			decidedAt: null,
 			lateCancel: false,
-			gcalEventId: null
+			gcalEventId: null,
+			seriesId: null
 		};
 		this.bookings.push(booking);
 		return {
@@ -557,6 +581,166 @@ export class MemoryBookingStore implements BookingStore, AdminStore, AccountStor
 			throw new AccountStoreError('not_found');
 		}
 		this.studentNotes.set(studentId, notes);
+	}
+
+	// ---- SeriesStore ----
+
+	async createSeries(
+		input: SeriesInput,
+		startsAt: Date[],
+		through: string,
+		now: Date
+	): Promise<{ series: LessonSeries; occurrences: OccurrenceResult[] }> {
+		// Same check order as the create_lesson_series SQL function.
+		if (!this.data.students.some((s) => s.id === input.studentId)) {
+			throw new AccountStoreError('not_found');
+		}
+		const lessonType = this.data.lessonTypes.find((t) => t.id === input.lessonTypeId);
+		if (!lessonType || !lessonType.active) throw new BookingStoreError('lesson_type_not_found');
+		const custom = this.data.studentPrices.find(
+			(p) => p.studentId === input.studentId && p.lessonTypeId === input.lessonTypeId
+		);
+		const stored: StoredSeries = {
+			...input,
+			note: input.note ?? '',
+			id: crypto.randomUUID(),
+			priceCents: custom?.priceCents ?? lessonType.priceCents,
+			materializedThrough: null,
+			createdAt: now,
+			endedAt: null
+		};
+		this.series.push(stored);
+		const occurrences = this.materialise(stored, startsAt, through, now);
+		return { series: this.toLessonSeries(stored), occurrences };
+	}
+
+	async addSeriesOccurrences(
+		seriesId: string,
+		startsAt: Date[],
+		through: string,
+		now: Date
+	): Promise<OccurrenceResult[]> {
+		const stored = this.series.find((x) => x.id === seriesId);
+		if (!stored) throw new SeriesStoreError('not_found');
+		if (stored.endedAt) throw new SeriesStoreError('ended');
+		return this.materialise(stored, startsAt, through, now);
+	}
+
+	async getSeries(id: string): Promise<LessonSeries | null> {
+		const stored = this.series.find((x) => x.id === id);
+		return stored ? this.toLessonSeries(stored) : null;
+	}
+
+	async listSeriesForAccount(accountId: string): Promise<LessonSeries[]> {
+		const own = new Set(
+			this.data.students.filter((s) => s.accountId === accountId).map((s) => s.id)
+		);
+		return this.series
+			.filter((x) => own.has(x.studentId))
+			.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
+			.map((x) => this.toLessonSeries(x));
+	}
+
+	async listSeriesBookings(seriesId: string): Promise<AdminBooking[]> {
+		return this.bookings
+			.filter((b) => b.seriesId === seriesId)
+			.sort((a, b) => a.startsAt.getTime() - b.startsAt.getTime())
+			.map((b) => this.toAdminBooking(b));
+	}
+
+	async listSeriesNeedingTopUp(through: string): Promise<LessonSeries[]> {
+		return this.series
+			.filter(
+				(x) => !x.endedAt && (x.materializedThrough === null || x.materializedThrough < through)
+			)
+			.map((x) => this.toLessonSeries(x));
+	}
+
+	async endSeries(id: string, from: Date, now: Date): Promise<AdminBooking[]> {
+		const stored = this.series.find((x) => x.id === id);
+		if (!stored) throw new SeriesStoreError('not_found');
+		stored.endedAt ??= now;
+		const cancelled = this.bookings.filter(
+			(b) => b.seriesId === id && isLive(b) && b.startsAt >= from && b.startsAt > now
+		);
+		for (const b of cancelled) {
+			b.status = 'cancelled';
+			b.lateCancel = false;
+		}
+		return cancelled
+			.sort((a, b) => a.startsAt.getTime() - b.startsAt.getTime())
+			.map((b) => this.toAdminBooking(b));
+	}
+
+	/** Mirrors create_series_occurrences: skip clashes and starts not after now, then advance. */
+	private materialise(
+		stored: StoredSeries,
+		startsAt: Date[],
+		through: string,
+		now: Date
+	): OccurrenceResult[] {
+		const lessonType = this.data.lessonTypes.find((t) => t.id === stored.lessonTypeId)!;
+		const results = startsAt.map((start): OccurrenceResult => {
+			if (start <= now) return { startsAt: start, bookingId: null };
+			let window;
+			try {
+				window = this.requireFreeSlot(start, lessonType.durationMin);
+			} catch (e) {
+				if (e instanceof BookingStoreError) return { startsAt: start, bookingId: null };
+				throw e;
+			}
+			const booking: StoredBooking = {
+				id: crypto.randomUUID(),
+				manageToken: crypto.randomUUID().replaceAll('-', ''),
+				studentId: stored.studentId,
+				lessonTypeId: stored.lessonTypeId,
+				startsAt: start,
+				...window,
+				status: 'approved',
+				priceCents: stored.priceCents,
+				note: stored.note,
+				paidAt: null,
+				declineReason: null,
+				decidedAt: now,
+				lateCancel: false,
+				gcalEventId: null,
+				seriesId: stored.id
+			};
+			this.bookings.push(booking);
+			return { startsAt: start, bookingId: booking.id };
+		});
+		if (stored.materializedThrough === null || stored.materializedThrough < through) {
+			stored.materializedThrough = through;
+		}
+		return results.sort((a, b) => a.startsAt.getTime() - b.startsAt.getTime());
+	}
+
+	private toLessonSeries(stored: StoredSeries): LessonSeries {
+		const student = this.data.students.find((s) => s.id === stored.studentId)!;
+		const account = this.data.accounts.find((a) => a.id === student.accountId)!;
+		const lessonType = this.data.lessonTypes.find((t) => t.id === stored.lessonTypeId)!;
+		return {
+			id: stored.id,
+			studentId: stored.studentId,
+			lessonTypeId: stored.lessonTypeId,
+			weekday: stored.weekday,
+			startTime: stored.startTime,
+			intervalWeeks: stored.intervalWeeks,
+			startsOn: stored.startsOn,
+			endsOn: stored.endsOn,
+			occurrenceCount: stored.occurrenceCount,
+			note: stored.note,
+			studentName: student.name,
+			accountId: account.id,
+			accountName: account.name,
+			accountEmail: account.email,
+			lessonTypeName: lessonType.name,
+			durationMin: lessonType.durationMin,
+			priceCents: stored.priceCents,
+			materializedThrough: stored.materializedThrough,
+			createdAt: stored.createdAt,
+			endedAt: stored.endedAt
+		};
 	}
 
 	/** Throws slot_taken on overlap with a live booking; otherwise returns the booked window. */
@@ -631,7 +815,20 @@ export class MemoryBookingStore implements BookingStore, AdminStore, AccountStor
 			declineReason: booking.declineReason,
 			lateCancel: booking.lateCancel,
 			manageToken: booking.manageToken,
-			gcalEventId: booking.gcalEventId
+			gcalEventId: booking.gcalEventId,
+			series: this.seriesTag(booking.seriesId)
 		};
+	}
+
+	private seriesTag(seriesId: string | null): SeriesTag | null {
+		const stored = seriesId ? this.series.find((x) => x.id === seriesId) : undefined;
+		return stored
+			? {
+					id: stored.id,
+					weekday: stored.weekday,
+					startTime: stored.startTime,
+					intervalWeeks: stored.intervalWeeks
+				}
+			: null;
 	}
 }

@@ -6,7 +6,11 @@ const ctx = vi.hoisted(() => ({
 	store: undefined as unknown as MemoryBookingStore,
 	secret: 'cron-test-secret' as string | undefined
 }));
-vi.mock('#lib/server/context.ts', () => ({ getStore: () => ctx.store }));
+vi.mock('#lib/server/context.ts', () => ({
+	getStore: () => ctx.store,
+	getCalendar: () => undefined,
+	getAppUrl: () => 'https://example.test'
+}));
 vi.mock('$app/env/private', () => ({
 	get CRON_SECRET() {
 		return ctx.secret;
@@ -66,8 +70,17 @@ describe('POST /api/cron', () => {
 		const id = await seedPastPending();
 		const res = await call('Bearer cron-test-secret');
 		expect(res.status).toBe(200);
-		expect(await res.json()).toEqual({ ok: true, expired: 1 });
+		expect(await res.json()).toMatchObject({ ok: true, expired: 1 });
 		expect((await ctx.store.getBooking(id))?.status).toBe('expired');
+	});
+
+	it('tops up recurring series and reports the counts', async () => {
+		const res = await call('Bearer cron-test-secret');
+		const body = (await res.json()) as { seriesToppedUp: number; lessonsAdded: number };
+		expect(body.seriesToppedUp).toBe(1);
+		expect(body.lessonsAdded).toBeGreaterThanOrEqual(11);
+		const lessons = await ctx.store.listSeriesBookings('44444444-0000-0000-0000-0000000000b1');
+		expect(lessons).toHaveLength(body.lessonsAdded);
 	});
 
 	it('does not export GET', () => {

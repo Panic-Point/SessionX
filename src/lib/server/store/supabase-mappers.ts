@@ -2,6 +2,7 @@ import type { DateOverride, TimeRange, WeeklyHours } from '../availability';
 import {
 	AccountStoreError,
 	BookingStoreError,
+	SeriesStoreError,
 	type Account,
 	type AccountRole,
 	type AccountWithStudents,
@@ -9,9 +10,11 @@ import {
 	type AdminLessonType,
 	type BookingStatus,
 	type DateOverrideWithNote,
+	type LessonSeries,
 	type LessonType,
 	type LiveBooking,
 	type PasswordTokenData,
+	type SeriesTag,
 	type Student,
 	type StudentPrice,
 	type StudioSettings
@@ -90,6 +93,38 @@ export interface AdminBookingRow {
 	gcal_event_id: string | null;
 	lesson_types: { name: string; duration_min: number } | null;
 	students: { name: string; accounts: { name: string; email: string } | null } | null;
+	lesson_series: SeriesTagRow | null;
+}
+
+export interface SeriesTagRow {
+	id: string;
+	weekday: number;
+	start_time: string;
+	interval_weeks: number;
+}
+
+/** Shape returned by the lesson_series select with students/accounts and lesson_types embeds. */
+export interface LessonSeriesRow {
+	id: string;
+	student_id: string;
+	lesson_type_id: string;
+	weekday: number;
+	start_time: string;
+	interval_weeks: number;
+	starts_on: string;
+	ends_on: string | null;
+	occurrence_count: number | null;
+	price_cents: number;
+	note: string;
+	materialized_through: string | null;
+	created_at: string;
+	ended_at: string | null;
+	lesson_types: { name: string; duration_min: number } | null;
+	students: {
+		name: string;
+		account_id: string;
+		accounts: { name: string; email: string } | null;
+	} | null;
 }
 
 /** Postgres `time` arrives as 'HH:mm:ss'; the app uses 'HH:mm'. */
@@ -227,8 +262,64 @@ export function mapAdminBookingRow(row: AdminBookingRow): AdminBooking {
 		declineReason: row.decline_reason,
 		lateCancel: row.late_cancel,
 		manageToken: row.manage_token,
-		gcalEventId: row.gcal_event_id
+		gcalEventId: row.gcal_event_id,
+		series: row.lesson_series ? mapSeriesTagRow(row.lesson_series) : null
 	};
+}
+
+const toInterval = (n: number): 1 | 2 => (n === 2 ? 2 : 1);
+
+export function mapSeriesTagRow(row: SeriesTagRow): SeriesTag {
+	return {
+		id: row.id,
+		weekday: row.weekday,
+		startTime: trimTime(row.start_time),
+		intervalWeeks: toInterval(row.interval_weeks)
+	};
+}
+
+export function mapLessonSeriesRow(row: LessonSeriesRow): LessonSeries {
+	return {
+		id: row.id,
+		studentId: row.student_id,
+		lessonTypeId: row.lesson_type_id,
+		weekday: row.weekday,
+		startTime: trimTime(row.start_time),
+		intervalWeeks: toInterval(row.interval_weeks),
+		startsOn: row.starts_on,
+		endsOn: row.ends_on,
+		occurrenceCount: row.occurrence_count,
+		note: row.note,
+		studentName: row.students?.name ?? '',
+		accountId: row.students?.account_id ?? '',
+		accountName: row.students?.accounts?.name ?? '',
+		accountEmail: row.students?.accounts?.email ?? '',
+		lessonTypeName: row.lesson_types?.name ?? '',
+		durationMin: row.lesson_types?.duration_min ?? 0,
+		priceCents: row.price_cents,
+		materializedThrough: row.materialized_through,
+		createdAt: new Date(row.created_at),
+		endedAt: row.ended_at ? new Date(row.ended_at) : null
+	};
+}
+
+/**
+ * Translates create_series_occurrences / end_series SQLSTATEs into store errors; null when
+ * unrecognised. 22P02 (malformed uuid) is treated as not found.
+ */
+export function mapSeriesRpcError(error: {
+	code?: string;
+	message?: string;
+}): SeriesStoreError | null {
+	switch (error.code) {
+		case 'P0006':
+		case '22P02':
+			return new SeriesStoreError('not_found');
+		case 'P0007':
+			return new SeriesStoreError('ended');
+		default:
+			return null;
+	}
 }
 
 export function mapOverridesWithNotes(

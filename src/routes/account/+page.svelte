@@ -56,6 +56,7 @@
 							<p class="lesson-title">{lesson.studentName} · {lesson.lessonTypeName}</p>
 							<p class="meta">{lesson.whenLabel} · {lesson.priceLabel}</p>
 							<span class="badge {lesson.status}">{lesson.statusLabel}</span>
+							{#if lesson.seriesLabel}<span class="badge">{lesson.seriesLabel}</span>{/if}
 						</div>
 						{#if lesson.canCancel}
 							<a
