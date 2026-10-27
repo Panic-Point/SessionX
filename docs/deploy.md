@@ -84,7 +84,12 @@ emails a reset link, so the email address must be one they can read.
 ## 5. Cloudflare Pages (#14)
 
 1. In the Cloudflare dashboard go to Workers & Pages, Create, Pages, Connect to Git, and pick this
-   repository.
+   repository. The Create screen opens on the Workers tab by default, so make sure you switch to
+   Pages (or follow the "Looking to deploy Pages?" link). A Worker project asks for a "Deploy
+   command" (`npx wrangler deploy`) and fails after the build with "It seems that you have run
+   `wrangler deploy` on a Pages project" and "Missing entry-point to Worker script or to assets
+   directory". If you see that, delete the Worker and create a Pages project instead. A Pages
+   project has no deploy command field, only a build command and a build output directory.
 2. Build settings:
    - Build command: `npm run build`
    - Build output directory: `.svelte-kit/cloudflare`
