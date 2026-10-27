@@ -7,7 +7,10 @@ import {
 	loginLinkEmail,
 	newRequestEmail,
 	requestReceivedEmail,
-	type BookingEmailData
+	seriesCreatedEmail,
+	seriesEndedEmail,
+	type BookingEmailData,
+	type SeriesEmailData
 } from './templates';
 
 const data: BookingEmailData = {
@@ -157,5 +160,90 @@ describe('cancellation templates', () => {
 		}
 		// @ts-expect-error adminUrl is required so a family's manage link can never be the fallback.
 		expect(() => newRequestEmail(data, 't@example.com')).toBeTypeOf('function');
+	});
+});
+
+const series: SeriesEmailData = {
+	accountName: 'Pat Parent',
+	email: 'pat@example.com',
+	studentName: 'Ben',
+	lessonTypeName: '30-minute lesson',
+	durationMin: 30,
+	timezone: 'America/New_York',
+	priceCents: 3000,
+	scheduleLabel: 'Weekly · Tue 3:00pm'
+};
+
+const booked = [
+	{
+		bookingId: 'b1',
+		startsAt: new Date('2026-11-03T20:00:00Z'),
+		manageUrl: 'https://x.test/manage/t1'
+	},
+	{
+		bookingId: 'b2',
+		startsAt: new Date('2026-11-17T20:00:00Z'),
+		manageUrl: 'https://x.test/manage/t2'
+	}
+];
+
+describe('series templates', () => {
+	const now = new Date('2026-11-01T17:00:00Z');
+
+	it('created email lists booked and skipped dates, price, policy and one .ics', () => {
+		const m = seriesCreatedEmail(
+			series,
+			booked,
+			[{ startsAt: new Date('2026-11-10T20:00:00Z'), reason: 'Studio closed that day' }],
+			{ policyText: 'Cancel 24h ahead.', continues: false, now }
+		);
+		expect(m.to).toBe('pat@example.com');
+		expect(m.subject).toBe('Recurring lessons booked – Ben, Weekly · Tue 3:00pm');
+		for (const part of [m.text, m.html]) {
+			expect(part).toContain('Tuesday, November 3, 2026 at 3:00 PM EST');
+			expect(part).toContain('Tuesday, November 17, 2026 at 3:00 PM EST');
+			expect(part).toContain('Tuesday, November 10, 2026 at 3:00 PM EST');
+			expect(part).toContain('Studio closed that day');
+			expect(part).toContain('$30.00');
+			expect(part).toContain('Cancel 24h ahead.');
+			expect(part).toContain('https://x.test/manage/t2');
+			expect(part).not.toContain('added automatically');
+		}
+		expect(m.attachments).toHaveLength(1);
+		const ics = m.attachments![0];
+		expect(ics).toMatchObject({ filename: 'lessons.ics', contentType: 'text/calendar' });
+		expect(ics.content.match(/BEGIN:VEVENT/g)).toHaveLength(2);
+		expect(ics.content).toContain('UID:b1@sessionx');
+		expect(ics.content).toContain('DTEND:20261117T203000Z');
+	});
+
+	it('created email leaves out empty sections and mentions top-ups for continuing series', () => {
+		const m = seriesCreatedEmail(series, booked, [], { policyText: '', continues: true, now });
+		expect(m.text).not.toContain('Dates skipped');
+		expect(m.text).not.toContain('Cancellation policy');
+		expect(m.text).toContain('More lessons are added automatically');
+		expect(m.html).toContain('More lessons are added automatically');
+	});
+
+	it('created email escapes HTML', () => {
+		const m = seriesCreatedEmail({ ...series, studentName: '<b>Ben</b>' }, booked, [], {
+			policyText: '<i>x</i>',
+			continues: false,
+			now
+		});
+		expect(m.html).not.toContain('<b>Ben</b>');
+		expect(m.html).not.toContain('<i>x</i>');
+		expect(m.html).toContain('&lt;b&gt;Ben&lt;/b&gt;');
+	});
+
+	it('ended email lists the cancelled dates', () => {
+		const m = seriesEndedEmail(series, [booked[1].startsAt]);
+		expect(m.to).toBe('pat@example.com');
+		expect(m.subject).toBe('Recurring lessons cancelled – Ben, Weekly · Tue 3:00pm');
+		for (const part of [m.text, m.html]) {
+			expect(part).toContain('Tuesday, November 17, 2026 at 3:00 PM EST');
+			expect(part).not.toContain('November 3, 2026');
+		}
+		expect(m.attachments).toBeUndefined();
 	});
 });

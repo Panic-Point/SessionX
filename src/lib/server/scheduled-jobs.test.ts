@@ -6,7 +6,7 @@ import { MemoryBookingStore } from './store/memory';
 const now = new Date('2026-11-01T12:00:00Z');
 
 describe('runScheduledJobs', () => {
-	it('reads settings then expires', async () => {
+	it('reads settings then expires, before topping up series', async () => {
 		const store = new MemoryBookingStore(demoData());
 		const calls: string[] = [];
 		vi.spyOn(store, 'getSettings').mockImplementation(async () => {
@@ -17,13 +17,17 @@ describe('runScheduledJobs', () => {
 			calls.push('expire');
 			return 0;
 		});
-		await runScheduledJobs(store, now);
-		expect(calls).toEqual(['getSettings', 'expire']);
+		await runScheduledJobs({ store, appUrl: 'https://example.test' }, now);
+		expect(calls.slice(0, 2)).toEqual(['getSettings', 'expire']);
 	});
 
 	it('returns the count', async () => {
 		const store = new MemoryBookingStore(demoData());
 		vi.spyOn(store, 'expirePendingBookings').mockResolvedValue(3);
-		expect(await runScheduledJobs(store, now)).toEqual({ expired: 3 });
+		expect(await runScheduledJobs({ store, appUrl: 'https://example.test' }, now)).toEqual({
+			expired: 3,
+			seriesToppedUp: 1,
+			lessonsAdded: 12
+		});
 	});
 });

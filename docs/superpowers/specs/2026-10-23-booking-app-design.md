@@ -34,8 +34,21 @@ Success = a parent or student books from their phone in under a minute, and the 
 ## Non-goals (v1)
 
 - Online payments or deposits. Native store apps. SMS or phone intake. Multiple teachers or locations.
-- Recurring/series bookings. _(my call)_
 - Reminder emails before lessons. _(my call; easy add later via cron)_
+
+## Added after v1
+
+- **Recurring lessons (admin only):** the admin sets up a series for a student, e.g. "Ben, 30-min
+  lesson, every Tuesday at 3:00pm": weekly or every 2 weeks, ending on a date, after a number of
+  lessons, or never. A `lesson_series` row holds the rule; each occurrence is an ordinary approved
+  `bookings` row with `series_id`, so prices, paid tracking, cancellation, the Lessons list and the
+  overlap constraint work unchanged. Times are local in `settings.timezone` (3:00pm stays 3:00pm
+  across DST). Occurrences are created up to 12 weeks ahead and the daily cron tops them up.
+  Creating previews every date and skips (never moves) those that clash with a live booking, a
+  closed override or Google busy time; public booking rules don't apply. Families cancel single
+  lessons as usual; only the admin can end a series (from a date), which cancels later lessons and
+  stops top-ups. One email per series created (with one `.ics`) or ended; one Google Calendar
+  event per lesson. Editing a series = end it from a date and start a new one.
 
 ## Anti-goals
 

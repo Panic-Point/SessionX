@@ -13,8 +13,11 @@ import {
 	mapAccountRpcError,
 	mapStudentRow,
 	mapStudentPriceRow,
-	mapAccountWithStudentsRow
+	mapAccountWithStudentsRow,
+	mapLessonSeriesRow,
+	mapSeriesRpcError
 } from './supabase-mappers';
+import { SeriesStoreError } from './types';
 
 describe('supabase mappers', () => {
 	it('maps a settings row', () => {
@@ -169,7 +172,8 @@ describe('supabase mappers', () => {
 		manage_token: 'tok',
 		gcal_event_id: 'evt-9',
 		lesson_types: { name: '30-minute lesson', duration_min: 30 },
-		students: { name: 'Ava', accounts: { name: 'Pat', email: 'pat@example.com' } }
+		students: { name: 'Ava', accounts: { name: 'Pat', email: 'pat@example.com' } },
+		lesson_series: null
 	};
 
 	it('maps an admin booking row with embeds', () => {
@@ -189,8 +193,72 @@ describe('supabase mappers', () => {
 			declineReason: 'busy',
 			lateCancel: true,
 			manageToken: 'tok',
-			gcalEventId: 'evt-9'
+			gcalEventId: 'evt-9',
+			series: null
 		});
+	});
+
+	it('maps the series embed to a tag', () => {
+		const b = mapAdminBookingRow({
+			...adminRow,
+			lesson_series: { id: 's1', weekday: 2, start_time: '15:00:00', interval_weeks: 2 }
+		});
+		expect(b.series).toEqual({ id: 's1', weekday: 2, startTime: '15:00', intervalWeeks: 2 });
+	});
+
+	it('maps a lesson series row with embeds', () => {
+		expect(
+			mapLessonSeriesRow({
+				id: 's1',
+				student_id: 'st1',
+				lesson_type_id: 'lt1',
+				weekday: 2,
+				start_time: '15:00:00',
+				interval_weeks: 1,
+				starts_on: '2030-03-05',
+				ends_on: null,
+				occurrence_count: 10,
+				price_cents: 3000,
+				note: 'Bring the red book',
+				materialized_through: '2030-05-07',
+				created_at: '2030-03-01T12:00:00+00:00',
+				ended_at: null,
+				lesson_types: { name: '30-minute lesson', duration_min: 30 },
+				students: {
+					name: 'Ben',
+					account_id: 'a1',
+					accounts: { name: 'Pat', email: 'pat@example.com' }
+				}
+			})
+		).toEqual({
+			id: 's1',
+			studentId: 'st1',
+			lessonTypeId: 'lt1',
+			weekday: 2,
+			startTime: '15:00',
+			intervalWeeks: 1,
+			startsOn: '2030-03-05',
+			endsOn: null,
+			occurrenceCount: 10,
+			note: 'Bring the red book',
+			studentName: 'Ben',
+			accountId: 'a1',
+			accountName: 'Pat',
+			accountEmail: 'pat@example.com',
+			lessonTypeName: '30-minute lesson',
+			durationMin: 30,
+			priceCents: 3000,
+			materializedThrough: '2030-05-07',
+			createdAt: new Date('2030-03-01T12:00:00Z'),
+			endedAt: null
+		});
+	});
+
+	it('maps series SQLSTATEs to store errors', () => {
+		expect(mapSeriesRpcError({ code: 'P0006' })).toEqual(new SeriesStoreError('not_found'));
+		expect(mapSeriesRpcError({ code: '22P02' })?.code).toBe('not_found');
+		expect(mapSeriesRpcError({ code: 'P0007' })?.code).toBe('ended');
+		expect(mapSeriesRpcError({ code: '42000' })).toBeNull();
 	});
 
 	it("derives durationMin from the booking's own times, not the lesson type's current length", () => {

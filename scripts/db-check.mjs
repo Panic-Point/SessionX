@@ -499,6 +499,198 @@ await check('anon cannot execute either function', async () => {
 	}
 });
 
+// ---- lesson series: create with skips, top-up, end ----
+const SEED_SERIES = '44444444-0000-0000-0000-0000000000b1';
+const NOW = '2030-01-01T12:00:00Z';
+const TUESDAYS = ['2030-03-05T20:00:00Z', '2030-03-12T19:00:00Z', '2030-03-19T19:00:00Z'];
+const createSeries = (student, lesson, starts, { through = '2030-03-19', count = 3 } = {}) =>
+	db.query(
+		`select create_lesson_series($1, $2, 2::smallint, '15:00', 1::smallint, '2030-03-05', null,
+		   $3, 'note', $4::timestamptz[], $5, $6) r`,
+		[student, lesson, count, starts, through, NOW]
+	);
+/** Expect `code` from `run()` inside a savepoint, so the check can keep using the transaction. */
+async function expectCodeKeepGoing(run, code) {
+	await db.exec('savepoint s');
+	await expectCode(run, code);
+	await db.exec('rollback to s');
+}
+const seriesBookings = async (id) =>
+	(
+		await db.query(
+			`select status::text, starts_at, price_cents, late_cancel, note, decided_at
+			   from bookings where series_id = $1 order by starts_at`,
+			[id]
+		)
+	).rows;
+
+await check('seed creates the demo series and its weekly occurrences', async () => {
+	const { rows } = await db.query(
+		'select materialized_through, price_cents from lesson_series where id = $1',
+		[SEED_SERIES]
+	);
+	assert(rows.length === 1 && rows[0].price_cents === 3000, 'seed series');
+	const lessons = await seriesBookings(SEED_SERIES);
+	assert(lessons.length >= 11 && lessons.length <= 13, `occurrences ${lessons.length}`);
+	assert(
+		lessons.every((b) => b.status === 'approved' && b.price_cents === 3000),
+		'approved at the custom price'
+	);
+});
+
+await check('create_lesson_series books approved occurrences at the student price', async () => {
+	const { rows } = await createSeries(BEN, LESSON_30, TUESDAYS);
+	const r = rows[0].r;
+	assert(r.occurrences.length === 3, `occurrences ${r.occurrences.length}`);
+	assert(
+		r.occurrences.every((o) => o.booking_id),
+		'all booked'
+	);
+	const lessons = await seriesBookings(r.series_id);
+	assert(lessons.length === 3, `rows ${lessons.length}`);
+	assert(
+		lessons.every((b) => b.status === 'approved' && b.price_cents === 3000 && b.note === 'note'),
+		'values'
+	);
+	assert(
+		lessons.every((b) => b.decided_at),
+		'decided_at set'
+	);
+	const { rows: s } = await db.query(
+		'select materialized_through::text t, occurrence_count from lesson_series where id = $1',
+		[r.series_id]
+	);
+	assert(s[0].t === '2030-03-19' && s[0].occurrence_count === 3, 'series row');
+});
+
+await check('create_lesson_series skips clashes (23P01) and past starts', async () => {
+	await accountBooking(PAT, AVA, LESSON_60, '2030-03-12T18:30:00Z');
+	const { rows } = await createSeries(BEN, LESSON_30, ['2029-12-31T20:00:00Z', ...TUESDAYS]);
+	const booked = rows[0].r.occurrences.map((o) => o.booking_id !== null);
+	assert(booked.join() === 'false,true,false,true', `booked ${booked.join()}`);
+	assert((await seriesBookings(rows[0].r.series_id)).length === 2, 'two rows');
+	const { rows: other } = await db.query(
+		`select status::text from bookings where starts_at = '2030-03-12T18:30:00Z'`
+	);
+	assert(other[0].status === 'pending', 'existing booking untouched');
+});
+
+await check('create_lesson_series: unknown student P0003, inactive lesson type P0002', async () => {
+	await expectCodeKeepGoing(
+		() => createSeries('33333333-0000-0000-0000-0000000000ff', LESSON_30, TUESDAYS),
+		'P0003'
+	);
+	await db.exec(`update lesson_types set active = false where id = '${LESSON_60}'`);
+	await expectCodeKeepGoing(() => createSeries(BEN, LESSON_60, TUESDAYS), 'P0002');
+	const { rows } = await db.query('select count(*)::int n from lesson_series');
+	assert(rows[0].n === 1, `series rows ${rows[0].n}`);
+});
+
+await check('lesson_series rejects both an end date and a count', () =>
+	expectCode(
+		() =>
+			db.exec(`insert into lesson_series (student_id, lesson_type_id, weekday, start_time,
+			  interval_weeks, starts_on, ends_on, occurrence_count, price_cents)
+			  values ('${BEN}', '${LESSON_30}', 2, '15:00', 1, '2030-03-05', '2030-04-01', 3, 3000)`),
+		'23514'
+	)
+);
+
+await check(
+	'create_series_occurrences tops up and never moves materialized_through back',
+	async () => {
+		const { rows } = await createSeries(BEN, LESSON_30, [TUESDAYS[0]], { through: '2030-03-05' });
+		const id = rows[0].r.series_id;
+		const { rows: added } = await db.query(
+			'select * from create_series_occurrences($1, $2::timestamptz[], $3, $4)',
+			[id, TUESDAYS.slice(1), '2030-03-19', NOW]
+		);
+		assert(added.length === 2 && added.every((a) => a.booking_id), 'added two');
+		await db.query('select * from create_series_occurrences($1, $2::timestamptz[], $3, $4)', [
+			id,
+			[],
+			'2030-03-12',
+			NOW
+		]);
+		const { rows: s } = await db.query(
+			'select materialized_through::text t from lesson_series where id = $1',
+			[id]
+		);
+		assert(s[0].t === '2030-03-19', `through ${s[0].t}`);
+	}
+);
+
+await check('end_series cancels later live occurrences, not late, and stops top-ups', async () => {
+	const { rows } = await createSeries(BEN, LESSON_30, TUESDAYS);
+	const id = rows[0].r.series_id;
+	// After the first lesson has started.
+	const after = '2030-03-05T21:00:00Z';
+	const { rows: cancelled } = await db.query('select * from end_series($1, $2, $3) id', [
+		id,
+		'2030-03-01T00:00:00Z',
+		after
+	]);
+	assert(cancelled.length === 2, `cancelled ${cancelled.length}`);
+	const lessons = await seriesBookings(id);
+	assert(
+		lessons.map((b) => b.status).join() === 'approved,cancelled,cancelled',
+		`statuses ${lessons.map((b) => b.status).join()}`
+	);
+	assert(
+		lessons.every((b) => !b.late_cancel),
+		'never late'
+	);
+	await expectCode(
+		() =>
+			db.query('select * from create_series_occurrences($1, $2::timestamptz[], $3, $4)', [
+				id,
+				['2030-03-26T19:00:00Z'],
+				'2030-03-26',
+				NOW
+			]),
+		'P0007'
+	);
+});
+
+await check('end_series and create_series_occurrences: unknown series P0006', async () => {
+	const missing = '44444444-0000-0000-0000-0000000000ff';
+	await expectCodeKeepGoing(
+		() => db.query('select * from end_series($1, $2, $3)', [missing, NOW, NOW]),
+		'P0006'
+	);
+	await expectCode(
+		() =>
+			db.query('select * from create_series_occurrences($1, $2::timestamptz[], $3, $4)', [
+				missing,
+				[],
+				'2030-03-05',
+				NOW
+			]),
+		'P0006'
+	);
+});
+
+await check('lesson_series has RLS and anon cannot execute the series functions', async () => {
+	const { rows } = await db.query(
+		`select relrowsecurity from pg_class where oid = 'public.lesson_series'::regclass`
+	);
+	assert(rows[0]?.relrowsecurity === true, 'RLS not enabled on lesson_series');
+	for (const sig of [
+		'create_series_occurrences(uuid,timestamptz[],date,timestamptz)',
+		'create_lesson_series(uuid,uuid,smallint,time,smallint,date,date,integer,text,timestamptz[],date,timestamptz)',
+		'end_series(uuid,timestamptz,timestamptz)'
+	]) {
+		const { rows: p } = await db.query(
+			`select has_function_privilege('anon', '${sig}', 'execute') anon,
+			        has_function_privilege('authenticated', '${sig}', 'execute') authenticated,
+			        has_function_privilege('service_role', '${sig}', 'execute') service_role`
+		);
+		assert(p[0].anon === false, `anon can execute ${sig}`);
+		assert(p[0].authenticated === false, `authenticated can execute ${sig}`);
+		assert(p[0].service_role === true, `service_role cannot execute ${sig}`);
+	}
+});
+
 // Supabase's pg_safeupdate rejects DELETE/UPDATE without a WHERE, even inside functions.
 await check('migrations have no DELETE without a WHERE clause', () => {
 	for (const f of readdirSync(migDir)) {

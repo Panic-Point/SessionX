@@ -85,6 +85,9 @@
 					<h2>{l.studentName}</h2>
 					<p class="when">{l.whenLabel}</p>
 					<p class="meta">{l.lessonTypeName} · {l.durationMin} min · {l.priceLabel}</p>
+					{#if l.seriesId}
+						<p class="meta"><a href="/admin/series/{l.seriesId}">{l.seriesLabel}</a></p>
+					{/if}
 					<p class="meta">
 						{l.accountName} · <a href="mailto:{l.accountEmail}">{l.accountEmail}</a>
 					</p>

@@ -31,3 +31,23 @@ insert into students (id, account_id, name) values
 -- Ben pays $30 instead of $35 for 30-minute lessons.
 insert into student_prices (student_id, lesson_type_id, price_cents) values
 	('33333333-0000-0000-0000-0000000000b1', '11111111-0000-0000-0000-000000000030', 3000);
+
+-- Ben's standing weekly lesson: Tuesdays at 4:00pm, no end date, at his custom price.
+insert into lesson_series (
+	id, student_id, lesson_type_id, weekday, start_time, interval_weeks, starts_on, price_cents
+) values (
+	'44444444-0000-0000-0000-0000000000b1', '33333333-0000-0000-0000-0000000000b1',
+	'11111111-0000-0000-0000-000000000030', 2, time '16:00', 1, date '2026-11-03', 3000
+);
+
+-- Its occurrences for the next 12 weeks (the app's daily top-up keeps extending them).
+select count(*) from create_series_occurrences(
+	'44444444-0000-0000-0000-0000000000b1',
+	array(
+		select (d::date + time '16:00') at time zone 'America/New_York'
+		  from generate_series(greatest(current_date, date '2026-11-03'), current_date + 84, interval '1 day') as d
+		 where extract(isodow from d) = 2
+	),
+	current_date + 84,
+	now()
+);

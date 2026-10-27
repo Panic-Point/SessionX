@@ -45,21 +45,28 @@ function fold(line: string): string[] {
 }
 
 export function buildIcs(e: IcsEvent): string {
+	return buildIcsCalendar([e]);
+}
+
+/** One calendar file holding every event, e.g. all the lessons of a series. */
+export function buildIcsCalendar(events: IcsEvent[]): string {
 	const lines = [
 		'BEGIN:VCALENDAR',
 		'VERSION:2.0',
 		'PRODID:-//SessionX//Booking//EN',
 		'CALSCALE:GREGORIAN',
 		'METHOD:PUBLISH',
-		'BEGIN:VEVENT',
-		`UID:${e.uid}`,
-		`DTSTAMP:${utc(e.now)}`,
-		`DTSTART:${utc(e.start)}`,
-		`DTEND:${utc(e.end)}`,
-		`SUMMARY:${escapeText(e.summary)}`,
-		`DESCRIPTION:${escapeText(e.description)}`,
-		`URL:${e.url}`,
-		'END:VEVENT',
+		...events.flatMap((e) => [
+			'BEGIN:VEVENT',
+			`UID:${e.uid}`,
+			`DTSTAMP:${utc(e.now)}`,
+			`DTSTART:${utc(e.start)}`,
+			`DTEND:${utc(e.end)}`,
+			`SUMMARY:${escapeText(e.summary)}`,
+			`DESCRIPTION:${escapeText(e.description)}`,
+			`URL:${e.url}`,
+			'END:VEVENT'
+		]),
 		'END:VCALENDAR'
 	];
 	return lines.flatMap(fold).join('\r\n') + '\r\n';
