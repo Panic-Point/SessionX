@@ -2,7 +2,6 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { MemoryBookingStore } from '../store/memory';
 import { demoData } from '../store/demo-data';
 import type { EmailMessage, Mailer } from '../email/mailer';
-import { completeLogin, requestLoginLink } from './login-service';
 import {
 	changePassword,
 	completePasswordReset,
@@ -12,7 +11,6 @@ import {
 	requestRegistration,
 	validateRegistration
 } from './password-service';
-import { hashPassword } from './password';
 import { generateToken } from './tokens';
 
 const now = new Date('2026-11-01T00:00:00Z');
@@ -20,9 +18,18 @@ const later = (min: number) => new Date(now.getTime() + min * 60_000);
 const PARENT_ID = '22222222-0000-0000-0000-00000000000b';
 const PARENT_PASSWORD = 'sessionx-parent-dev';
 const NEW_PASSWORD = 'a brand new passphrase';
+/** Like an account a guest booking created: no password yet. */
+const GUEST = {
+	id: '22222222-0000-0000-0000-0000000000c1',
+	name: 'Gina Guest',
+	email: 'gina@example.com',
+	role: 'client' as const
+};
 
 function setup(failSend = false) {
-	const store = new MemoryBookingStore(demoData());
+	const data = demoData();
+	data.accounts.push({ ...GUEST });
+	const store = new MemoryBookingStore(data);
 	const sent: EmailMessage[] = [];
 	const mailer: Mailer = {
 		send: async (m) => {
@@ -175,16 +182,14 @@ describe('loginWithPassword', () => {
 		const r = await loginWithPassword(store, ' PARENT@example.com ', PARENT_PASSWORD, now);
 		expect(r).toEqual({ ok: true, account: expect.objectContaining({ id: PARENT_ID }) });
 
-		const adminId = '22222222-0000-0000-0000-00000000000a';
-		await store.setPasswordHash(adminId, await hashPassword(NEW_PASSWORD));
-		const admin = await loginWithPassword(store, 'admin@sessionx.local', NEW_PASSWORD, now);
+		const admin = await loginWithPassword(store, 'admin@sessionx.local', 'sessionx-admin-dev', now);
 		expect(admin.ok && admin.account.role).toBe('admin');
 	});
 
 	it('fails the same way for a wrong password, no password and an unknown email', async () => {
 		const { store } = setup();
 		const wrong = await loginWithPassword(store, 'parent@example.com', 'not the password', now);
-		const none = await loginWithPassword(store, 'admin@sessionx.local', 'not the password', now);
+		const none = await loginWithPassword(store, GUEST.email, 'not the password', now);
 		const unknown = await loginWithPassword(store, 'nobody@example.com', 'not the password', now);
 		expect(wrong).toEqual({ ok: false, locked: false });
 		expect(none).toEqual(wrong);
@@ -261,6 +266,15 @@ describe('password reset', () => {
 		});
 	});
 
+	it('lets an account without a password (e.g. from a guest booking) set its first one', async () => {
+		const { deps, sent, store } = setup();
+		await requestPasswordReset(deps, GUEST.email, now);
+		const token = tokenFrom(sent[0], '/login/reset/complete');
+		const r = await completePasswordReset(store, token, NEW_PASSWORD, NEW_PASSWORD, now);
+		expect(r).toEqual({ ok: true, account: GUEST });
+		expect((await loginWithPassword(store, GUEST.email, NEW_PASSWORD, now)).ok).toBe(true);
+	});
+
 	it('expires after 30 minutes', async () => {
 		const { deps, sent, store } = setup();
 		await requestPasswordReset(deps, 'parent@example.com', now);
@@ -297,30 +311,12 @@ describe('password reset', () => {
 	});
 });
 
-describe('magic links', () => {
-	it('still sign in, and do not change the password', async () => {
-		const { deps, sent, store } = setup();
-		await requestLoginLink(deps, 'parent@example.com', now);
-		const token = /\/login\/verify\?token=([A-Za-z0-9_-]+)/.exec(sent[0].text)![1];
-		expect((await completeLogin(store, token, now))?.id).toBe(PARENT_ID);
-		expect((await loginWithPassword(store, 'parent@example.com', PARENT_PASSWORD, now)).ok).toBe(
-			true
-		);
-	});
-});
-
 describe('changePassword', () => {
 	const parent = {
 		id: PARENT_ID,
 		name: 'Pat Parent',
 		email: 'parent@example.com',
 		role: 'client' as const
-	};
-	const admin = {
-		id: '22222222-0000-0000-0000-00000000000a',
-		name: 'Studio Admin',
-		email: 'admin@sessionx.local',
-		role: 'admin' as const
 	};
 
 	it('requires the current password when one exists', async () => {
@@ -343,21 +339,19 @@ describe('changePassword', () => {
 		const { store } = setup();
 		const bad = await changePassword(
 			store,
-			admin,
+			GUEST,
 			{ currentPassword: '', password: NEW_PASSWORD, confirmPassword: 'different value' },
 			now
 		);
 		expect(bad).toEqual({ ok: false, errors: { confirmPassword: 'The passwords do not match.' } });
 		const good = await changePassword(
 			store,
-			admin,
+			GUEST,
 			{ currentPassword: '', password: NEW_PASSWORD, confirmPassword: NEW_PASSWORD },
 			now
 		);
 		expect(good).toEqual({ ok: true });
-		expect((await loginWithPassword(store, 'admin@sessionx.local', NEW_PASSWORD, now)).ok).toBe(
-			true
-		);
+		expect((await loginWithPassword(store, GUEST.email, NEW_PASSWORD, now)).ok).toBe(true);
 	});
 
 	it('wrong current passwords share the sign-in lockout', async () => {

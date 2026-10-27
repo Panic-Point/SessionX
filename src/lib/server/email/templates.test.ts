@@ -4,9 +4,9 @@ import {
 	bookingDeclinedEmail,
 	cancellationConfirmationEmail,
 	cancellationNoticeEmail,
-	loginLinkEmail,
 	newRequestEmail,
 	passwordResetEmail,
+	registerInviteEmail,
 	requestReceivedEmail,
 	seriesCreatedEmail,
 	seriesEndedEmail,
@@ -99,16 +99,19 @@ describe('new templates', () => {
 		expect(m.html).not.toContain('<b>Sorry</b>');
 		expect(bookingDeclinedEmail(data, null).text).not.toContain('Reason');
 	});
-	it('login email contains link', () => {
-		const m = loginLinkEmail('a@b.com', 'Ann', 'https://x.test/login/verify?token=abc');
-		expect(m.to).toBe('a@b.com');
-		expect(m.subject).toBe('Your SessionX sign-in link');
-		expect(m.text).toContain('https://x.test/login/verify?token=abc');
-		expect(m.html).toContain('https://x.test/login/verify?token=abc');
-	});
 });
 
 describe('password templates', () => {
+	it('register invite links to registration and says an account is optional', () => {
+		const url = 'https://x.test/register?email=a%40b.com';
+		const m = registerInviteEmail('a@b.com', 'Ann', url);
+		expect(m.to).toBe('a@b.com');
+		expect(m.subject).toBe('Create your SessionX account');
+		expect(m.text).toContain(url);
+		expect(m.text).toContain("You don't need an account");
+		expect(m.html).toContain(url);
+	});
+
 	it('registration verification email carries the link and escapes the name', () => {
 		const url = 'https://x.test/register/verify?token=abc';
 		const m = verifyRegistrationEmail('a@b.com', 'Ann <b>', url);

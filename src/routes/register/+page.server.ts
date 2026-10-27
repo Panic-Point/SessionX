@@ -10,9 +10,13 @@ import {
 } from '#lib/server/turnstile-action.ts';
 import type { Actions, PageServerLoad } from './$types';
 
-export const load: PageServerLoad = ({ locals }) => {
+export const load: PageServerLoad = ({ locals, url }) => {
 	if (locals.account) redirect(303, locals.account.role === 'admin' ? '/admin' : '/account');
-	return { turnstileSiteKey: turnstileSiteKey() };
+	return {
+		// The guest invite email links here with the booking's email filled in.
+		email: (url.searchParams.get('email') ?? '').slice(0, 254),
+		turnstileSiteKey: turnstileSiteKey()
+	};
 };
 
 export const actions: Actions = {

@@ -9,7 +9,7 @@
 	let submitting = $state(false);
 	let turnstile = $state<ReturnType<typeof Turnstile>>();
 
-	const values = $derived(form?.values ?? { name: '', email: '' });
+	const values = $derived(form?.values ?? { name: '', email: data.email });
 	const errors: Partial<Record<string, string>> = $derived(form?.errors ?? {});
 </script>
 

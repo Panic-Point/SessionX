@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { DEMO_PARENT_PASSWORD_HASH } from './demo-data';
+import { DEMO_ADMIN_PASSWORD_HASH, DEMO_PARENT_PASSWORD_HASH } from './demo-data';
 import { AdminStoreError } from './types';
 import type { AccountStore, AdminStore } from './types';
 
@@ -27,10 +27,10 @@ export function runPasswordStoreContract(
 	describe(`AdminStore password contract: ${name}`, () => {
 		if (reset) beforeEach(reset);
 
-		it('seed: parent has the dev password, admin has none', async () => {
+		it('seed: parent and admin have their dev passwords', async () => {
 			const store = await makeStore();
 			expect(await store.getPasswordHash(PARENT_ID)).toBe(DEMO_PARENT_PASSWORD_HASH);
-			expect(await store.getPasswordHash(ADMIN_ID)).toBeNull();
+			expect(await store.getPasswordHash(ADMIN_ID)).toBe(DEMO_ADMIN_PASSWORD_HASH);
 			expect(await store.getPasswordHash(MISSING_ID)).toBeNull();
 		});
 

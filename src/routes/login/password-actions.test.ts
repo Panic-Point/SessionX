@@ -67,7 +67,15 @@ async function emailedToken(to: string, path: string): Promise<string> {
 }
 
 beforeEach(() => {
-	ctx.store = new MemoryBookingStore(demoData());
+	const data = demoData();
+	// Like an account a guest booking created: no password yet.
+	data.accounts.push({
+		id: '22222222-0000-0000-0000-0000000000c1',
+		name: 'Gina Guest',
+		email: 'gina@example.com',
+		role: 'client'
+	});
+	ctx.store = new MemoryBookingStore(data);
 	ctx.sent = [];
 });
 
@@ -77,8 +85,17 @@ afterEach(async () => {
 });
 
 describe('password sign-in action', () => {
+	it('signs the admin in on /admin', async () => {
+		const { result, cookies } = await post(login.actions.default, {
+			email: 'admin@sessionx.local',
+			password: 'sessionx-admin-dev'
+		});
+		expect(result).toMatchObject({ status: 303, location: '/admin' });
+		expect(cookies.get('sx_session')).toBeTruthy();
+	});
+
 	it('signs in with the right password and lands on /account', async () => {
-		const { result, cookies } = await post(login.actions.password, {
+		const { result, cookies } = await post(login.actions.default, {
 			email: 'parent@example.com',
 			password: 'sessionx-parent-dev'
 		});
@@ -89,8 +106,8 @@ describe('password sign-in action', () => {
 
 	it('answers wrong password, no password and unknown email identically', async () => {
 		const answers = [];
-		for (const email of ['parent@example.com', 'admin@sessionx.local', 'nobody@example.com']) {
-			const { result, cookies } = await post(login.actions.password, {
+		for (const email of ['parent@example.com', 'gina@example.com', 'nobody@example.com']) {
+			const { result, cookies } = await post(login.actions.default, {
 				email,
 				password: 'not the password'
 			});
@@ -105,9 +122,9 @@ describe('password sign-in action', () => {
 
 	it('refuses the 6th attempt even with the right password', async () => {
 		for (let i = 0; i < 5; i++) {
-			await post(login.actions.password, { email: 'parent@example.com', password: 'wrong guess' });
+			await post(login.actions.default, { email: 'parent@example.com', password: 'wrong guess' });
 		}
-		const { result, cookies } = await post(login.actions.password, {
+		const { result, cookies } = await post(login.actions.default, {
 			email: 'parent@example.com',
 			password: 'sessionx-parent-dev'
 		});
@@ -119,17 +136,11 @@ describe('password sign-in action', () => {
 	});
 
 	it('asks for missing fields', async () => {
-		const { result } = await post(login.actions.password, { email: '', password: '' });
+		const { result } = await post(login.actions.default, { email: '', password: '' });
 		expect(result).toMatchObject({
 			status: 400,
 			data: { errors: { email: 'Enter your email address.', password: 'Enter your password.' } }
 		});
-	});
-
-	it('the emailed-link form still works', async () => {
-		const { result } = await post(login.actions.link, { email: 'parent@example.com' });
-		expect(result).toEqual({ mode: 'link', sent: true });
-		expect(await emailedToken('parent@example.com', '/login/verify')).toBeTruthy();
 	});
 });
 
@@ -172,6 +183,14 @@ describe('registration actions', () => {
 		expect(again.result).toMatchObject({ status: 400, data: { invalid: true } });
 	});
 
+	it('fills in the email from the guest invite link', async () => {
+		const loaded = await register.load({
+			locals: { account: null },
+			url: new URL('https://x/register?email=gina%40example.com')
+		} as never);
+		expect(loaded).toMatchObject({ email: 'gina@example.com' });
+	});
+
 	it('shows field errors without sending anything', async () => {
 		const { result } = await post(register.actions.default, {
 			...fields('robin@example.com'),
@@ -207,7 +226,7 @@ describe('password reset actions', () => {
 		expect(result).toMatchObject({ status: 303, location: '/account' });
 		expect(cookies.get('sx_session')).toBeTruthy();
 
-		const old = await post(login.actions.password, {
+		const old = await post(login.actions.default, {
 			email: 'parent@example.com',
 			password: 'sessionx-parent-dev'
 		});

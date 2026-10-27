@@ -136,8 +136,8 @@
 		<h2 id="password-heading">Password</h2>
 		<p class="empty">
 			{data.hasPassword
-				? 'You can sign in with your password or an emailed link.'
-				: 'You sign in with an emailed link. Set a password to sign in with it too.'}
+				? 'Change the password you sign in with.'
+				: 'Set a password so you can sign in next time.'}
 		</p>
 		<form
 			class="password"

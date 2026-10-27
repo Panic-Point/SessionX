@@ -36,9 +36,12 @@ All commands work from PowerShell and bash.
 lesson types, and a family account (`parent@example.com`) with two students, Ava and Ben. Ben has a
 custom price on the 30-minute lesson.
 
-The family account has a dev password, `sessionx-parent-dev`, so you can try password sign-in
-without registering. The admin has no password until you set one on `/account` (or use the emailed
-sign-in link).
+Both accounts have dev passwords: `admin@sessionx.local` / `sessionx-admin-dev` and
+`parent@example.com` / `sessionx-parent-dev`.
+
+`npm run local:up` applies any new migrations to an existing local database, but it doesn't reload
+the seed. If your database predates the passwords migration, run `npm run local:reset` once to get
+the dev passwords (this wipes local data), or set a password with **Forgot password?**.
 
 ## Testing by hand
 

@@ -5,6 +5,8 @@ import { renderLocalEnv } from './lib/env-template.mjs';
 await requireDocker();
 
 await run('npx', ['supabase', 'start']);
+// `supabase start` only runs migrations when it creates the database, so apply any added since.
+await run('npx', ['supabase', 'migration', 'up', '--local']);
 
 if (!existsSync('.env.local')) {
 	const status = await run('npx', ['supabase', 'status', '-o', 'env'], { capture: true });
