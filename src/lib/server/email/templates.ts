@@ -85,14 +85,20 @@ export function registerInviteEmail(to: string, name: string, url: string): Emai
 	};
 }
 
-export function verifyRegistrationEmail(to: string, name: string, url: string): EmailMessage {
-	const text = `Hi ${name},\n\nUse this link to confirm your email and finish creating your SessionX account. Your password starts working once you do. The link expires in 24 hours and can be used once.\n\n${url}\n\nIf you did not try to create an account, you can ignore this email and nothing will change.\n`;
-	const footer = `<p style="margin:0 0 12px">Confirm your email to finish creating your account. Your password starts working once you do.</p><p style="margin:16px 0 0"><a href="${escapeHtml(url)}">${escapeHtml(url)}</a></p><p style="color:#555">It expires in 24 hours and can be used once. If you did not try to create an account, you can ignore this email and nothing will change.</p>`;
+/** `name` is the existing account holder's, or null for an email with no account yet. */
+export function verifyRegistrationEmail(
+	to: string,
+	name: string | null,
+	url: string
+): EmailMessage {
+	const greeting = name ? `Hi ${name}` : 'Hi';
+	const text = `${greeting},\n\nUse this link to finish creating your SessionX account. You'll choose your password on the page it opens, and you're signed in as soon as you save it. The link expires in 24 hours and can be used once.\n\n${url}\n\nIf you did not try to create an account, you can ignore this email and nothing will change.\n`;
+	const footer = `<p style="margin:0 0 12px">Open this link to choose your password. You're signed in as soon as you save it.</p><p style="margin:16px 0 0"><a href="${escapeHtml(url)}">${escapeHtml(url)}</a></p><p style="color:#555">It expires in 24 hours and can be used once. If you did not try to create an account, you can ignore this email and nothing will change.</p>`;
 	return {
 		to,
 		subject: 'Finish creating your SessionX account',
 		text,
-		html: wrap(`Hi ${name}, confirm your email`, [], footer)
+		html: wrap(`${greeting}, finish creating your account`, [], footer)
 	};
 }
 

@@ -119,9 +119,16 @@ describe('password templates', () => {
 		expect(m.subject).toBe('Finish creating your SessionX account');
 		expect(m.text).toContain(url);
 		expect(m.text).toContain('24 hours');
+		expect(m.text).toContain('choose your password');
 		expect(m.html).toContain(url);
 		expect(m.html).toContain('Ann &lt;b&gt;');
 		expect(m.html).not.toContain('<b>');
+	});
+
+	it('registration email for a new email greets without a name', () => {
+		const m = verifyRegistrationEmail('a@b.com', null, 'https://x.test/register/verify?token=abc');
+		expect(m.text).toMatch(/^Hi,\n/);
+		expect(m.html).toContain('Hi, finish creating your account');
 	});
 
 	it('password reset email carries the link and the 30-minute expiry', () => {

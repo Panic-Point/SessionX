@@ -36,12 +36,17 @@ All commands work from PowerShell and bash.
 lesson types, and a family account (`parent@example.com`) with two students, Ava and Ben. Ben has a
 custom price on the 30-minute lesson.
 
-Both accounts have dev passwords: `admin@sessionx.local` / `sessionx-admin-dev` and
-`parent@example.com` / `sessionx-parent-dev`.
+Both accounts have dev passwords: `admin@sessionx.local` / `sessionx-admin-dev1` and
+`parent@example.com` / `sessionx-parent-dev1`.
 
 `npm run local:up` applies any new migrations to an existing local database, but it doesn't reload
 the seed. If your database predates the passwords migration, run `npm run local:reset` once to get
-the dev passwords (this wipes local data), or set a password with **Forgot password?**.
+the dev passwords (this wipes local data), or set a password with **Forgot password?**. A database
+seeded before the password rules changed still has the old dev passwords (the same without the
+trailing `1`); they keep working until you reset.
+
+To register a new account, click **Register**, enter an email and open the emailed link (Mailpit,
+or the terminal in quick mode). The link asks for your name and a password and signs you in.
 
 ## Testing by hand
 

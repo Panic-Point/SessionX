@@ -4,6 +4,7 @@ import { demoData } from '../store/demo-data';
 import type { EmailMessage, Mailer } from '../email/mailer';
 import {
 	changePassword,
+	checkRegistrationLink,
 	completePasswordReset,
 	completeRegistration,
 	loginWithPassword,
@@ -11,13 +12,14 @@ import {
 	requestRegistration,
 	validateRegistration
 } from './password-service';
+import { hashPassword } from './password';
 import { generateToken } from './tokens';
 
 const now = new Date('2026-11-01T00:00:00Z');
 const later = (min: number) => new Date(now.getTime() + min * 60_000);
 const PARENT_ID = '22222222-0000-0000-0000-00000000000b';
-const PARENT_PASSWORD = 'sessionx-parent-dev';
-const NEW_PASSWORD = 'a brand new passphrase';
+const PARENT_PASSWORD = 'sessionx-parent-dev1';
+const NEW_PASSWORD = 'a brand new passphrase 9!';
 /** Like an account a guest booking created: no password yet. */
 const GUEST = {
 	id: '22222222-0000-0000-0000-0000000000c1',
@@ -48,96 +50,118 @@ function tokenFrom(m: EmailMessage, path: string): string {
 afterEach(() => vi.restoreAllMocks());
 
 describe('validateRegistration', () => {
-	const form = {
-		name: ' Robin ',
-		email: ' Robin@Example.com ',
-		password: NEW_PASSWORD,
-		confirmPassword: NEW_PASSWORD
-	};
-
-	it('normalizes valid input', () => {
-		expect(validateRegistration(form)).toEqual({
+	it('normalizes a valid email', () => {
+		expect(validateRegistration({ email: ' Robin@Example.com ' })).toEqual({
 			ok: true,
-			name: 'Robin',
 			email: 'robin@example.com'
 		});
 	});
 
-	it('reports each field', () => {
-		const r = validateRegistration({
-			name: ' ',
-			email: 'nope',
-			password: 'short',
-			confirmPassword: ''
-		});
-		expect(r.ok).toBe(false);
-		if (r.ok) return;
-		expect(Object.keys(r.errors).sort()).toEqual(['email', 'name', 'password']);
-	});
-
-	it('reports a mismatched confirmation and common passwords', () => {
-		const mismatch = validateRegistration({ ...form, confirmPassword: 'something else entirely' });
-		expect(mismatch).toEqual({
+	it('reports a missing or malformed email', () => {
+		expect(validateRegistration({ email: ' ' })).toEqual({
 			ok: false,
-			errors: { confirmPassword: 'The passwords do not match.' }
+			errors: { email: 'Enter your email address.' }
 		});
-		const common = validateRegistration({
-			...form,
-			password: 'qwertyuiop',
-			confirmPassword: 'qwertyuiop'
+		expect(validateRegistration({ email: 'nope' })).toEqual({
+			ok: false,
+			errors: { email: 'Enter a valid email address.' }
 		});
-		expect(common.ok || common.errors.password).toMatch(/too common/);
 	});
 });
 
 describe('registration', () => {
-	it('new email: no account until the link is used, then a signed-in client account', async () => {
+	const form = { name: ' Robin ', password: NEW_PASSWORD, confirmPassword: NEW_PASSWORD };
+
+	it('new email: no account until the password is set, then a client account with a student', async () => {
 		const { deps, sent, store } = setup();
-		await requestRegistration(
-			deps,
-			{ name: 'Robin', email: ' Robin@Example.com ', password: NEW_PASSWORD },
-			now
-		);
+		await requestRegistration(deps, ' Robin@Example.com ', now);
 		expect(await store.findAccountByEmail('robin@example.com')).toBeNull();
 		expect(sent).toHaveLength(1);
 		expect(sent[0].to).toBe('robin@example.com');
-		expect(sent[0].text).toContain('Hi Robin');
+		expect(sent[0].subject).toBe('Finish creating your SessionX account');
+		expect(sent[0].text).toMatch(/^Hi,/);
 
-		const account = await completeRegistration(
-			store,
-			tokenFrom(sent[0], '/register/verify'),
-			later(60)
-		);
-		expect(account).toMatchObject({ name: 'Robin', email: 'robin@example.com', role: 'client' });
+		const token = tokenFrom(sent[0], '/register/verify');
+		const link = { email: 'robin@example.com', needsName: true };
+		// Opening the link (even twice) doesn't use it.
+		expect(await checkRegistrationLink(store, token, later(59))).toEqual(link);
+		expect(await checkRegistrationLink(store, token, later(59))).toEqual(link);
+
+		const r = await completeRegistration(store, token, form, later(60));
+		expect(r.ok && r.account).toMatchObject({
+			name: 'Robin',
+			email: 'robin@example.com',
+			role: 'client'
+		});
+		const id = r.ok ? r.account.id : '';
+		expect((await store.listStudents(id)).map((s) => s.name)).toEqual(['Robin']);
 		expect((await loginWithPassword(store, 'robin@example.com', NEW_PASSWORD, later(61))).ok).toBe(
 			true
 		);
+		expect(await checkRegistrationLink(store, token, later(61))).toBeNull();
+		expect(await completeRegistration(store, token, form, later(61))).toEqual({
+			ok: false,
+			invalid: true
+		});
 	});
 
-	it("existing email: nothing changes until the link is used; the family's data survives", async () => {
+	it('a new email needs a name; field errors leave the link usable', async () => {
+		const { deps, sent, store } = setup();
+		await requestRegistration(deps, 'robin@example.com', now);
+		const token = tokenFrom(sent[0], '/register/verify');
+
+		expect(
+			await completeRegistration(
+				store,
+				token,
+				{ name: ' ', password: 'Abc1!', confirmPassword: '' },
+				now
+			)
+		).toEqual({
+			ok: false,
+			invalid: false,
+			errors: { name: 'Enter your name.', password: 'Use at least 8 characters.' }
+		});
+		expect(
+			await completeRegistration(store, token, { ...form, confirmPassword: 'other 1!' }, now)
+		).toEqual({
+			ok: false,
+			invalid: false,
+			errors: { confirmPassword: 'The passwords do not match.' }
+		});
+		expect(
+			await completeRegistration(
+				store,
+				token,
+				{ ...form, password: 'p030710p$e4o', confirmPassword: 'p030710p$e4o' },
+				now
+			)
+		).toMatchObject({ ok: false, errors: { password: expect.stringMatching(/too common/) } });
+		expect(await store.findAccountByEmail('robin@example.com')).toBeNull();
+		expect((await completeRegistration(store, token, form, now)).ok).toBe(true);
+	});
+
+	it("existing email: nothing changes until the password is set; the family's data survives", async () => {
 		const { deps, sent, store } = setup();
 		const students = await store.listStudents(PARENT_ID);
-		await requestRegistration(
-			deps,
-			{ name: 'Someone Else', email: 'parent@example.com', password: NEW_PASSWORD },
-			now
-		);
-		// Old password still works, new one doesn't yet.
-		expect((await loginWithPassword(store, 'parent@example.com', NEW_PASSWORD, now)).ok).toBe(
-			false
-		);
+		await requestRegistration(deps, 'parent@example.com', now);
+		// The old password still works.
 		expect((await loginWithPassword(store, 'parent@example.com', PARENT_PASSWORD, now)).ok).toBe(
 			true
 		);
-		// The email greets the real account holder, not the submitted name.
+		// The email greets the real account holder.
 		expect(sent[0].text).toContain('Hi Pat Parent');
 
-		const account = await completeRegistration(store, tokenFrom(sent[0], '/register/verify'), now);
-		expect(account).toEqual({
-			id: PARENT_ID,
-			name: 'Pat Parent',
+		const token = tokenFrom(sent[0], '/register/verify');
+		expect(await checkRegistrationLink(store, token, now)).toEqual({
 			email: 'parent@example.com',
-			role: 'client'
+			needsName: false
+		});
+		// No name field for an existing account, so none is required and any sent is ignored.
+		const r = await completeRegistration(store, token, { ...form, name: '' }, now);
+		expect(r).toEqual({
+			ok: true,
+			account: { id: PARENT_ID, name: 'Pat Parent', email: 'parent@example.com', role: 'client' }
 		});
 		expect(await store.listStudents(PARENT_ID)).toEqual(students);
 		expect((await loginWithPassword(store, 'parent@example.com', NEW_PASSWORD, now)).ok).toBe(true);
@@ -146,32 +170,40 @@ describe('registration', () => {
 		);
 	});
 
+	it('a guest-booking account keeps its name and students and gets no new student', async () => {
+		const { deps, sent, store } = setup();
+		await store.addStudent(GUEST.id, 'Gina Jr');
+		await requestRegistration(deps, GUEST.email, now);
+		const token = tokenFrom(sent[0], '/register/verify');
+		const r = await completeRegistration(store, token, { ...form, name: 'Someone Else' }, now);
+		expect(r).toEqual({ ok: true, account: GUEST });
+		expect((await store.listStudents(GUEST.id)).map((s) => s.name)).toEqual(['Gina Jr']);
+	});
+
 	it('link is single use and expires after 24 hours', async () => {
 		const { deps, sent, store } = setup();
-		await requestRegistration(
-			deps,
-			{ name: 'A', email: 'a@example.com', password: NEW_PASSWORD },
-			now
-		);
-		await requestRegistration(
-			deps,
-			{ name: 'B', email: 'b@example.com', password: NEW_PASSWORD },
-			now
-		);
+		await requestRegistration(deps, 'a@example.com', now);
+		await requestRegistration(deps, 'b@example.com', now);
 		const a = tokenFrom(sent[0], '/register/verify');
-		expect(await completeRegistration(store, a, now)).not.toBeNull();
-		expect(await completeRegistration(store, a, now)).toBeNull();
+		expect((await completeRegistration(store, a, form, now)).ok).toBe(true);
+		expect(await completeRegistration(store, a, form, now)).toEqual({ ok: false, invalid: true });
 		const b = tokenFrom(sent[1], '/register/verify');
-		expect(await completeRegistration(store, b, later(24 * 60))).toBeNull();
-		expect(await completeRegistration(store, generateToken(), now)).toBeNull();
+		expect(await checkRegistrationLink(store, b, later(24 * 60))).toBeNull();
+		expect(await completeRegistration(store, b, form, later(24 * 60))).toEqual({
+			ok: false,
+			invalid: true
+		});
+		expect(await completeRegistration(store, generateToken(), form, now)).toEqual({
+			ok: false,
+			invalid: true
+		});
+		expect(await completeRegistration(store, '', form, now)).toEqual({ ok: false, invalid: true });
 	});
 
 	it('mailer failure is logged not thrown', async () => {
 		const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
 		const { deps } = setup(true);
-		await expect(
-			requestRegistration(deps, { name: 'A', email: 'a@example.com', password: NEW_PASSWORD }, now)
-		).resolves.toBeUndefined();
+		await expect(requestRegistration(deps, 'a@example.com', now)).resolves.toBeUndefined();
 		expect(spy).toHaveBeenCalled();
 	});
 });
@@ -182,8 +214,21 @@ describe('loginWithPassword', () => {
 		const r = await loginWithPassword(store, ' PARENT@example.com ', PARENT_PASSWORD, now);
 		expect(r).toEqual({ ok: true, account: expect.objectContaining({ id: PARENT_ID }) });
 
-		const admin = await loginWithPassword(store, 'admin@sessionx.local', 'sessionx-admin-dev', now);
+		const admin = await loginWithPassword(
+			store,
+			'admin@sessionx.local',
+			'sessionx-admin-dev1',
+			now
+		);
 		expect(admin.ok && admin.account.role).toBe('admin');
+	});
+
+	it('signs in with an older password that the current rules would reject', async () => {
+		const { store } = setup();
+		await store.setPasswordHash(PARENT_ID, await hashPassword('sessionx-parent-dev'));
+		expect(
+			(await loginWithPassword(store, 'parent@example.com', 'sessionx-parent-dev', now)).ok
+		).toBe(true);
 	});
 
 	it('fails the same way for a wrong password, no password and an unknown email', async () => {
@@ -292,7 +337,7 @@ describe('password reset', () => {
 		await requestPasswordReset(deps, 'parent@example.com', now);
 		const token = tokenFrom(sent[0], '/login/reset/complete');
 		const bad = await completePasswordReset(store, token, 'short', 'short', now);
-		expect(bad.ok === false && !bad.invalid && bad.errors.password).toMatch(/at least 10/);
+		expect(bad.ok === false && !bad.invalid && bad.errors.password).toMatch(/at least 8/);
 		expect((await completePasswordReset(store, token, NEW_PASSWORD, NEW_PASSWORD, now)).ok).toBe(
 			true
 		);

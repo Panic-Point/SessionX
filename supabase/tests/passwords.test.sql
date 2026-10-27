@@ -1,5 +1,5 @@
 begin;
-select plan(14);
+select plan(18);
 
 -- Seed: Pat Parent (22222222-...-00b, parent@example.com) has a dev password and students Ava and Ben.
 
@@ -17,29 +17,57 @@ select ok(
   'password tables have RLS');
 
 select throws_ok(
-  $$ insert into password_tokens (token_hash, purpose, email, expires_at)
-     values ('bad', 'register', 'a@b.c', '2030-01-01Z') $$,
-  '23514', null, 'registration token needs name and password hash');
+  $$ insert into password_tokens (token_hash, purpose, expires_at)
+     values ('bad', 'register', '2030-01-01Z') $$,
+  '23514', null, 'registration token needs an email');
 
--- New email: no account until the link is used.
-insert into password_tokens (token_hash, purpose, email, name, password_hash, expires_at)
-values ('r1', 'register', 'new@example.com', 'New Family', 'pw-new', '2030-01-01Z');
+-- New email: no account until the link is used. The token carries only the email.
+insert into password_tokens (token_hash, purpose, email, expires_at)
+values ('r1', 'register', 'new@example.com', '2030-01-01Z');
 
 select is((select count(*)::int from accounts where email = 'new@example.com'), 0,
   'registration does not create the account before the link is used');
 
 select is(
   (select a.role::text || '|' || a.name || '|' || a.password_hash
-     from accounts a where a.id = complete_registration('r1', '2026-11-01Z')),
-  'client|New Family|pw-new', 'using the link creates a client account with the password');
+     from accounts a where a.id = complete_registration('r1', ' New Family ', 'pw-new', '2026-11-01Z')),
+  'client|New Family|pw-new', 'using the link creates a client account with the name and password');
 
-select is(complete_registration('r1', '2026-11-01Z'), null, 'registration link is single use');
+select results_eq(
+  $$ select s.name from students s join accounts a on a.id = s.account_id
+      where a.email = 'new@example.com' $$,
+  $$ values ('New Family'::text) $$,
+  'a new account gets its holder as its first student');
+
+select is(complete_registration('r1', 'Again', 'pw-x', '2026-11-01Z'), null,
+  'registration link is single use');
+
+-- A blank name adds no student.
+insert into password_tokens (token_hash, purpose, email, expires_at)
+values ('r4', 'register', 'blank@example.com', '2030-01-01Z');
+
+select is(
+  (select count(*)::int from students
+    where account_id = complete_registration('r4', '  ', 'pw', '2026-11-01Z')),
+  0, 'a blank name adds no student');
+
+-- No password hash: refused, and the link stays usable.
+insert into password_tokens (token_hash, purpose, email, expires_at)
+values ('r5', 'register', 'nopw@example.com', '2030-01-01Z');
+
+select throws_ok(
+  $$ select complete_registration('r5', 'No Password', null, '2026-11-01Z') $$,
+  '22023', null, 'registration needs a password hash');
+
+select isnt(complete_registration('r5', 'No Password', 'pw', '2026-11-01Z'), null,
+  'a refused registration leaves the link usable');
 
 -- Existing email: name, role and students are kept.
-insert into password_tokens (token_hash, purpose, email, name, password_hash, expires_at)
-values ('r2', 'register', 'parent@example.com', 'Impostor', 'pw-2', '2030-01-01Z');
+insert into password_tokens (token_hash, purpose, email, expires_at)
+values ('r2', 'register', 'parent@example.com', '2030-01-01Z');
 
-select is(complete_registration('r2', '2026-11-01Z'), '22222222-0000-0000-0000-00000000000b'::uuid,
+select is(complete_registration('r2', 'Impostor', 'pw-2', '2026-11-01Z'),
+  '22222222-0000-0000-0000-00000000000b'::uuid,
   'registration for an existing email returns that account');
 
 select results_eq(
@@ -49,13 +77,15 @@ select results_eq(
   'existing account keeps name, role and students; password replaced');
 
 -- Expired and wrong-purpose tokens.
-insert into password_tokens (token_hash, purpose, email, name, password_hash, expires_at)
-values ('r3', 'register', 'late@example.com', 'Late', 'pw', '2026-11-01Z');
+insert into password_tokens (token_hash, purpose, email, expires_at)
+values ('r3', 'register', 'late@example.com', '2026-11-01Z');
 insert into password_tokens (token_hash, purpose, account_id, expires_at)
 values ('s1', 'reset', '22222222-0000-0000-0000-00000000000b', '2030-01-01Z');
 
-select is(complete_registration('r3', '2026-11-01Z'), null, 'expired registration link is refused');
-select is(complete_registration('s1', '2026-11-01Z'), null, 'reset link cannot complete a registration');
+select is(complete_registration('r3', 'Late', 'pw', '2026-11-01Z'), null,
+  'expired registration link is refused');
+select is(complete_registration('s1', 'X', 'pw', '2026-11-01Z'), null,
+  'reset link cannot complete a registration');
 
 -- Reset: sets the password, voids other tokens, clears the lockout.
 insert into password_tokens (token_hash, purpose, account_id, expires_at)
@@ -75,9 +105,9 @@ select results_eq(
   'reset voids the other reset link and clears only that email''s failures');
 
 select ok(
-  not has_function_privilege('anon', 'complete_registration(text,timestamptz)', 'execute')
+  not has_function_privilege('anon', 'complete_registration(text,text,text,timestamptz)', 'execute')
   and not has_function_privilege('authenticated', 'complete_password_reset(text,text,timestamptz)', 'execute')
-  and has_function_privilege('service_role', 'complete_registration(text,timestamptz)', 'execute'),
+  and has_function_privilege('service_role', 'complete_registration(text,text,text,timestamptz)', 'execute'),
   'only service_role can complete registrations and resets');
 
 select * from finish();

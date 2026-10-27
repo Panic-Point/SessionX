@@ -34,68 +34,101 @@ function newPasswordErrors(password: string, confirmPassword: string): FieldErro
 	return errors;
 }
 
-export interface RegistrationForm {
-	name: string;
+/** Checks only the submitted email, never the store, so the result can't reveal accounts. */
+export function validateRegistration(form: {
 	email: string;
-	password: string;
-	confirmPassword: string;
-}
-
-/** Checks only the submitted values, never the store, so the result can't reveal accounts. */
-export function validateRegistration(
-	form: RegistrationForm
-): { ok: true; name: string; email: string } | { ok: false; errors: FieldErrors } {
-	const errors: FieldErrors = {};
-	const name = form.name.trim();
+}): { ok: true; email: string } | { ok: false; errors: FieldErrors } {
 	const email = normalize(form.email);
-	if (!name) errors.name = 'Enter your name.';
-	else if (name.length > NAME_MAX) errors.name = `Use at most ${NAME_MAX} characters.`;
-	if (!email) errors.email = 'Enter your email address.';
-	else if (!EMAIL_RE.test(email)) errors.email = 'Enter a valid email address.';
-	Object.assign(errors, newPasswordErrors(form.password, form.confirmPassword));
-	return Object.keys(errors).length ? { ok: false, errors } : { ok: true, name, email };
+	if (!email) return { ok: false, errors: { email: 'Enter your email address.' } };
+	if (!EMAIL_RE.test(email))
+		return { ok: false, errors: { email: 'Enter a valid email address.' } };
+	return { ok: true, email };
 }
 
 /**
- * Holds the password as pending and emails a verification link. Nothing about an existing account
- * changes until the link is used. Run it in the background so the response is the same either way.
+ * Emails a link to finish creating the account; the password is chosen on the page it opens.
+ * Nothing about an existing account changes until the link is used. Run it in the background so
+ * the response is the same either way.
  */
 export async function requestRegistration(
 	deps: PasswordDeps,
-	input: { name: string; email: string; password: string },
+	email: string,
 	now: Date
 ): Promise<void> {
-	const email = normalize(input.email);
+	const normalized = normalize(email);
 	const token = generateToken();
 	await deps.store.createPasswordToken(
 		await hashToken(token),
-		{
-			purpose: 'register',
-			email,
-			name: input.name.trim(),
-			passwordHash: await hashPassword(input.password)
-		},
+		{ purpose: 'register', email: normalized },
 		new Date(now.getTime() + REGISTRATION_TOKEN_TTL_MS)
 	);
 	// The email only goes to the address itself, so greeting an existing family by name is fine.
-	const existing = await deps.store.findAccountByEmail(email);
+	const existing = await deps.store.findAccountByEmail(normalized);
 	const url = linkUrl(deps.appUrl, '/register/verify', token);
 	try {
-		await deps.mailer.send(
-			verifyRegistrationEmail(email, existing?.name ?? input.name.trim(), url)
-		);
+		await deps.mailer.send(verifyRegistrationEmail(normalized, existing?.name ?? null, url));
 	} catch (err) {
 		console.error('Failed to send registration email', err);
 	}
 }
 
-export async function completeRegistration(
+export interface RegistrationLink {
+	email: string;
+	/** True when the email has no account yet, so the page asks for a name. */
+	needsName: boolean;
+}
+
+/** Looks the link up without using it, so link scanners that open the URL can't spend it. */
+export async function checkRegistrationLink(
 	store: AdminStore,
 	token: string,
 	now: Date
-): Promise<Account | null> {
-	const accountId = await store.completeRegistration(await hashToken(token), now);
-	return accountId ? store.findAccountById(accountId) : null;
+): Promise<RegistrationLink | null> {
+	if (!token) return null;
+	const data = await store.peekPasswordToken(await hashToken(token), 'register', now);
+	if (data?.purpose !== 'register') return null;
+	return { email: data.email, needsName: !(await store.findAccountByEmail(data.email)) };
+}
+
+export interface SetPasswordForm {
+	name: string;
+	password: string;
+	confirmPassword: string;
+}
+
+export type RegistrationResult =
+	| { ok: true; account: Account }
+	| { ok: false; invalid: true }
+	| { ok: false; invalid: false; errors: FieldErrors };
+
+/**
+ * Validates first, so a rejected form doesn't use up the link. A new account is named from the
+ * form and gets that name as its first student; an existing account keeps its name.
+ */
+export async function completeRegistration(
+	store: AdminStore,
+	token: string,
+	form: SetPasswordForm,
+	now: Date
+): Promise<RegistrationResult> {
+	const link = await checkRegistrationLink(store, token, now);
+	if (!link) return { ok: false, invalid: true };
+	const errors: FieldErrors = {};
+	const name = form.name.trim();
+	if (link.needsName) {
+		if (!name) errors.name = 'Enter your name.';
+		else if (name.length > NAME_MAX) errors.name = `Use at most ${NAME_MAX} characters.`;
+	}
+	Object.assign(errors, newPasswordErrors(form.password, form.confirmPassword));
+	if (Object.keys(errors).length) return { ok: false, invalid: false, errors };
+
+	const accountId = await store.completeRegistration(
+		await hashToken(token),
+		{ name: link.needsName ? name : '', passwordHash: await hashPassword(form.password) },
+		now
+	);
+	const account = accountId ? await store.findAccountById(accountId) : null;
+	return account ? { ok: true, account } : { ok: false, invalid: true };
 }
 
 export type PasswordLoginResult = { ok: true; account: Account } | { ok: false; locked: boolean };

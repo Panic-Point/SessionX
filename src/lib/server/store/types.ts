@@ -159,8 +159,13 @@ export class AdminStoreError extends Error {
 
 /** What a password token is for. Registrations name an email that may not have an account yet. */
 export type PasswordTokenData =
-	| { purpose: 'register'; email: string; name: string; passwordHash: string }
-	| { purpose: 'reset'; accountId: string };
+	{ purpose: 'register'; email: string } | { purpose: 'reset'; accountId: string };
+
+/** Chosen on the page the registration link opens. `name` is used only for a new account. */
+export interface RegistrationDetails {
+	name: string;
+	passwordHash: string;
+}
 
 export interface AdminStore {
 	/** Trim + case-insensitive. */
@@ -175,12 +180,26 @@ export interface AdminStore {
 	setPasswordHash(accountId: string, passwordHash: string): Promise<void>;
 	createPasswordToken(tokenHash: string, data: PasswordTokenData, expiresAt: Date): Promise<void>;
 	/**
-	 * Uses a registration token: creates the account (role client) if its email has none, otherwise
-	 * keeps the account's name and role; sets the pending password, voids the account's other unused
-	 * password tokens and clears the email's failures. Returns the accountId; null if unknown, used,
-	 * expired (expiresAt <= now) or not a registration token.
+	 * The token's data without using it; null if unknown, used, expired (expiresAt <= now) or of
+	 * another purpose. Registration emails come back trimmed and lowercased.
 	 */
-	completeRegistration(tokenHash: string, now: Date): Promise<string | null>;
+	peekPasswordToken(
+		tokenHash: string,
+		purpose: PasswordTokenData['purpose'],
+		now: Date
+	): Promise<PasswordTokenData | null>;
+	/**
+	 * Uses a registration token: creates the account (role client) named `details.name` if its email
+	 * has none, with the account holder as its first student (skipped when the trimmed name is
+	 * empty); otherwise keeps the account's name, role and students. Sets the password, voids the
+	 * account's other unused password tokens and clears the email's failures, all at once. Returns
+	 * the accountId; null if unknown, used, expired (expiresAt <= now) or not a registration token.
+	 */
+	completeRegistration(
+		tokenHash: string,
+		details: RegistrationDetails,
+		now: Date
+	): Promise<string | null>;
 	/** Like completeRegistration, for a reset token, setting `passwordHash`. */
 	completePasswordReset(tokenHash: string, passwordHash: string, now: Date): Promise<string | null>;
 	/** Failed password sign-ins for the email (trim + case-insensitive) with failedAt > since. */

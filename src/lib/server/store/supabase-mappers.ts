@@ -223,15 +223,29 @@ export function toPasswordTokenRow(
 		purpose: data.purpose,
 		expires_at: expiresAt.toISOString()
 	};
+	// name and password_hash stay null: since registration asks only for an email, they are chosen
+	// when the link is used and passed to complete_registration.
 	return data.purpose === 'register'
 		? {
 				...base,
 				account_id: null,
 				email: data.email.trim().toLowerCase(),
-				name: data.name,
-				password_hash: data.passwordHash
+				name: null,
+				password_hash: null
 			}
 		: { ...base, account_id: data.accountId, email: null, name: null, password_hash: null };
+}
+
+export interface PasswordTokenRow {
+	purpose: PasswordTokenData['purpose'];
+	account_id: string | null;
+	email: string | null;
+}
+
+export function mapPasswordTokenRow(row: PasswordTokenRow): PasswordTokenData {
+	return row.purpose === 'register'
+		? { purpose: 'register', email: row.email!.toLowerCase() }
+		: { purpose: 'reset', accountId: row.account_id! };
 }
 
 export function mapAccountRow(row: AccountRow): Account {

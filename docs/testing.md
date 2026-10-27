@@ -45,10 +45,10 @@ addresses all work.
 ## 1. Signing in and registering
 
 Everyone signs in with an email and password. The seeded accounts have dev passwords:
-`admin@sessionx.local` / `sessionx-admin-dev` and `parent@example.com` / `sessionx-parent-dev`.
+`admin@sessionx.local` / `sessionx-admin-dev1` and `parent@example.com` / `sessionx-parent-dev1`.
 
 1. Click **Sign in** (top right), or go to http://localhost:5173/login.
-2. Enter `admin@sessionx.local` and `sessionx-admin-dev`, and click **Sign in**.
+2. Enter `admin@sessionx.local` and `sessionx-admin-dev1`, and click **Sign in**.
 3. As the admin you land on the admin area at `/admin`. A family lands on **My lessons** at
    `/account`.
 
@@ -58,14 +58,17 @@ you can be signed in as the admin and the family at the same time.
 
 Things to check:
 
-- **Register before booking:** signed out, click **Register** on the sign-in page. Enter a name, a
-  new email, and a password of at least 10 characters twice. The page says "Check your email to
-  finish creating your account". Open **Finish creating your SessionX account** in Mailpit, follow
-  the link and click **Confirm and sign in**. You land on `/account` with no lessons yet, ready to
-  book.
+- **Register before booking:** signed out, click **Register** on the sign-in page. Enter a new
+  email and click **Send link**. The page says "Check your email to finish creating your account".
+  Open **Finish creating your SessionX account** in Mailpit and follow the link. Enter your name
+  and a password twice, and click **Save password and sign in**. You land on `/account`, signed
+  in, and you're already listed as a student, so you can go straight to **Book a lesson** and book
+  for yourself. The link then shows "This link has expired". Opening the link more than once
+  before saving is fine, and a rejected password leaves the link usable.
 - **Existing family's email:** register with `parent@example.com`. You see the same message, and
-  the old password keeps working until the emailed link is used. After that, the new password
-  works, the account is still named Pat Parent, and Ava and Ben are still there.
+  the old password keeps working until the emailed link is used. The link asks only for a password
+  (no name). After saving it, the new password works, the account is still named Pat Parent, and
+  Ava and Ben are still there with no extra student added.
 - **Wrong password:** a wrong password, an unknown email and an account with no password all show
   "Email or password is incorrect." After 5 failures in 15 minutes the form refuses even the right
   password and suggests resetting it.
@@ -75,8 +78,10 @@ Things to check:
   your email" message but sends nothing, so nobody can find out who has an account.
 - **Change a password:** on `/account`, the **Password** section changes it (the current password
   is required).
-- **Weak passwords:** fewer than 10 characters, or a common one such as `qwertyuiop`, is rejected
-  next to the field.
+- **Weak passwords:** a new password needs at least 8 characters, a number and a special
+  character (`Abcdef1!` works). `Abc1!`, `Abcdefg1` and `Abcdefg!` are each rejected next to the
+  field with what's missing, and so is a common one such as `p030710p$e4o`. Older passwords that
+  don't meet these rules still sign in.
 - **Admin pages are protected:** signed out, go to http://localhost:5173/admin. You are sent to the
   sign-in page. Signed in as the family, the same address shows "Only the studio admin can view
   this page."

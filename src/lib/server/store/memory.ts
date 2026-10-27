@@ -27,6 +27,7 @@ import {
 	type LessonSeries,
 	type OccurrenceResult,
 	type PasswordTokenData,
+	type RegistrationDetails,
 	type SeriesInput,
 	type SeriesStore,
 	type SeriesTag,
@@ -259,15 +260,34 @@ export class MemoryBookingStore implements BookingStore, AdminStore, AccountStor
 		this.passwordTokens.set(tokenHash, { data: stored, expiresAt, used: false });
 	}
 
+	private livePasswordToken(
+		tokenHash: string,
+		purpose: PasswordTokenData['purpose'],
+		now: Date
+	): StoredPasswordToken | null {
+		const token = this.passwordTokens.get(tokenHash);
+		if (!token || token.used || token.expiresAt <= now || token.data.purpose !== purpose) {
+			return null;
+		}
+		return token;
+	}
+
+	async peekPasswordToken(
+		tokenHash: string,
+		purpose: PasswordTokenData['purpose'],
+		now: Date
+	): Promise<PasswordTokenData | null> {
+		const token = this.livePasswordToken(tokenHash, purpose, now);
+		return token ? { ...token.data } : null;
+	}
+
 	private usePasswordToken(
 		tokenHash: string,
 		purpose: PasswordTokenData['purpose'],
 		now: Date
 	): PasswordTokenData | null {
-		const token = this.passwordTokens.get(tokenHash);
-		if (!token || token.used || token.expiresAt <= now || token.data.purpose !== purpose) {
-			return null;
-		}
+		const token = this.livePasswordToken(tokenHash, purpose, now);
+		if (!token) return null;
 		token.used = true;
 		return token.data;
 	}
@@ -292,15 +312,27 @@ export class MemoryBookingStore implements BookingStore, AdminStore, AccountStor
 		}
 	}
 
-	async completeRegistration(tokenHash: string, now: Date): Promise<string | null> {
+	async completeRegistration(
+		tokenHash: string,
+		details: RegistrationDetails,
+		now: Date
+	): Promise<string | null> {
 		const data = this.usePasswordToken(tokenHash, 'register', now);
 		if (data?.purpose !== 'register') return null;
 		let account = this.data.accounts.find((a) => a.email.toLowerCase() === data.email);
 		if (!account) {
-			account = { id: crypto.randomUUID(), name: data.name, email: data.email, role: 'client' };
+			const name = details.name.trim();
+			account = {
+				id: crypto.randomUUID(),
+				name: name || data.email,
+				email: data.email,
+				role: 'client'
+			};
 			this.data.accounts.push(account);
+			// The new account holder is its first student; an existing family keeps its own.
+			if (name) this.data.students.push({ id: crypto.randomUUID(), accountId: account.id, name });
 		}
-		this.passwordHashes.set(account.id, data.passwordHash);
+		this.passwordHashes.set(account.id, details.passwordHash);
 		this.passwordLinkUsed(account.id, data.email);
 		return account.id;
 	}

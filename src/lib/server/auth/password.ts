@@ -1,8 +1,6 @@
+import { PASSWORD_MAX_LENGTH, PASSWORD_MIN_LENGTH } from '../../password-rules';
 import { COMMON_PASSWORDS } from './common-passwords';
 import { fromBase64Url, toBase64Url } from './tokens';
-
-export const PASSWORD_MIN_LENGTH = 10;
-export const PASSWORD_MAX_LENGTH = 128;
 
 /** Cloudflare Workers caps PBKDF2 at 100,000 iterations. */
 const ITERATIONS = 100_000;
@@ -11,8 +9,14 @@ const HASH_BITS = 256;
 const SCHEME = 'pbkdf2-sha256';
 
 const common = new Set(COMMON_PASSWORDS);
+const DIGIT = /[0-9]/;
+/** Anything that isn't a letter, a number or whitespace, so accented letters don't count. */
+const SPECIAL = /[^\p{L}\p{N}\s]/u;
 
-/** A field error for a new password, or null when it is acceptable. No composition rules. */
+/**
+ * A field error for a new password, or null when it is acceptable. Only checked when a password is
+ * set or changed, so older passwords that don't meet the rules still sign in.
+ */
 export function passwordProblem(password: string): string | null {
 	if (password.length < PASSWORD_MIN_LENGTH) {
 		return `Use at least ${PASSWORD_MIN_LENGTH} characters.`;
@@ -20,6 +24,8 @@ export function passwordProblem(password: string): string | null {
 	if (password.length > PASSWORD_MAX_LENGTH) {
 		return `Use at most ${PASSWORD_MAX_LENGTH} characters.`;
 	}
+	if (!DIGIT.test(password)) return 'Include at least one number.';
+	if (!SPECIAL.test(password)) return 'Include at least one special character, like ! or #.';
 	if (common.has(password.toLowerCase())) {
 		return 'That password is too common. Choose something harder to guess.';
 	}

@@ -3,25 +3,40 @@ import { COMMON_PASSWORDS } from './common-passwords';
 import { hashPassword, passwordProblem, verifyPassword, verifyPasswordOrDummy } from './password';
 
 describe('passwordProblem', () => {
-	it('requires 10 to 128 characters with no composition rules', () => {
-		expect(passwordProblem('a'.repeat(9))).toMatch(/at least 10/);
-		expect(passwordProblem('correct horse')).toBeNull();
-		expect(passwordProblem('zzzzzzzzzzzzzzzzzzzz')).toBeNull();
-		expect(passwordProblem('x'.repeat(128))).toBeNull();
-		expect(passwordProblem('x'.repeat(129))).toMatch(/at most 128/);
+	it('accepts 8 to 128 characters with a number and a special character', () => {
+		expect(passwordProblem('Abcdef1!')).toBeNull();
+		expect(passwordProblem('correct horse 9 battery?')).toBeNull();
+		expect(passwordProblem('1#' + 'x'.repeat(126))).toBeNull();
+	});
+
+	it('reports one problem at a time, in order', () => {
+		expect(passwordProblem('Abc1!')).toBe('Use at least 8 characters.');
+		expect(passwordProblem('1#' + 'x'.repeat(127))).toBe('Use at most 128 characters.');
+		expect(passwordProblem('Abcdefg!')).toBe('Include at least one number.');
+		expect(passwordProblem('Abcdefg1')).toBe(
+			'Include at least one special character, like ! or #.'
+		);
+		expect(passwordProblem('x')).toBe('Use at least 8 characters.');
+	});
+
+	it('does not count accented letters, other scripts or spaces as special', () => {
+		expect(passwordProblem('Ångström1')).toMatch(/special character/);
+		expect(passwordProblem('пароль123')).toMatch(/special character/);
+		expect(passwordProblem('abc def 1')).toMatch(/special character/);
+		expect(passwordProblem('Ångström1€')).toBeNull();
 	});
 
 	it('rejects common passwords case-insensitively', () => {
-		expect(passwordProblem('qwertyuiop')).toMatch(/too common/);
-		expect(passwordProblem('Password123')).toMatch(/too common/);
-		expect(passwordProblem('1234567890')).toMatch(/too common/);
+		expect(passwordProblem('p030710p$e4o')).toMatch(/too common/);
+		expect(passwordProblem('P030710P$E4O')).toMatch(/too common/);
+		expect(passwordProblem('1234567890-')).toMatch(/too common/);
 	});
 
 	it('bundles 1,000 lowercase entries that the length rule would not already reject', () => {
 		expect(COMMON_PASSWORDS).toHaveLength(1000);
 		expect(new Set(COMMON_PASSWORDS).size).toBe(1000);
 		for (const p of COMMON_PASSWORDS) {
-			expect(p.length).toBeGreaterThanOrEqual(10);
+			expect(p.length).toBeGreaterThanOrEqual(8);
 			expect(p).toBe(p.toLowerCase());
 		}
 	});

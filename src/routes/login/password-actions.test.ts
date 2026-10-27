@@ -88,7 +88,7 @@ describe('password sign-in action', () => {
 	it('signs the admin in on /admin', async () => {
 		const { result, cookies } = await post(login.actions.default, {
 			email: 'admin@sessionx.local',
-			password: 'sessionx-admin-dev'
+			password: 'sessionx-admin-dev1'
 		});
 		expect(result).toMatchObject({ status: 303, location: '/admin' });
 		expect(cookies.get('sx_session')).toBeTruthy();
@@ -97,7 +97,7 @@ describe('password sign-in action', () => {
 	it('signs in with the right password and lands on /account', async () => {
 		const { result, cookies } = await post(login.actions.default, {
 			email: 'parent@example.com',
-			password: 'sessionx-parent-dev'
+			password: 'sessionx-parent-dev1'
 		});
 		expect(isRedirect(result)).toBe(true);
 		expect(result).toMatchObject({ status: 303, location: '/account' });
@@ -126,7 +126,7 @@ describe('password sign-in action', () => {
 		}
 		const { result, cookies } = await post(login.actions.default, {
 			email: 'parent@example.com',
-			password: 'sessionx-parent-dev'
+			password: 'sessionx-parent-dev1'
 		});
 		expect(isActionFailure(result)).toBe(true);
 		expect(result).toMatchObject({
@@ -145,16 +145,15 @@ describe('password sign-in action', () => {
 });
 
 describe('registration actions', () => {
-	const fields = (email: string) => ({
-		name: 'Robin',
-		email,
-		password: 'a brand new passphrase',
-		confirmPassword: 'a brand new passphrase'
-	});
+	const NEW_PASSWORD = 'a brand new passphrase 9!';
+	const setPassword = { name: 'Robin', password: NEW_PASSWORD, confirmPassword: NEW_PASSWORD };
 
-	it('answers the same for new and existing emails, and changes nothing yet', async () => {
-		const known = await post(register.actions.default, fields('parent@example.com'));
-		const unknown = await post(register.actions.default, fields('robin@example.com'));
+	const openLink = async (token: string) =>
+		registerVerify.load({ url: new URL(`https://x/register/verify?token=${token}`) } as never);
+
+	it('asks only for an email and answers the same for new and existing emails', async () => {
+		const known = await post(register.actions.default, { email: 'parent@example.com' });
+		const unknown = await post(register.actions.default, { email: 'robin@example.com' });
 		expect(known.result).toEqual({ sent: true });
 		expect(unknown.result).toEqual(known.result);
 		expect(known.cookies.size + unknown.cookies.size).toBe(0);
@@ -166,21 +165,85 @@ describe('registration actions', () => {
 		await emailedToken('robin@example.com', '/register/verify');
 	});
 
-	it('the verification link signs the new family in on /account', async () => {
-		await post(register.actions.default, fields('robin@example.com'));
+	it('the link opens a set-password form; saving signs the new family in on /account', async () => {
+		await post(register.actions.default, { email: 'robin@example.com' });
 		const token = await emailedToken('robin@example.com', '/register/verify');
 
-		expect(
-			registerVerify.load({ url: new URL(`https://x/register/verify?token=${token}`) } as never)
-		).toEqual({
-			token
+		const page = { token, valid: true, email: 'robin@example.com', needsName: true };
+		expect(await openLink(token)).toEqual(page);
+		// Opening it again (a link scanner, or the person) still works.
+		expect(await openLink(token)).toEqual(page);
+
+		const { result, cookies } = await post(registerVerify.actions.default, {
+			token,
+			...setPassword
 		});
-		const { result, cookies } = await post(registerVerify.actions.default, { token });
 		expect(result).toMatchObject({ status: 303, location: '/account' });
 		expect(cookies.get('sx_session')).toBeTruthy();
 
-		const again = await post(registerVerify.actions.default, { token });
+		expect(await openLink(token)).toMatchObject({ valid: false });
+		const again = await post(registerVerify.actions.default, { token, ...setPassword });
 		expect(again.result).toMatchObject({ status: 400, data: { invalid: true } });
+	});
+
+	it('an invalid password shows field errors and leaves the link usable', async () => {
+		await post(register.actions.default, { email: 'robin@example.com' });
+		const token = await emailedToken('robin@example.com', '/register/verify');
+		const { result, cookies } = await post(registerVerify.actions.default, {
+			token,
+			name: 'Robin',
+			password: 'Abcdefg1',
+			confirmPassword: 'Abcdefg1'
+		});
+		expect(result).toMatchObject({
+			status: 400,
+			data: {
+				invalid: false,
+				values: { name: 'Robin' },
+				errors: { password: 'Include at least one special character, like ! or #.' }
+			}
+		});
+		expect(JSON.stringify(result)).not.toContain('Abcdefg1');
+		expect(cookies.size).toBe(0);
+		expect(await openLink(token)).toMatchObject({ valid: true });
+		const retry = await post(registerVerify.actions.default, { token, ...setPassword });
+		expect(retry.result).toMatchObject({ status: 303, location: '/account' });
+	});
+
+	it('an existing family is not asked for a name and keeps theirs', async () => {
+		await post(register.actions.default, { email: 'parent@example.com' });
+		const token = await emailedToken('parent@example.com', '/register/verify');
+		expect(await openLink(token)).toMatchObject({ valid: true, needsName: false });
+		const { result } = await post(registerVerify.actions.default, {
+			token,
+			password: NEW_PASSWORD,
+			confirmPassword: NEW_PASSWORD
+		});
+		expect(result).toMatchObject({ status: 303, location: '/account' });
+		expect(await ctx.store.findAccountByEmail('parent@example.com')).toMatchObject({
+			name: 'Pat Parent'
+		});
+	});
+
+	it('the admin lands on /admin', async () => {
+		await post(register.actions.default, { email: 'admin@sessionx.local' });
+		const token = await emailedToken('admin@sessionx.local', '/register/verify');
+		const { result } = await post(registerVerify.actions.default, {
+			token,
+			password: NEW_PASSWORD,
+			confirmPassword: NEW_PASSWORD
+		});
+		expect(result).toMatchObject({ status: 303, location: '/admin' });
+	});
+
+	it('an unknown or missing token shows the expired page', async () => {
+		expect(await openLink('nope')).toEqual({
+			token: '',
+			valid: false,
+			email: '',
+			needsName: false
+		});
+		expect(await openLink('')).toMatchObject({ valid: false });
 	});
 
 	it('fills in the email from the guest invite link', async () => {
@@ -191,19 +254,16 @@ describe('registration actions', () => {
 		expect(loaded).toMatchObject({ email: 'gina@example.com' });
 	});
 
-	it('shows field errors without sending anything', async () => {
-		const { result } = await post(register.actions.default, {
-			...fields('robin@example.com'),
-			confirmPassword: 'something else'
-		});
+	it('shows an email error without sending anything', async () => {
+		const { result } = await post(register.actions.default, { email: 'not an email' });
 		expect(result).toMatchObject({
 			status: 400,
 			data: {
-				values: { name: 'Robin', email: 'robin@example.com' },
-				errors: { confirmPassword: 'The passwords do not match.' }
+				values: { email: 'not an email' },
+				errors: { email: 'Enter a valid email address.' }
 			}
 		});
-		expect(JSON.stringify(result)).not.toContain('a brand new passphrase');
+		expect(ctx.background).toHaveLength(0);
 	});
 });
 
@@ -220,15 +280,15 @@ describe('password reset actions', () => {
 		const token = await emailedToken('parent@example.com', '/login/reset/complete');
 		const { result, cookies } = await post(resetComplete.actions.default, {
 			token,
-			password: 'a brand new passphrase',
-			confirmPassword: 'a brand new passphrase'
+			password: 'a brand new passphrase 9!',
+			confirmPassword: 'a brand new passphrase 9!'
 		});
 		expect(result).toMatchObject({ status: 303, location: '/account' });
 		expect(cookies.get('sx_session')).toBeTruthy();
 
 		const old = await post(login.actions.default, {
 			email: 'parent@example.com',
-			password: 'sessionx-parent-dev'
+			password: 'sessionx-parent-dev1'
 		});
 		expect(isActionFailure(old.result)).toBe(true);
 	});

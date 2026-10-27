@@ -22,16 +22,9 @@ export const load: PageServerLoad = ({ locals, url }) => {
 export const actions: Actions = {
 	default: async ({ request, getClientAddress }) => {
 		const data = await request.formData();
-		const form = {
-			name: formString(data, 'name'),
-			email: formString(data, 'email'),
-			password: formString(data, 'password'),
-			confirmPassword: formString(data, 'confirmPassword')
-		};
-		// Passwords are never sent back to the page.
-		const values = { name: form.name, email: form.email };
+		const values = { email: formString(data, 'email') };
 
-		const checked = validateRegistration(form);
+		const checked = validateRegistration(values);
 		if (!checked.ok) return fail(400, { values, errors: checked.errors });
 		if (!(await passesTurnstile(data, getClientAddress))) {
 			return fail(400, { values, errors: { form: TURNSTILE_FAILED } });
@@ -41,7 +34,7 @@ export const actions: Actions = {
 		runInBackground(
 			requestRegistration(
 				{ store: getStore(), mailer: getMailer(), appUrl: getAppUrl() },
-				{ name: checked.name, email: checked.email, password: form.password },
+				checked.email,
 				new Date()
 			)
 		);

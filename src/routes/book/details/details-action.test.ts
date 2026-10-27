@@ -1,5 +1,7 @@
 import { isActionFailure, isRedirect } from '@sveltejs/kit';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { completeRegistration } from '#lib/server/auth/password-service.ts';
+import { generateToken, hashToken } from '#lib/server/auth/tokens.ts';
 import { fakeCalendar, type FakeCalendar } from '#lib/server/calendar/fake-client.test-helpers.ts';
 import type { EmailMessage } from '#lib/server/email/mailer.ts';
 import { MemoryBookingStore } from '#lib/server/store/memory.ts';
@@ -30,6 +32,7 @@ vi.mock('#lib/server/context.ts', () => ({
 }));
 
 const { actions, load } = await import('./+page.server');
+const accountPage = await import('../../account/+page.server');
 
 const LESSON_30 = '11111111-0000-0000-0000-000000000030';
 const AVA = '33333333-0000-0000-0000-0000000000a1';
@@ -51,14 +54,14 @@ function slot(offsetMin: number): string {
 	return d.toISOString();
 }
 
-async function submit(startsAt: string): Promise<unknown> {
+async function submit(startsAt: string, account = pat, studentId = AVA): Promise<unknown> {
 	const body = new FormData();
 	body.set('lessonTypeId', LESSON_30);
 	body.set('startsAt', startsAt);
-	body.set('studentId', AVA);
+	body.set('studentId', studentId);
 	body.set('note', '');
 	const event = {
-		locals: { account: pat },
+		locals: { account },
 		request: new Request('http://localhost/book/details', { method: 'POST', body })
 	};
 	try {
@@ -84,6 +87,48 @@ describe('/book/details action, signed in', () => {
 		const data = (result as { data: { errors: Record<string, string> } }).data;
 		expect(data.errors).toEqual({ form: LIMIT });
 		expect(data.errors.startsAt).toBeUndefined();
+	});
+});
+
+describe('/book/details action, newly registered', () => {
+	beforeEach(() => {
+		ctx.store = new MemoryBookingStore();
+		ctx.sent = [];
+		ctx.calendar = fakeCalendar(false);
+	});
+
+	it('a new account can book for its holder without adding a student first', async () => {
+		const token = generateToken();
+		await ctx.store.createPasswordToken(
+			await hashToken(token),
+			{ purpose: 'register', email: 'robin@example.com' },
+			new Date(Date.now() + 60_000)
+		);
+		const done = await completeRegistration(
+			ctx.store,
+			token,
+			{
+				name: 'Robin',
+				password: 'a brand new passphrase 9!',
+				confirmPassword: 'a brand new passphrase 9!'
+			},
+			new Date()
+		);
+		if (!done.ok) throw new Error('registration failed');
+		const robin = done.account;
+
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
+		const home = (await (accountPage.load as any)({
+			locals: { account: robin },
+			url: new URL('http://localhost/account')
+		})) as { students: { id: string; name: string }[] };
+		expect(home.students).toEqual([{ id: expect.any(String), name: 'Robin' }]);
+
+		const result = await submit(slot(0), robin, home.students[0].id);
+		expect(isRedirect(result)).toBe(true);
+		const bookings = await ctx.store.listAccountBookings(robin.id);
+		expect(bookings).toHaveLength(1);
+		expect(bookings[0]).toMatchObject({ studentName: 'Robin' });
 	});
 });
 
