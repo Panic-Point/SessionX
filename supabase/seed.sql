@@ -4,7 +4,7 @@ insert into settings (
 	timezone, min_notice_hours, max_advance_days, cancel_cutoff_hours, allow_same_day,
 	cancellation_policy_text, admin_email
 ) values (
-	'America/New_York', 24, 60, 24, false,
+	'America/Los_Angeles', 24, 60, 24, false,
 	'Please cancel at least 24 hours before your lesson. Late cancellations may still be charged.',
 	'admin@sessionx.local'
 );
@@ -56,7 +56,7 @@ insert into lesson_series (
 select count(*) from create_series_occurrences(
 	'44444444-0000-0000-0000-0000000000b1',
 	array(
-		select (d::date + time '16:00') at time zone 'America/New_York'
+		select (d::date + time '16:00') at time zone 'America/Los_Angeles'
 		  from generate_series(greatest(current_date, date '2026-11-03'), current_date + 84, interval '1 day') as d
 		 where extract(isodow from d) = 2
 	),

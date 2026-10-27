@@ -64,7 +64,7 @@ in place of `teacher@example.com`. Change the timezone to the studio's.
 ```sql
 -- Studio settings (exactly one row). admin_email receives new-request notifications.
 insert into settings (id, timezone, admin_email)
-values (true, 'America/New_York', 'teacher@example.com')
+values (true, 'America/Los_Angeles', 'teacher@example.com')
 on conflict (id) do update
   set admin_email = excluded.admin_email,
       timezone = excluded.timezone;

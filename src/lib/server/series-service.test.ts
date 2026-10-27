@@ -20,7 +20,7 @@ import {
 import { demoData } from './store/demo-data';
 import { MemoryBookingStore } from './store/memory';
 
-const ZONE = 'America/New_York';
+const ZONE = 'America/Los_Angeles';
 // Sunday, the day US clocks went back.
 const now = DateTime.fromISO('2026-11-01T12:00', { zone: ZONE }).toJSDate();
 const PAT = '22222222-0000-0000-0000-00000000000b';
@@ -31,7 +31,7 @@ const LESSON_45 = '11111111-0000-0000-0000-000000000045';
 const DEMO_SERIES = '44444444-0000-0000-0000-0000000000b1';
 const CALENDAR = 'teacher@example.com';
 
-/** 3:00pm New York on a date, as a Date. */
+/** 3:00pm Los Angeles on a date, as a Date. */
 const at3pm = (date: string) => DateTime.fromISO(`${date}T15:00`, { zone: ZONE }).toJSDate();
 const days = (d: Date, n: number) => new Date(d.getTime() + n * 86_400_000);
 
@@ -174,7 +174,7 @@ describe('previewSeries', () => {
 		expect(p.dates[0]).toMatchObject({
 			date: '2026-11-03',
 			startsAt: at3pm('2026-11-03'),
-			whenLabel: 'Tuesday, November 3, 2026 at 3:00 PM EST',
+			whenLabel: 'Tuesday, November 3, 2026 at 3:00 PM PST',
 			statusLabel: 'OK'
 		});
 		expect(p.dates[9].date).toBe('2027-01-05');
@@ -229,9 +229,9 @@ describe('previewSeries', () => {
 			feb
 		);
 		expect(result.ok && result.preview.dates.map((d) => d.startsAt.toISOString())).toEqual([
-			'2027-03-02T20:00:00.000Z',
-			'2027-03-09T20:00:00.000Z',
-			'2027-03-16T19:00:00.000Z'
+			'2027-03-02T23:00:00.000Z',
+			'2027-03-09T23:00:00.000Z',
+			'2027-03-16T22:00:00.000Z'
 		]);
 		expect(result.ok && result.preview.dates.every((d) => d.whenLabel.includes('3:00 PM'))).toBe(
 			true
@@ -301,15 +301,15 @@ describe('createSeries', () => {
 
 		const result = await createSeries(deps, PAT, form({ occurrenceCount: '4' }), now);
 		expect(result.ok && result.booked).toEqual([
-			'Tuesday, November 3, 2026 at 3:00 PM EST',
-			'Tuesday, November 24, 2026 at 3:00 PM EST'
+			'Tuesday, November 3, 2026 at 3:00 PM PST',
+			'Tuesday, November 24, 2026 at 3:00 PM PST'
 		]);
 		expect(result.ok && result.skipped).toEqual([
 			{
-				whenLabel: 'Tuesday, November 10, 2026 at 3:00 PM EST',
+				whenLabel: 'Tuesday, November 10, 2026 at 3:00 PM PST',
 				reason: 'Clashes with an existing lesson'
 			},
-			{ whenLabel: 'Tuesday, November 17, 2026 at 3:00 PM EST', reason: 'Studio closed that day' }
+			{ whenLabel: 'Tuesday, November 17, 2026 at 3:00 PM PST', reason: 'Studio closed that day' }
 		]);
 		const kept = await store.getBooking(existing.bookingId);
 		expect(kept).toMatchObject({ status: 'pending', startsAt: at3pm('2026-11-10'), series: null });
@@ -361,7 +361,7 @@ describe('createSeries', () => {
 		const month = await getMonthAvailability(store, LESSON_30, '2026-11', now);
 		const tuesday = month!.days['2026-11-03'].map((s) => s.iso);
 		expect(tuesday).not.toContain(at3pm('2026-11-03').toISOString());
-		expect(tuesday).toContain(at3pm('2026-11-03').toISOString().replace('20:00', '20:30'));
+		expect(tuesday).toContain(new Date(at3pm('2026-11-03').getTime() + 30 * 60_000).toISOString());
 	});
 });
 

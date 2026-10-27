@@ -40,7 +40,7 @@ export function runBookingStoreContract(
 		it('returns seeded settings', async () => {
 			const settings = await (await makeStore()).getSettings();
 			expect(settings).toMatchObject({
-				timezone: 'America/New_York',
+				timezone: 'America/Los_Angeles',
 				minNoticeHours: 24,
 				maxAdvanceDays: 60,
 				cancelCutoffHours: 24,

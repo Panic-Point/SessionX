@@ -16,7 +16,7 @@ import type { Actions, PageServerLoad } from './$types';
 
 const MONTH_PATTERN = /^\d{4}-\d{2}$/;
 
-/** "America/New_York" → "Eastern Time"; falls back to the zone id. */
+/** "America/Los_Angeles" → "Pacific Time"; falls back to the zone id. */
 function timezoneLabel(timezone: string): string {
 	try {
 		const part = new Intl.DateTimeFormat('en-US', {

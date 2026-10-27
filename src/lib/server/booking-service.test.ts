@@ -14,11 +14,11 @@ import { demoData } from './store/demo-data';
 import { MemoryBookingStore } from './store/memory';
 import { fakeCalendar } from './calendar/fake-client.test-helpers';
 
-const now = DateTime.fromISO('2026-11-01T12:00', { zone: 'America/New_York' }).toJSDate();
+const now = DateTime.fromISO('2026-11-01T12:00', { zone: 'America/Los_Angeles' }).toJSDate();
 const LESSON_30 = '11111111-0000-0000-0000-000000000030';
-// Monday 2026-11-02 3:00 PM EST
-const MON_3PM = '2026-11-02T20:00:00.000Z';
-const MON_330PM = '2026-11-02T20:30:00.000Z';
+// Monday 2026-11-02 3:00 PM PST
+const MON_3PM = '2026-11-02T23:00:00.000Z';
+const MON_330PM = '2026-11-02T23:30:00.000Z';
 
 function fakeMailer(fail = false) {
 	const sent: EmailMessage[] = [];
@@ -59,7 +59,7 @@ describe('booking service', () => {
 	it('month availability marks Monday slots', async () => {
 		const m = await getMonthAvailability(new MemoryBookingStore(), LESSON_30, '2026-11', now);
 		expect(m).not.toBeNull();
-		expect(m!.timezone).toBe('America/New_York');
+		expect(m!.timezone).toBe('America/Los_Angeles');
 		expect(m!.days['2026-11-02'][0]).toEqual({ iso: MON_3PM, label: '3:00 PM' });
 		expect(m!.days['2026-11-08']).toEqual([]);
 	});
@@ -156,9 +156,9 @@ describe('booking service', () => {
 		const { deps } = setup();
 		const message = 'Sorry, that time is no longer available. Please pick another.';
 		for (const startsAt of [
-			'2026-11-02T20:10:00.000Z',
-			'2026-11-08T20:00:00.000Z',
-			'2026-10-30T20:00:00.000Z',
+			'2026-11-02T23:10:00.000Z',
+			'2026-11-08T23:00:00.000Z',
+			'2026-10-30T23:00:00.000Z',
 			'garbage'
 		]) {
 			const r = await submitGuestRequest(deps, form({ startsAt }), now);
@@ -185,7 +185,7 @@ describe('booking service', () => {
 		);
 		const r = await submitGuestRequest(
 			deps,
-			form({ email, startsAt: '2026-11-02T21:00:00.000Z' }),
+			form({ email, startsAt: '2026-11-03T00:00:00.000Z' }),
 			now
 		);
 		expect(r).toEqual({
@@ -221,8 +221,8 @@ describe('booking service', () => {
 		if (!r.ok) throw new Error('expected ok');
 		const view = await getManageView(store, r.manageToken);
 		expect(view?.status).toBe('pending');
-		expect(view?.timezone).toBe('America/New_York');
-		expect(view?.whenLabel).toBe('Monday, November 2, 2026 at 3:00 PM EST');
+		expect(view?.timezone).toBe('America/Los_Angeles');
+		expect(view?.whenLabel).toBe('Monday, November 2, 2026 at 3:00 PM PST');
 		expect(view?.priceLabel).toBe('$35.00');
 		expect(await getManageView(store, 'missing')).toBeNull();
 	});
@@ -283,7 +283,7 @@ describe('signed-in booking', () => {
 		expect((await req(MON_3PM, AVA)).ok).toBe(true);
 		expect((await req(MON_330PM, BEN)).ok).toBe(true);
 		sent.length = 0;
-		const r = await req('2026-11-02T21:00:00.000Z', AVA);
+		const r = await req('2026-11-03T00:00:00.000Z', AVA);
 		expect(r).toEqual({
 			ok: false,
 			errors: {
@@ -330,7 +330,7 @@ describe('signed-in booking', () => {
 		const bad = await submitAccountRequest(
 			deps,
 			PAT,
-			{ lessonTypeId: LESSON_30, startsAt: '2026-11-08T20:00:00.000Z', studentId: AVA, note: '' },
+			{ lessonTypeId: LESSON_30, startsAt: '2026-11-08T23:00:00.000Z', studentId: AVA, note: '' },
 			now
 		);
 		expect(bad.ok).toBe(false);
@@ -348,9 +348,9 @@ describe('signed-in booking', () => {
 
 	describe('google calendar busy time', () => {
 		const LESSON_60 = '11111111-0000-0000-0000-000000000060';
-		const MON_4PM = '2026-11-02T21:00:00.000Z';
-		const MON_5PM = '2026-11-02T22:00:00.000Z';
-		const MON_6PM = '2026-11-02T23:00:00.000Z';
+		const MON_4PM = '2026-11-03T00:00:00.000Z';
+		const MON_5PM = '2026-11-03T01:00:00.000Z';
+		const MON_6PM = '2026-11-03T02:00:00.000Z';
 
 		function calSetup(bufferMin = 0) {
 			const data = demoData();
@@ -393,7 +393,7 @@ describe('signed-in booking', () => {
 			expect(isos).not.toContain(MON_4PM);
 			// 6:00 PM is inside the buffer after the busy time; 6:30 PM is clear.
 			expect(isos).not.toContain(MON_6PM);
-			expect(isos).toContain('2026-11-02T23:30:00.000Z');
+			expect(isos).toContain('2026-11-03T02:30:00.000Z');
 		});
 
 		it('availability fails open when calendar errors', async () => {

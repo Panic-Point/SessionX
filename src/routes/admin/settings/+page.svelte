@@ -12,11 +12,11 @@
 	const check = $derived(form?.check);
 
 	const US_ZONES = [
+		'America/Los_Angeles',
 		'America/New_York',
 		'America/Chicago',
 		'America/Denver',
 		'America/Phoenix',
-		'America/Los_Angeles',
 		'America/Anchorage',
 		'Pacific/Honolulu'
 	];
@@ -90,7 +90,7 @@
 				<option value={zone}></option>
 			{/each}
 		</datalist>
-		<p class="hint" id="timezone-hint">An IANA zone name, like America/New_York.</p>
+		<p class="hint" id="timezone-hint">An IANA zone name, like America/Los_Angeles.</p>
 		{#if errors.timezone}
 			<p class="error" id="timezone-error">{errors.timezone}</p>
 		{/if}
