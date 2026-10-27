@@ -24,15 +24,15 @@ insert into accounts (id, name, email, role) values
 	('22222222-0000-0000-0000-00000000000a', 'Studio Admin', 'admin@sessionx.local', 'admin'),
 	('22222222-0000-0000-0000-00000000000b', 'Pat Parent', 'parent@example.com', 'client');
 
--- Dev passwords (see docs/local-dev.md): admin@sessionx.local is sessionx-admin-dev,
--- parent@example.com is sessionx-parent-dev.
+-- Dev passwords (see docs/local-dev.md): admin@sessionx.local is sessionx-admin-dev1,
+-- parent@example.com is sessionx-parent-dev1.
 update accounts
-   set password_hash = 'pbkdf2-sha256$100000$5-RF-OeO6K0GiAxmCNyHyw$v6UK6KohW0ziVPzk3cei8wt5oGUztsGZg5-UjLMv9F8',
+   set password_hash = 'pbkdf2-sha256$100000$XoJK5LAwpWglGRuePzsB_g$1R37f3MKJSTIORYgEhMC8UvX4Mckm0KzRMoRGKiFH3I',
        email_verified_at = now()
  where id = '22222222-0000-0000-0000-00000000000a';
 
 update accounts
-   set password_hash = 'pbkdf2-sha256$100000$Gdn8ZFyVGVjo3_9Mvebwbg$yIhLzGXbDC1e7kTUeENArJ5AllBcXi8dKeKzYRg4V1o',
+   set password_hash = 'pbkdf2-sha256$100000$SrxEmbi8K3DoRBvKGeJD8A$MntBsUsc7LJoZA7ag7a0temG_u4UHtqC8pKFkihLRpM',
        email_verified_at = now()
  where id = '22222222-0000-0000-0000-00000000000b';
 

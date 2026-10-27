@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { enhance } from '$app/forms';
 	import AuthCard from '#lib/components/AuthCard.svelte';
+	import { PASSWORD_HINT, PASSWORD_MAX_LENGTH, PASSWORD_MIN_LENGTH } from '#lib/password-rules.ts';
 	import type { PageProps } from './$types';
 
 	let { data, form }: PageProps = $props();
@@ -42,15 +43,15 @@
 					type="password"
 					autocomplete="new-password"
 					required
-					minlength="10"
-					maxlength="128"
+					minlength={PASSWORD_MIN_LENGTH}
+					maxlength={PASSWORD_MAX_LENGTH}
 					aria-invalid={errors.password ? 'true' : undefined}
 					aria-describedby={errors.password ? 'password-error' : 'password-hint'}
 				/>
 				{#if errors.password}
 					<p class="error" id="password-error">{errors.password}</p>
 				{:else}
-					<p class="hint" id="password-hint">At least 10 characters.</p>
+					<p class="hint" id="password-hint">{PASSWORD_HINT}</p>
 				{/if}
 			</div>
 			<div class="field">

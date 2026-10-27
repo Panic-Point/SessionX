@@ -16,7 +16,8 @@ import {
 	mapAccountWithStudentsRow,
 	mapLessonSeriesRow,
 	mapSeriesRpcError,
-	toPasswordTokenRow
+	toPasswordTokenRow,
+	mapPasswordTokenRow
 } from './supabase-mappers';
 import { SeriesStoreError } from './types';
 
@@ -363,23 +364,29 @@ describe('supabase mappers', () => {
 	});
 });
 
+describe('mapPasswordTokenRow', () => {
+	it('maps registration and reset rows', () => {
+		expect(
+			mapPasswordTokenRow({ purpose: 'register', account_id: null, email: 'A@b.com' })
+		).toEqual({ purpose: 'register', email: 'a@b.com' });
+		expect(mapPasswordTokenRow({ purpose: 'reset', account_id: 'acc', email: null })).toEqual({
+			purpose: 'reset',
+			accountId: 'acc'
+		});
+	});
+});
+
 describe('toPasswordTokenRow', () => {
 	const expires = new Date('2026-11-01T00:30:00Z');
 
-	it('fills only registration columns for a registration', () => {
-		expect(
-			toPasswordTokenRow(
-				'h',
-				{ purpose: 'register', email: ' A@B.com ', name: 'Ann', passwordHash: 'p' },
-				expires
-			)
-		).toEqual({
+	it('fills only the email for a registration', () => {
+		expect(toPasswordTokenRow('h', { purpose: 'register', email: ' A@B.com ' }, expires)).toEqual({
 			token_hash: 'h',
 			purpose: 'register',
 			account_id: null,
 			email: 'a@b.com',
-			name: 'Ann',
-			password_hash: 'p',
+			name: null,
+			password_hash: null,
 			expires_at: '2026-11-01T00:30:00.000Z'
 		});
 	});

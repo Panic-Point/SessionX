@@ -502,11 +502,11 @@ await check('anon cannot execute either function', async () => {
 // ---- passwords: registration and reset tokens, failure tracking ----
 const PARENT = '22222222-0000-0000-0000-00000000000b';
 const ADMIN = '22222222-0000-0000-0000-00000000000a';
-const addRegistration = (hash, email, name, pw, expires = '2030-01-01Z') =>
+const addRegistration = (hash, email, expires = '2030-01-01Z') =>
 	db.query(
-		`insert into password_tokens (token_hash, purpose, email, name, password_hash, expires_at)
-		 values ($1, 'register', $2, $3, $4, $5)`,
-		[hash, email, name, pw, expires]
+		`insert into password_tokens (token_hash, purpose, email, expires_at)
+		 values ($1, 'register', $2, $3)`,
+		[hash, email, expires]
 	);
 const addReset = (hash, accountId, expires = '2030-01-01Z') =>
 	db.query(
@@ -514,8 +514,13 @@ const addReset = (hash, accountId, expires = '2030-01-01Z') =>
 		 values ($1, 'reset', $2, $3)`,
 		[hash, accountId, expires]
 	);
-const completeRegistration = async (hash, now = '2026-11-01Z') =>
-	(await db.query('select complete_registration($1, $2) id', [hash, now])).rows[0].id;
+const completeRegistration = async (hash, name, pw, now = '2026-11-01Z') =>
+	(await db.query('select complete_registration($1, $2, $3, $4) id', [hash, name, pw, now])).rows[0]
+		.id;
+const studentsOf = async (id) =>
+	(await db.query('select name from students where account_id = $1 order by name', [id])).rows.map(
+		(r) => r.name
+	);
 const completeReset = async (hash, pw, now = '2026-11-01Z') =>
 	(await db.query('select complete_password_reset($1, $2, $3) id', [hash, pw, now])).rows[0].id;
 const passwordOf = async (id) =>
@@ -549,48 +554,88 @@ await check('a reset token cannot carry registration columns', () =>
 	)
 );
 
-await check('a registration token needs its name and password hash', () =>
+await check('a registration token needs an email', () =>
 	expectCode(
 		() =>
 			db.query(
-				`insert into password_tokens (token_hash, purpose, email, expires_at)
-				 values ('y', 'register', 'a@b.c', '2030-01-01Z')`
+				`insert into password_tokens (token_hash, purpose, expires_at)
+				 values ('y', 'register', '2030-01-01Z')`
 			),
 		'23514'
 	)
 );
 
-await check('registration creates a client account only when the link is used', async () => {
-	await addRegistration('r1', 'new@example.com', 'New Family', 'pw-new');
+await check('a registration token cannot name an account', () =>
+	expectCode(
+		() =>
+			db.query(
+				`insert into password_tokens (token_hash, purpose, account_id, email, expires_at)
+				 values ('y', 'register', $1, 'a@b.c', '2030-01-01Z')`,
+				[PARENT]
+			),
+		'23514'
+	)
+);
+
+await check('registration creates a client account and its first student when used', async () => {
+	await addRegistration('r1', 'new@example.com');
 	const before = await db.query(`select 1 from accounts where email = 'new@example.com'`);
 	assert(before.rows.length === 0, 'account created early');
-	const id = await completeRegistration('r1');
+	const id = await completeRegistration('r1', '  New Family ', 'pw-new');
 	const { rows } = await db.query(
 		'select name, role, password_hash, email_verified_at from accounts where id = $1',
 		[id]
 	);
 	assert(rows[0].name === 'New Family' && rows[0].role === 'client', JSON.stringify(rows[0]));
 	assert(rows[0].password_hash === 'pw-new' && rows[0].email_verified_at, 'password not active');
-	assert((await completeRegistration('r1')) === null, 'token reused');
+	const students = await studentsOf(id);
+	assert(students.length === 1 && students[0] === 'New Family', JSON.stringify(students));
+	assert((await completeRegistration('r1', 'Again', 'pw-x')) === null, 'token reused');
+});
+
+await check('registration with a blank name adds no student', async () => {
+	await addRegistration('r5', 'blank@example.com');
+	const id = await completeRegistration('r5', '   ', 'pw');
+	assert(id, 'registration failed');
+	assert((await studentsOf(id)).length === 0, 'student added for a blank name');
+});
+
+await check('registration needs a password hash and leaves the link usable', async () => {
+	await addRegistration('r6', 'nopw@example.com');
+	await db.exec('savepoint before_error');
+	await expectCode(() => completeRegistration('r6', 'No Password', null), '22023');
+	await db.exec('rollback to savepoint before_error');
+	assert(await completeRegistration('r6', 'No Password', 'pw'), 'link was used up');
 });
 
 await check('registration for an existing email keeps name, role and students', async () => {
-	await addRegistration('r2', 'PARENT@example.com', 'Impostor', 'pw-2');
-	assert((await completeRegistration('r2')) === PARENT, 'wrong account');
+	await addRegistration('r2', 'PARENT@example.com');
+	assert((await completeRegistration('r2', 'Impostor', 'pw-2')) === PARENT, 'wrong account');
 	const { rows } = await db.query('select name, role from accounts where id = $1', [PARENT]);
 	assert(rows[0].name === 'Pat Parent' && rows[0].role === 'client', JSON.stringify(rows[0]));
 	assert((await passwordOf(PARENT)) === 'pw-2', 'password not replaced');
-	const students = await db.query('select count(*)::int n from students where account_id = $1', [
-		PARENT
-	]);
-	assert(students.rows[0].n === 2, 'students changed');
+	const students = await studentsOf(PARENT);
+	assert(students.join() === 'Ava,Ben', `students changed: ${students}`);
+});
+
+await check('a registration token issued before the email-only change still works', async () => {
+	await db.query(
+		`insert into password_tokens (token_hash, purpose, email, name, password_hash, expires_at)
+		 values ('old', 'register', 'old@example.com', 'Old Name', 'old-pw', '2030-01-01Z')`
+	);
+	const id = await completeRegistration('old', 'New Name', 'new-pw');
+	const { rows } = await db.query('select name from accounts where id = $1', [id]);
+	assert(rows[0].name === 'New Name' && (await passwordOf(id)) === 'new-pw', 'old values used');
 });
 
 await check('expired and wrong-purpose tokens return null and change nothing', async () => {
-	await addRegistration('r3', 'late@example.com', 'Late', 'pw', '2026-11-01Z');
-	assert((await completeRegistration('r3', '2026-11-01Z')) === null, 'expired accepted');
+	await addRegistration('r3', 'late@example.com', '2026-11-01Z');
+	assert(
+		(await completeRegistration('r3', 'Late', 'pw', '2026-11-01Z')) === null,
+		'expired accepted'
+	);
 	await addReset('s1', PARENT);
-	assert((await completeRegistration('s1')) === null, 'reset used as registration');
+	assert((await completeRegistration('s1', 'X', 'pw')) === null, 'reset used as registration');
 	assert((await completeReset('r3', 'pw-x')) === null, 'registration used as reset');
 	assert((await completeReset('s1', 'pw-reset')) === PARENT, 'reset token was consumed');
 });
@@ -598,21 +643,21 @@ await check('expired and wrong-purpose tokens return null and change nothing', a
 await check('reset sets the password, voids other tokens and clears the lockout', async () => {
 	await addReset('s2', PARENT);
 	await addReset('s3', PARENT);
-	await addRegistration('r4', 'parent@example.com', 'P', 'pw-reg');
+	await addRegistration('r4', 'parent@example.com');
 	await db.query(
 		`insert into password_failures (email, failed_at) values ('Parent@Example.com', now()), ('other@example.com', now())`
 	);
 	assert((await completeReset('s2', 'pw-reset')) === PARENT, 'reset failed');
 	assert((await passwordOf(PARENT)) === 'pw-reset', 'password not set');
 	assert((await completeReset('s3', 'pw-other')) === null, 'other reset token still usable');
-	assert((await completeRegistration('r4')) === null, 'pending registration still usable');
+	assert((await completeRegistration('r4', 'P', 'pw-reg')) === null, 'pending registration usable');
 	const { rows } = await db.query('select email::text from password_failures');
 	assert(rows.length === 1 && rows[0].email === 'other@example.com', JSON.stringify(rows));
 });
 
 await check('only service_role can complete registrations and resets', async () => {
 	for (const sig of [
-		'complete_registration(text,timestamptz)',
+		'complete_registration(text,text,text,timestamptz)',
 		'complete_password_reset(text,text,timestamptz)'
 	]) {
 		const { rows } = await db.query(

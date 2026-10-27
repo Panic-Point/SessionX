@@ -43,22 +43,21 @@ export function runPasswordStoreContract(
 			);
 		});
 
-		it('registration for a new email creates a client account only when used', async () => {
+		it('registration for a new email creates a client account and student only when used', async () => {
 			const store = await makeStore();
 			const t = tokenHash();
 			await store.createPasswordToken(
 				t,
-				{
-					purpose: 'register',
-					email: ' New.Family@Example.com ',
-					name: 'New Family',
-					passwordHash: HASH_A
-				},
+				{ purpose: 'register', email: ' New.Family@Example.com ' },
 				LATER
 			);
 			expect(await store.findAccountByEmail('new.family@example.com')).toBeNull();
 
-			const id = await store.completeRegistration(t, NOW);
+			const id = await store.completeRegistration(
+				t,
+				{ name: ' New Family ', passwordHash: HASH_A },
+				NOW
+			);
 			expect(id).not.toBeNull();
 			expect(await store.findAccountById(id!)).toEqual({
 				id,
@@ -67,7 +66,52 @@ export function runPasswordStoreContract(
 				role: 'client'
 			});
 			expect(await store.getPasswordHash(id!)).toBe(HASH_A);
-			expect(await store.completeRegistration(t, NOW)).toBeNull();
+			expect((await store.listStudents(id!)).map((s) => s.name)).toEqual(['New Family']);
+			expect(
+				await store.completeRegistration(t, { name: 'Again', passwordHash: HASH_B }, NOW)
+			).toBeNull();
+			expect(await store.getPasswordHash(id!)).toBe(HASH_A);
+		});
+
+		it('registration with a blank name adds no student', async () => {
+			const store = await makeStore();
+			const t = tokenHash();
+			await store.createPasswordToken(
+				t,
+				{ purpose: 'register', email: 'blank@example.com' },
+				LATER
+			);
+			const id = await store.completeRegistration(t, { name: '  ', passwordHash: HASH_A }, NOW);
+			expect(id).not.toBeNull();
+			expect(await store.listStudents(id!)).toEqual([]);
+		});
+
+		it('peekPasswordToken reads a live token without using it', async () => {
+			const store = await makeStore();
+			const t = tokenHash();
+			await store.createPasswordToken(
+				t,
+				{ purpose: 'register', email: ' Peek@Example.com ' },
+				LATER
+			);
+			const expected = { purpose: 'register', email: 'peek@example.com' };
+			expect(await store.peekPasswordToken(t, 'register', NOW)).toEqual(expected);
+			expect(await store.peekPasswordToken(t, 'register', NOW)).toEqual(expected);
+			expect(await store.peekPasswordToken(t, 'reset', NOW)).toBeNull();
+			expect(await store.peekPasswordToken(t, 'register', LATER)).toBeNull();
+			expect(await store.peekPasswordToken(tokenHash(), 'register', NOW)).toBeNull();
+
+			const r = tokenHash();
+			await store.createPasswordToken(r, { purpose: 'reset', accountId: PARENT_ID }, LATER);
+			expect(await store.peekPasswordToken(r, 'reset', NOW)).toEqual({
+				purpose: 'reset',
+				accountId: PARENT_ID
+			});
+
+			expect(
+				await store.completeRegistration(t, { name: 'Peek', passwordHash: HASH_A }, NOW)
+			).not.toBeNull();
+			expect(await store.peekPasswordToken(t, 'register', NOW)).toBeNull();
 		});
 
 		it("registration for an existing email keeps the account's name, role and students", async () => {
@@ -76,17 +120,14 @@ export function runPasswordStoreContract(
 			const t = tokenHash();
 			await store.createPasswordToken(
 				t,
-				{
-					purpose: 'register',
-					email: 'PARENT@example.com',
-					name: 'Impostor',
-					passwordHash: HASH_B
-				},
+				{ purpose: 'register', email: 'PARENT@example.com' },
 				LATER
 			);
 			expect(await store.getPasswordHash(PARENT_ID)).toBe(DEMO_PARENT_PASSWORD_HASH);
 
-			expect(await store.completeRegistration(t, NOW)).toBe(PARENT_ID);
+			expect(
+				await store.completeRegistration(t, { name: 'Impostor', passwordHash: HASH_B }, NOW)
+			).toBe(PARENT_ID);
 			expect(await store.findAccountById(PARENT_ID)).toMatchObject({
 				name: 'Pat Parent',
 				role: 'client'
@@ -97,37 +138,33 @@ export function runPasswordStoreContract(
 			const admin = tokenHash();
 			await store.createPasswordToken(
 				admin,
-				{ purpose: 'register', email: 'admin@sessionx.local', name: 'X', passwordHash: HASH_A },
+				{ purpose: 'register', email: 'admin@sessionx.local' },
 				LATER
 			);
-			expect(await store.completeRegistration(admin, NOW)).toBe(ADMIN_ID);
+			expect(
+				await store.completeRegistration(admin, { name: 'X', passwordHash: HASH_A }, NOW)
+			).toBe(ADMIN_ID);
 			expect((await store.findAccountById(ADMIN_ID))?.role).toBe('admin');
+			expect(await store.listStudents(ADMIN_ID)).toEqual([]);
 		});
 
 		it('rejects expired tokens and tokens of the other purpose', async () => {
 			const store = await makeStore();
+			const details = { name: 'X', passwordHash: HASH_A };
 			const reg = tokenHash();
-			await store.createPasswordToken(
-				reg,
-				{ purpose: 'register', email: 'late@example.com', name: 'Late', passwordHash: HASH_A },
-				NOW
-			);
-			expect(await store.completeRegistration(reg, NOW)).toBeNull();
+			await store.createPasswordToken(reg, { purpose: 'register', email: 'late@example.com' }, NOW);
+			expect(await store.completeRegistration(reg, details, NOW)).toBeNull();
 			expect(await store.findAccountByEmail('late@example.com')).toBeNull();
 
 			const rst = tokenHash();
 			await store.createPasswordToken(rst, { purpose: 'reset', accountId: PARENT_ID }, LATER);
-			expect(await store.completeRegistration(rst, NOW)).toBeNull();
+			expect(await store.completeRegistration(rst, details, NOW)).toBeNull();
 			const reg2 = tokenHash();
-			await store.createPasswordToken(
-				reg2,
-				{ purpose: 'register', email: 'x@example.com', name: 'X', passwordHash: HASH_A },
-				LATER
-			);
+			await store.createPasswordToken(reg2, { purpose: 'register', email: 'x@example.com' }, LATER);
 			expect(await store.completePasswordReset(reg2, HASH_B, NOW)).toBeNull();
 			// Neither attempt used up the other token.
 			expect(await store.completePasswordReset(rst, HASH_B, NOW)).toBe(PARENT_ID);
-			expect(await store.completeRegistration(reg2, NOW)).not.toBeNull();
+			expect(await store.completeRegistration(reg2, details, NOW)).not.toBeNull();
 		});
 
 		it('reset sets the password once and voids the other outstanding tokens', async () => {
@@ -139,7 +176,7 @@ export function runPasswordStoreContract(
 			await store.createPasswordToken(second, { purpose: 'reset', accountId: PARENT_ID }, LATER);
 			await store.createPasswordToken(
 				reg,
-				{ purpose: 'register', email: 'parent@example.com', name: 'P', passwordHash: HASH_B },
+				{ purpose: 'register', email: 'parent@example.com' },
 				LATER
 			);
 
@@ -147,7 +184,9 @@ export function runPasswordStoreContract(
 			expect(await store.getPasswordHash(PARENT_ID)).toBe(HASH_A);
 			expect(await store.completePasswordReset(first, HASH_B, NOW)).toBeNull();
 			expect(await store.completePasswordReset(second, HASH_B, NOW)).toBeNull();
-			expect(await store.completeRegistration(reg, NOW)).toBeNull();
+			expect(
+				await store.completeRegistration(reg, { name: 'P', passwordHash: HASH_B }, NOW)
+			).toBeNull();
 			expect(await store.getPasswordHash(PARENT_ID)).toBe(HASH_A);
 		});
 

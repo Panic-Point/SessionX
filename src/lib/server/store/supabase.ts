@@ -18,6 +18,8 @@ import {
 	mapStudentRow,
 	mapWeeklyHoursRow,
 	toPasswordTokenRow,
+	mapPasswordTokenRow,
+	type PasswordTokenRow,
 	type AccountRow,
 	type AccountWithStudentsRow,
 	type AdminBookingRow,
@@ -55,6 +57,7 @@ import {
 	type LiveBooking,
 	type OccurrenceResult,
 	type PasswordTokenData,
+	type RegistrationDetails,
 	type SeriesInput,
 	type Student,
 	type StudentPrice,
@@ -334,9 +337,32 @@ export function createSupabaseBookingStore(url: string, serviceRoleKey: string):
 			if (error) fail('createPasswordToken', error);
 		},
 
-		async completeRegistration(tokenHash: string, now: Date): Promise<string | null> {
+		async peekPasswordToken(
+			tokenHash: string,
+			purpose: PasswordTokenData['purpose'],
+			now: Date
+		): Promise<PasswordTokenData | null> {
+			const { data, error } = await db
+				.from('password_tokens')
+				.select('purpose, account_id, email')
+				.eq('token_hash', tokenHash)
+				.eq('purpose', purpose)
+				.is('used_at', null)
+				.gt('expires_at', now.toISOString())
+				.maybeSingle();
+			if (error) fail('peekPasswordToken', error);
+			return data ? mapPasswordTokenRow(data as PasswordTokenRow) : null;
+		},
+
+		async completeRegistration(
+			tokenHash: string,
+			details: RegistrationDetails,
+			now: Date
+		): Promise<string | null> {
 			const { data, error } = await db.rpc('complete_registration', {
 				p_token_hash: tokenHash,
+				p_name: details.name,
+				p_password_hash: details.passwordHash,
 				p_now: now.toISOString()
 			});
 			if (error) fail('completeRegistration', error);

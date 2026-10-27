@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { enhance, type SubmitFunction } from '$app/forms';
 	import PeriodControl from '#lib/components/PeriodControl.svelte';
+	import { PASSWORD_HINT, PASSWORD_MAX_LENGTH, PASSWORD_MIN_LENGTH } from '#lib/password-rules.ts';
 	import type { PageProps } from './$types';
 
 	let { data, form }: PageProps = $props();
@@ -214,14 +215,15 @@
 					name="password"
 					type="password"
 					autocomplete="new-password"
-					maxlength="128"
+					minlength={PASSWORD_MIN_LENGTH}
+					maxlength={PASSWORD_MAX_LENGTH}
 					aria-invalid={passwordErrors.password ? 'true' : undefined}
 					aria-describedby={passwordErrors.password ? 'password-error' : 'password-hint'}
 				/>
 				{#if passwordErrors.password}
 					<p class="error" id="password-error">{passwordErrors.password}</p>
 				{:else}
-					<p class="hint" id="password-hint">At least 10 characters.</p>
+					<p class="hint" id="password-hint">{PASSWORD_HINT}</p>
 				{/if}
 			</div>
 			<div class="field">

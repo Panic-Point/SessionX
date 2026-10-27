@@ -25,13 +25,13 @@ export interface DemoPassword {
 	passwordHash: string;
 }
 
-/** PBKDF2 hash of `sessionx-parent-dev`, the dev password for parent@example.com. */
+/** PBKDF2 hash of `sessionx-parent-dev1`, the dev password for parent@example.com. */
 export const DEMO_PARENT_PASSWORD_HASH =
-	'pbkdf2-sha256$100000$Gdn8ZFyVGVjo3_9Mvebwbg$yIhLzGXbDC1e7kTUeENArJ5AllBcXi8dKeKzYRg4V1o';
+	'pbkdf2-sha256$100000$SrxEmbi8K3DoRBvKGeJD8A$MntBsUsc7LJoZA7ag7a0temG_u4UHtqC8pKFkihLRpM';
 
-/** PBKDF2 hash of `sessionx-admin-dev`, the dev password for admin@sessionx.local. */
+/** PBKDF2 hash of `sessionx-admin-dev1`, the dev password for admin@sessionx.local. */
 export const DEMO_ADMIN_PASSWORD_HASH =
-	'pbkdf2-sha256$100000$5-RF-OeO6K0GiAxmCNyHyw$v6UK6KohW0ziVPzk3cei8wt5oGUztsGZg5-UjLMv9F8';
+	'pbkdf2-sha256$100000$XoJK5LAwpWglGRuePzsB_g$1R37f3MKJSTIORYgEhMC8UvX4Mckm0KzRMoRGKiFH3I';
 
 export interface DemoData {
 	settings: StudioSettings;
