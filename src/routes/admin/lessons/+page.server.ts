@@ -1,19 +1,32 @@
 import { fail } from '@sveltejs/kit';
-import { listLessons, setLessonPaid } from '#lib/server/admin-service.ts';
+import { listLessons, setLessonPaid, summarizeLessons } from '#lib/server/admin-service.ts';
+import { parsePeriod, periodQuery } from '#lib/server/periods.ts';
 import { formString, requireAdmin } from '#lib/server/admin-actions.ts';
 import { getStore } from '#lib/server/context.ts';
 import type { Actions, PageServerLoad } from './$types';
 
 export const load: PageServerLoad = async ({ locals, url }) => {
 	requireAdmin(locals.account);
+	const store = getStore();
+	const now = new Date();
+	const { timezone } = await store.getSettings();
+	const period = parsePeriod(url.searchParams, timezone, now);
 	const param = url.searchParams.get('range');
+	// Upcoming and past mean nothing inside a period, so only late cancels stay a separate view.
 	const range: 'upcoming' | 'past' | 'late-cancels' =
-		param === 'past' || param === 'late-cancels' ? param : 'upcoming';
+		param === 'late-cancels' || (param === 'past' && !period) ? param : 'upcoming';
 	const unpaidOnly = range !== 'late-cancels' && url.searchParams.get('unpaid') === '1';
-	const lessons = await listLessons(getStore(), { range, unpaidOnly }, new Date());
+	// A period that cannot be shown (start after end) lists nothing.
+	const lessons =
+		period && !period.range
+			? []
+			: await listLessons(store, { range, unpaidOnly, period: period?.range }, now);
 	return {
 		range,
 		unpaidOnly,
+		period: period && { ...period, range: undefined },
+		periodQuery: period ? periodQuery(url.searchParams) : {},
+		summary: period?.range ? summarizeLessons(lessons, range === 'late-cancels') : null,
 		lessons: lessons.map((l) => ({
 			id: l.id,
 			studentName: l.studentName,

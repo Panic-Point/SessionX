@@ -29,7 +29,7 @@ Both modes start with the same data:
 | Family        | `parent@example.com` (Pat Parent), with students **Ava** and **Ben**                    |
 | Lesson types  | 30-minute ($35), 45-minute ($50), 60-minute ($65)                                       |
 | Custom price  | Ben pays **$30** for the 30-minute lesson                                               |
-| Weekly hours  | Monday to Friday 3pm to 8pm, Saturday 9am to 1pm (Eastern Time). Closed Sunday.         |
+| Weekly hours  | Monday to Friday 3pm to 8pm, Saturday 9am to 1pm (Pacific Time). Closed Sunday.         |
 | Booking rules | 24 hours minimum notice, up to 60 days ahead, start times every 30 minutes, no same-day |
 | Cancellation  | Cancelling less than 24 hours before an approved lesson counts as a late cancellation   |
 | Recurring     | Ben has a weekly 30-minute lesson every Tuesday at 4pm, booked 12 weeks ahead           |
@@ -113,8 +113,10 @@ Open **Hours**. All times are in the studio time zone (set on the Settings page)
 
 ### Weekly hours
 
-1. Each weekday lists its opening times. Change a time, add a second range with **+ Add hours**,
-   or click **Remove** on a range. A day with no ranges is closed.
+1. Each weekday lists its opening times as **From** and **To (End of Lesson)**. The To time is when
+   the last lesson must finish, so 3:00 to 5:00 PM lets a 60-minute lesson start as late as 4:00 PM.
+   Change a time, add a second range with **+ Add hours**, or click **Remove** on a range. A day
+   with no ranges is closed.
 2. Click **Save weekly hours**. You see "Weekly hours saved."
 3. On the booking page, pick a lesson type. Only days with open times can be picked, and the times
    listed for a day fall inside the hours you set.
@@ -126,8 +128,8 @@ Overlapping ranges, or an end time before the start time, are rejected.
 Use these for holidays or one-off changes.
 
 1. Under **Add an override**, pick a date in the next few weeks.
-2. Either tick **Closed all day**, or enter special opening times for just that date. Add an
-   optional note, then click **Save override**.
+2. Either tick **Closed all day**, or enter special opening times (**From** and
+   **To (End of Lesson)**) for just that date. Add an optional note, then click **Save override**.
 3. The override appears in the list. On the booking page that date is now closed, or shows only the
    special times.
 4. Click **Delete** on the override and the date goes back to its weekly hours.
@@ -136,17 +138,17 @@ Use these for holidays or one-off changes.
 
 Open **Settings** and try these one at a time, checking the booking page after each save:
 
-| Setting                          | What to try                   | What you should see                                     |
-| -------------------------------- | ----------------------------- | ------------------------------------------------------- |
-| Minimum notice (hours)           | Change 24 to 72               | No times in the next 3 days                             |
-| Booking window (days)            | Change 60 to 7                | Only the next week can be booked                        |
-| Start times every                | Change 30 to 60 minutes       | Times are on the hour only                              |
-| Buffer between lessons (minutes) | Set 15, then book a lesson    | The 15 minutes after that lesson can't be booked either |
-| Allow same-day bookings          | Tick it and set notice to 0   | Times later today appear                                |
-| Studio time zone                 | Change to America/Los_Angeles | Weekly hours now apply in Pacific Time                  |
+| Setting                          | What to try                 | What you should see                                     |
+| -------------------------------- | --------------------------- | ------------------------------------------------------- |
+| Minimum notice (hours)           | Change 24 to 72             | No times in the next 3 days                             |
+| Booking window (days)            | Change 60 to 7              | Only the next week can be booked                        |
+| Start times every                | Change 30 to 60 minutes     | Times are on the hour only                              |
+| Buffer between lessons (minutes) | Set 15, then book a lesson  | The 15 minutes after that lesson can't be booked either |
+| Allow same-day bookings          | Tick it and set notice to 0 | Times later today appear                                |
+| Studio time zone                 | Change to America/New_York  | Weekly hours now apply in Eastern Time                  |
 
-Put the settings back afterwards (24, 60, 30, 0, unticked, America/New_York), since later sections
-assume the defaults.
+Put the settings back afterwards (24, 60, 30, 0, unticked, America/Los_Angeles), since later
+sections assume the defaults.
 
 ## 4. Booking as a guest
 
@@ -194,6 +196,23 @@ Sign in as `parent@example.com`.
 On **My lessons** you can also add a student or rename one under **Students**. Two students in one
 family can't have the same name.
 
+### Filtering by week, month or dates
+
+At the top of **My lessons**, **All** shows Upcoming and Past as above. The other choices replace
+both with one list, **Lessons, {period}**, of every lesson in that period (pending, confirmed,
+cancelled…), earliest first.
+
+1. Click **Week**. The list is titled "Lessons, Week of …" for this Monday-to-Sunday week. Click
+   **Next ›** and **‹ Previous** to step a week at a time, and **This week** to come back.
+2. Click **Month**. The title is the month, e.g. "November 2026", with the same Previous / This
+   month / Next links.
+3. Click **Custom**, pick a **From** and **To** date and click **Apply**. Both dates are included,
+   e.g. "Nov 2 – Nov 20, 2026". A start after the end shows "The start date must be on or before
+   the end date." and no list; a range longer than 366 days is cut to 366 days with a note.
+4. Signed in as another family, the same filters never show Pat's lessons.
+5. Edit the address bar to nonsense (e.g. `/account?period=week&date=banana`): the page falls back
+   to the current week instead of erroring.
+
 ## 6. Approving and declining requests (admin)
 
 Sign in as the admin. **Requests** lists every pending request that hasn't started yet.
@@ -216,6 +235,23 @@ Open **Lessons**.
 - Click **Mark paid** on a lesson. It shows **Paid ✓**; click **Mark unpaid** to undo.
 - Turn on **Unpaid only** to hide lessons that are already paid.
 - **Late cancels** lists lessons the family cancelled inside the cancellation cutoff (section 9).
+
+### Filtering by week, month or dates
+
+The **All / Week / Month / Custom** buttons above the tabs choose a period. **All** is the Upcoming
+/ Past view above. With a period chosen:
+
+- The tabs become **Lessons** (approved lessons in the period, earliest first) and **Late cancels**
+  (late cancellations in the period).
+- A line above the list counts the lessons and totals them, e.g. "3 lessons · $105.00, $70.00
+  unpaid". Mark one paid and the unpaid total drops.
+- **Week** and **Month** have **‹ Previous**, **This week** / **This month** and **Next ›**.
+  **Custom** has From and To dates and **Apply** (both days included).
+- **Unpaid only** works with any period and stays on as you step between weeks or months.
+- A lesson at 12:00am on a Monday is in that Monday's week, not the week before, including the
+  week the clocks change.
+- The address bar keeps the choice (e.g. `/admin/lessons?period=month&date=2026-11&unpaid=1`), so
+  you can bookmark or share it. Bad dates fall back to the current week or month.
 
 ## 8. Families and per-student prices (admin)
 

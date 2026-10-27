@@ -55,7 +55,7 @@ export function demoData(): DemoData {
 	const weekdays = [1, 2, 3, 4, 5].map((weekday) => ({ weekday, start: '15:00', end: '20:00' }));
 	return {
 		settings: {
-			timezone: 'America/New_York',
+			timezone: 'America/Los_Angeles',
 			minNoticeHours: 24,
 			maxAdvanceDays: 60,
 			slotIncrementMin: 30,

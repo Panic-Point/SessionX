@@ -13,7 +13,7 @@ import type { EmailMessage, Mailer } from './email/mailer';
 import { MemoryBookingStore } from './store/memory';
 import { fakeCalendar } from './calendar/fake-client.test-helpers';
 
-const now = DateTime.fromISO('2026-11-01T12:00', { zone: 'America/New_York' }).toJSDate();
+const now = DateTime.fromISO('2026-11-01T12:00', { zone: 'America/Los_Angeles' }).toJSDate();
 const LESSON_30 = '11111111-0000-0000-0000-000000000030';
 const PAT = '22222222-0000-0000-0000-00000000000b';
 const AVA = '33333333-0000-0000-0000-0000000000a1';
@@ -77,6 +77,22 @@ describe('account home', () => {
 		expect(home.upcoming[1].statusLabel).toBe('Pending approval');
 		expect(home.past.map((b) => b.id)).toEqual([gone.id]);
 		expect(home.past[0]).toMatchObject({ statusLabel: 'Cancelled', canCancel: false });
+	});
+
+	it('lists every status in a period ascending, replacing upcoming and past', async () => {
+		const { store } = setup();
+		const period = { from: hoursFromNow(24), to: hoursFromNow(200) };
+		const outside = await book(store, AVA, hoursFromNow(300), true);
+		const later = await book(store, AVA, hoursFromNow(150));
+		const soon = await book(store, BEN, hoursFromNow(48), true);
+		await store.cancelBooking({ kind: 'account', bookingId: later.id, accountId: PAT }, false, now);
+		const home = await getAccountHome(store, PAT, now, period);
+		expect(home.inPeriod?.map((b) => b.id)).toEqual([soon.id, later.id]);
+		expect(home.inPeriod?.map((b) => b.statusLabel)).toEqual(['Confirmed', 'Cancelled']);
+		expect(home.upcoming).toEqual([]);
+		expect(home.past).toEqual([]);
+		expect(home.inPeriod?.some((b) => b.id === outside.id)).toBe(false);
+		expect((await getAccountHome(store, PAT, now)).inPeriod).toBeNull();
 	});
 
 	it('reports lateCancel as what happened, not what would happen', async () => {

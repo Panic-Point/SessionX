@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { enhance, type SubmitFunction } from '$app/forms';
+	import PeriodControl from '#lib/components/PeriodControl.svelte';
 	import type { PageProps } from './$types';
 
 	let { data, form }: PageProps = $props();
@@ -7,7 +8,7 @@
 	let busyId = $state<string | null>(null);
 
 	function href(range: 'upcoming' | 'past' | 'late-cancels', unpaidOnly: boolean): string {
-		const params = new URLSearchParams();
+		const params = new URLSearchParams(data.periodQuery);
 		if (range !== 'upcoming') params.set('range', range);
 		if (unpaidOnly) params.set('unpaid', '1');
 		const query = params.toString();
@@ -29,20 +30,38 @@
 
 <h1>Lessons</h1>
 
+<PeriodControl
+	period={data.period}
+	path="/admin/lessons"
+	keep={{
+		...(data.range === 'late-cancels' ? { range: 'late-cancels' } : {}),
+		...(data.unpaidOnly ? { unpaid: '1' } : {})
+	}}
+/>
+
 <div class="controls">
 	<nav class="tabs" aria-label="Lesson range">
-		<a
-			href={href('upcoming', data.unpaidOnly)}
-			aria-current={data.range === 'upcoming' ? 'page' : undefined}
-		>
-			Upcoming
-		</a>
-		<a
-			href={href('past', data.unpaidOnly)}
-			aria-current={data.range === 'past' ? 'page' : undefined}
-		>
-			Past
-		</a>
+		{#if data.period}
+			<a
+				href={href('upcoming', data.unpaidOnly)}
+				aria-current={data.range !== 'late-cancels' ? 'page' : undefined}
+			>
+				Lessons
+			</a>
+		{:else}
+			<a
+				href={href('upcoming', data.unpaidOnly)}
+				aria-current={data.range === 'upcoming' ? 'page' : undefined}
+			>
+				Upcoming
+			</a>
+			<a
+				href={href('past', data.unpaidOnly)}
+				aria-current={data.range === 'past' ? 'page' : undefined}
+			>
+				Past
+			</a>
+		{/if}
 		<a
 			href={href('late-cancels', false)}
 			aria-current={data.range === 'late-cancels' ? 'page' : undefined}
@@ -67,17 +86,28 @@
 	<p class="banner bad" role="alert">{form.message}</p>
 {/if}
 
-{#if data.lessons.length === 0}
+{#if data.period?.error}
+	<!-- PeriodControl shows the error; there is no list to show. -->
+{:else if data.lessons.length === 0}
 	<p class="card empty">
-		{data.unpaidOnly
-			? 'No unpaid lessons.'
-			: data.range === 'past'
-				? 'No past lessons.'
-				: data.range === 'late-cancels'
-					? 'No late cancellations.'
-					: 'No upcoming lessons.'}
+		{data.period
+			? data.range === 'late-cancels'
+				? `No late cancellations in ${data.period.label}.`
+				: data.unpaidOnly
+					? `No unpaid lessons in ${data.period.label}.`
+					: `No lessons in ${data.period.label}.`
+			: data.unpaidOnly
+				? 'No unpaid lessons.'
+				: data.range === 'past'
+					? 'No past lessons.'
+					: data.range === 'late-cancels'
+						? 'No late cancellations.'
+						: 'No upcoming lessons.'}
 	</p>
 {:else}
+	{#if data.summary}
+		<p class="summary">{data.summary}</p>
+	{/if}
 	<ul class="list">
 		{#each data.lessons as l (l.id)}
 			<li class="card row">
@@ -164,6 +194,11 @@
 		background: var(--accent);
 		border-color: var(--accent);
 		color: #fff;
+	}
+
+	.summary {
+		margin: 0 0 0.75rem;
+		font-weight: 600;
 	}
 
 	.list {

@@ -66,13 +66,23 @@ export async function listPendingRequests(
 
 export async function listLessons(
 	store: AdminDataStore,
-	opts: { range: 'upcoming' | 'past' | 'late-cancels'; unpaidOnly: boolean },
+	opts: {
+		range: 'upcoming' | 'past' | 'late-cancels';
+		unpaidOnly: boolean;
+		/** A chosen week, month or custom range: replaces upcoming/past, ascending by time. */
+		period?: { from: Date; to: Date } | null;
+	},
 	now: Date
 ): Promise<AdminBookingView[]> {
 	const { timezone } = await store.getSettings();
+	const period = opts.period ?? null;
 	let filter: BookingFilter;
 	if (opts.range === 'late-cancels') {
-		filter = { statuses: ['cancelled'], lateCancelOnly: true, order: 'desc' };
+		filter = period
+			? { statuses: ['cancelled'], lateCancelOnly: true, ...period, order: 'asc' }
+			: { statuses: ['cancelled'], lateCancelOnly: true, order: 'desc' };
+	} else if (period) {
+		filter = { statuses: ['approved'], ...period, unpaidOnly: opts.unpaidOnly, order: 'asc' };
 	} else if (opts.range === 'upcoming') {
 		filter = { statuses: ['approved'], from: now, unpaidOnly: opts.unpaidOnly, order: 'asc' };
 	} else {
@@ -80,6 +90,22 @@ export async function listLessons(
 	}
 	const rows = await store.listBookings(filter);
 	return rows.map((b) => toView(b, timezone));
+}
+
+/** e.g. "12 lessons · $420.00, $90.00 unpaid" for the lessons on the page. */
+export function summarizeLessons(lessons: AdminBookingView[], lateCancels = false): string {
+	const n = lessons.length;
+	const noun = lateCancels
+		? n === 1
+			? 'late cancellation'
+			: 'late cancellations'
+		: n === 1
+			? 'lesson'
+			: 'lessons';
+	const total = lessons.reduce((sum, l) => sum + l.priceCents, 0);
+	const unpaid = lessons.filter((l) => !l.paid).reduce((sum, l) => sum + l.priceCents, 0);
+	const unpaidPart = !lateCancels && unpaid > 0 ? `, ${formatMoney(unpaid)} unpaid` : '';
+	return `${n} ${noun} · ${formatMoney(total)}${unpaidPart}`;
 }
 
 export async function decideRequest(

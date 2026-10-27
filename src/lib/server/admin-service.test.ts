@@ -10,22 +10,24 @@ import {
 	saveStudentNotes,
 	saveStudentPrices,
 	setLessonPaid,
+	summarizeLessons,
 	type AdminDeps
 } from './admin-service';
+import { parsePeriod } from './periods';
 import type { EmailMessage, Mailer } from './email/mailer';
 import { demoData } from './store/demo-data';
 import { MemoryBookingStore } from './store/memory';
 import { fakeCalendar } from './calendar/fake-client.test-helpers';
 
-const now = DateTime.fromISO('2026-11-01T12:00', { zone: 'America/New_York' }).toJSDate();
+const now = DateTime.fromISO('2026-11-01T12:00', { zone: 'America/Los_Angeles' }).toJSDate();
 const LESSON_30 = '11111111-0000-0000-0000-000000000030';
 const PAT = '22222222-0000-0000-0000-00000000000b';
 const ADMIN = '22222222-0000-0000-0000-00000000000a';
 const AVA = '33333333-0000-0000-0000-0000000000a1';
 const LESSON_45 = '11111111-0000-0000-0000-000000000045';
-const MON_3PM = '2026-11-02T20:00:00.000Z';
-const MON_330PM = '2026-11-02T20:30:00.000Z';
-const TUE_3PM = '2026-11-03T20:00:00.000Z';
+const MON_3PM = '2026-11-02T23:00:00.000Z';
+const MON_330PM = '2026-11-02T23:30:00.000Z';
+const TUE_3PM = '2026-11-03T23:00:00.000Z';
 
 afterEach(() => vi.restoreAllMocks());
 
@@ -63,7 +65,7 @@ describe('admin service', () => {
 		await book(store, MON_3PM);
 		const views = await listPendingRequests(store, now);
 		expect(views.map((v) => v.startsAt.toISOString())).toEqual([MON_3PM, TUE_3PM]);
-		expect(views[0].whenLabel).toBe('Monday, November 2, 2026 at 3:00 PM EST');
+		expect(views[0].whenLabel).toBe('Monday, November 2, 2026 at 3:00 PM PST');
 		expect(views[0].priceLabel).toBe('$35.00');
 		expect(views[0].paid).toBe(false);
 	});
@@ -89,8 +91,8 @@ describe('admin service', () => {
 		await store.updateLessonType(LESSON_30, { ...type, durationMin: 90 });
 		await decideRequest(deps, created.bookingId, 'approved', '', now);
 		const ics = sent[0].attachments![0].content;
-		expect(ics).toContain('DTSTART:20261102T200000Z');
-		expect(ics).toContain('DTEND:20261102T203000Z');
+		expect(ics).toContain('DTSTART:20261102T230000Z');
+		expect(ics).toContain('DTEND:20261102T233000Z');
 		expect(sent[0].text).toContain(', 30 min)');
 		expect(sent[0].text).not.toContain('90 min');
 	});
@@ -134,7 +136,7 @@ describe('admin service', () => {
 	it('approve in the past returns message', async () => {
 		const { store, sent, deps } = setup();
 		const created = await book(store, MON_3PM);
-		const later = new Date('2026-11-02T21:00:00.000Z');
+		const later = new Date('2026-11-03T00:00:00.000Z');
 		const r = await decideRequest(deps, created.bookingId, 'approved', '', later);
 		expect(r).toEqual({ ok: false, message: 'This lesson time has already passed.' });
 		expect(sent).toHaveLength(0);
@@ -187,13 +189,54 @@ describe('admin service', () => {
 		const a = await book(store, MON_3PM);
 		const b = await book(store, MON_330PM, 'b@example.com');
 		const c = await book(store, TUE_3PM, 'c@example.com');
-		await book(store, '2026-11-04T20:00:00.000Z', 'd@example.com'); // stays pending
+		await book(store, '2026-11-04T23:00:00.000Z', 'd@example.com'); // stays pending
 		for (const x of [a, b, c]) await decideRequest(deps, x.bookingId, 'approved', '', now);
-		const later = new Date('2026-11-02T20:45:00.000Z');
+		const later = new Date('2026-11-02T23:45:00.000Z');
 		const upcoming = await listLessons(store, { range: 'upcoming', unpaidOnly: false }, later);
 		expect(upcoming.map((v) => v.id)).toEqual([c.bookingId]);
 		const past = await listLessons(store, { range: 'past', unpaidOnly: false }, later);
 		expect(past.map((v) => v.id)).toEqual([b.bookingId, a.bookingId]);
+	});
+
+	it('lists a period ascending, at local midnight boundaries, combined with unpaid', async () => {
+		const { store, deps } = setup();
+		const week = parsePeriod(
+			new URLSearchParams('period=week&date=2026-11-02'),
+			'America/New_York',
+			now
+		)!.range!;
+		const midnightStart = await book(store, '2026-11-02T05:00:00.000Z'); // Mon 12:00am EST
+		const a = await book(store, MON_3PM, 'a@example.com');
+		const b = await book(store, TUE_3PM, 'b@example.com');
+		const nextWeek = await book(store, '2026-11-09T05:00:00.000Z', 'c@example.com');
+		const before = await book(store, '2026-11-02T03:00:00.000Z', 'd@example.com');
+		await book(store, '2026-11-04T20:00:00.000Z', 'e@example.com'); // stays pending
+		for (const x of [midnightStart, a, b, nextWeek, before]) {
+			await decideRequest(deps, x.bookingId, 'approved', '', now);
+		}
+		await setLessonPaid(store, a.bookingId, true, now);
+		const later = new Date('2026-11-03T12:00:00.000Z');
+		const all = await listLessons(
+			store,
+			{ range: 'upcoming', unpaidOnly: false, period: week },
+			later
+		);
+		expect(all.map((v) => v.id)).toEqual([midnightStart.bookingId, a.bookingId, b.bookingId]);
+		expect(summarizeLessons(all)).toBe('3 lessons · $105.00, $70.00 unpaid');
+		const unpaid = await listLessons(
+			store,
+			{ range: 'upcoming', unpaidOnly: true, period: week },
+			later
+		);
+		expect(unpaid.map((v) => v.id)).toEqual([midnightStart.bookingId, b.bookingId]);
+		expect(summarizeLessons(unpaid)).toBe('2 lessons · $70.00, $70.00 unpaid');
+	});
+
+	it('summarizes lessons and late cancels', () => {
+		expect(summarizeLessons([])).toBe('0 lessons · $0.00');
+		const one = { priceCents: 3500, paid: true } as Parameters<typeof summarizeLessons>[0][0];
+		expect(summarizeLessons([one])).toBe('1 lesson · $35.00');
+		expect(summarizeLessons([one, one], true)).toBe('2 late cancellations · $70.00');
 	});
 
 	it('unpaid filter', async () => {

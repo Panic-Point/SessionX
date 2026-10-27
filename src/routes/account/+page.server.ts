@@ -4,17 +4,24 @@ import { addMyStudent, getAccountHome, renameMyStudent } from '#lib/server/accou
 import { changePassword } from '#lib/server/auth/password-service.ts';
 import { formString } from '#lib/server/admin-actions.ts';
 import { getStore } from '#lib/server/context.ts';
+import { parsePeriod } from '#lib/server/periods.ts';
 import type { Actions, PageServerLoad } from './$types';
 
 export const load: PageServerLoad = async ({ locals, url }) => {
 	const account = requireAccount(locals.account);
 	const store = getStore();
-	const home = await getAccountHome(store, account.id, new Date());
+	const now = new Date();
+	const { timezone } = await store.getSettings();
+	const period = parsePeriod(url.searchParams, timezone, now);
+	const home = await getAccountHome(store, account.id, now, period?.range ?? null);
 	return {
 		// Only id and name: student notes are the teacher's.
 		students: home.students.map((s) => ({ id: s.id, name: s.name })),
 		upcoming: home.upcoming,
 		past: home.past,
+		period: period && { ...period, range: undefined },
+		// A period that cannot be shown (start after end) lists nothing.
+		inPeriod: period?.range ? home.inPeriod : null,
 		cancelled: url.searchParams.get('cancelled') === '1',
 		email: account.email,
 		hasPassword: (await store.getPasswordHash(account.id)) !== null

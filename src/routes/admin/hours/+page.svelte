@@ -90,7 +90,10 @@
 
 <section class="card" aria-labelledby="weekly-heading">
 	<h2 id="weekly-heading">Weekly hours</h2>
-	<p class="meta intro">Times are in the studio time zone. Leave a day empty to keep it closed.</p>
+	<p class="meta intro">
+		Times are in the studio time zone. Leave a day empty to keep it closed. Lessons must finish by
+		the To time. For example, 3:00 to 5:00 PM allows a 60-minute lesson to start as late as 4:00 PM.
+	</p>
 
 	{#if weeklyResult && 'saved' in weeklyResult}
 		<p class="banner" role="status">Weekly hours saved.</p>
@@ -121,7 +124,7 @@
 							/>
 						</div>
 						<div class="time">
-							<label for="w-{row.key}-end">To</label>
+							<label for="w-{row.key}-end">To (End of Lesson)</label>
 							<input
 								id="w-{row.key}-end"
 								name="end"
@@ -252,7 +255,7 @@
 							/>
 						</div>
 						<div class="time">
-							<label for="o-{row.key}-end">To</label>
+							<label for="o-{row.key}-end">To (End of Lesson)</label>
 							<input
 								id="o-{row.key}-end"
 								name="end"

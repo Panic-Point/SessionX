@@ -15,6 +15,7 @@ import {
 	type AdminLessonType,
 	type AdminStore,
 	type BookingFilter,
+	type DateRange,
 	type BookingStatus,
 	type BookingStore,
 	type BookingSummary,
@@ -498,12 +499,17 @@ export class MemoryBookingStore implements BookingStore, AdminStore, AccountStor
 			.map((p) => ({ ...p }));
 	}
 
-	async listAccountBookings(accountId: string): Promise<AdminBooking[]> {
+	async listAccountBookings(accountId: string, range: DateRange = {}): Promise<AdminBooking[]> {
 		const own = new Set(
 			this.data.students.filter((s) => s.accountId === accountId).map((s) => s.id)
 		);
 		return this.bookings
-			.filter((b) => own.has(b.studentId))
+			.filter(
+				(b) =>
+					own.has(b.studentId) &&
+					(!range.from || b.startsAt >= range.from) &&
+					(!range.to || b.startsAt < range.to)
+			)
 			.sort((a, b) => b.startsAt.getTime() - a.startsAt.getTime())
 			.map((b) => this.toAdminBooking(b));
 	}

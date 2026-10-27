@@ -138,6 +138,11 @@ export interface SeriesTag {
 	intervalWeeks: 1 | 2;
 }
 
+export interface DateRange {
+	from?: Date;
+	to?: Date;
+}
+
 /** `from` is inclusive and `to` exclusive, both on startsAt. */
 export interface BookingFilter {
 	statuses: BookingStatus[];
@@ -281,8 +286,11 @@ export interface AccountStore {
 	/** Throws AccountStoreError not_found (not this account's student) or duplicate_student. */
 	renameStudent(accountId: string, studentId: string, name: string): Promise<Student>;
 	listStudentPrices(studentIds: string[]): Promise<StudentPrice[]>;
-	/** All statuses, all the account's students, startsAt descending. */
-	listAccountBookings(accountId: string): Promise<AdminBooking[]>;
+	/**
+	 * All statuses, all the account's students, startsAt descending. `from` is inclusive and `to`
+	 * exclusive on startsAt.
+	 */
+	listAccountBookings(accountId: string, range?: DateRange): Promise<AdminBooking[]>;
 	/**
 	 * Price is the student's custom price, else the lesson type's. Throws AccountStoreError
 	 * not_found (student not in account), then BookingStoreError lesson_type_not_found,
