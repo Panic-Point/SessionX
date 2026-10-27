@@ -29,7 +29,7 @@ Both modes start with the same data:
 | Family        | `parent@example.com` (Pat Parent), with students **Ava** and **Ben**                    |
 | Lesson types  | 30-minute ($35), 45-minute ($50), 60-minute ($65)                                       |
 | Custom price  | Ben pays **$30** for the 30-minute lesson                                               |
-| Weekly hours  | Monday to Friday 3pm to 8pm, Saturday 9am to 1pm (Eastern Time). Closed Sunday.         |
+| Weekly hours  | Monday to Friday 3pm to 8pm, Saturday 9am to 1pm (Pacific Time). Closed Sunday.         |
 | Booking rules | 24 hours minimum notice, up to 60 days ahead, start times every 30 minutes, no same-day |
 | Cancellation  | Cancelling less than 24 hours before an approved lesson counts as a late cancellation   |
 | Recurring     | Ben has a weekly 30-minute lesson every Tuesday at 4pm, booked 12 weeks ahead           |
@@ -108,8 +108,10 @@ Open **Hours**. All times are in the studio time zone (set on the Settings page)
 
 ### Weekly hours
 
-1. Each weekday lists its opening times. Change a time, add a second range with **+ Add hours**,
-   or click **Remove** on a range. A day with no ranges is closed.
+1. Each weekday lists its opening times as **From** and **To (End of Lesson)**. The To time is when
+   the last lesson must finish, so 3:00 to 5:00 PM lets a 60-minute lesson start as late as 4:00 PM.
+   Change a time, add a second range with **+ Add hours**, or click **Remove** on a range. A day
+   with no ranges is closed.
 2. Click **Save weekly hours**. You see "Weekly hours saved."
 3. On the booking page, pick a lesson type. Only days with open times can be picked, and the times
    listed for a day fall inside the hours you set.
@@ -121,8 +123,8 @@ Overlapping ranges, or an end time before the start time, are rejected.
 Use these for holidays or one-off changes.
 
 1. Under **Add an override**, pick a date in the next few weeks.
-2. Either tick **Closed all day**, or enter special opening times for just that date. Add an
-   optional note, then click **Save override**.
+2. Either tick **Closed all day**, or enter special opening times (**From** and
+   **To (End of Lesson)**) for just that date. Add an optional note, then click **Save override**.
 3. The override appears in the list. On the booking page that date is now closed, or shows only the
    special times.
 4. Click **Delete** on the override and the date goes back to its weekly hours.
@@ -131,17 +133,17 @@ Use these for holidays or one-off changes.
 
 Open **Settings** and try these one at a time, checking the booking page after each save:
 
-| Setting                          | What to try                   | What you should see                                     |
-| -------------------------------- | ----------------------------- | ------------------------------------------------------- |
-| Minimum notice (hours)           | Change 24 to 72               | No times in the next 3 days                             |
-| Booking window (days)            | Change 60 to 7                | Only the next week can be booked                        |
-| Start times every                | Change 30 to 60 minutes       | Times are on the hour only                              |
-| Buffer between lessons (minutes) | Set 15, then book a lesson    | The 15 minutes after that lesson can't be booked either |
-| Allow same-day bookings          | Tick it and set notice to 0   | Times later today appear                                |
-| Studio time zone                 | Change to America/Los_Angeles | Weekly hours now apply in Pacific Time                  |
+| Setting                          | What to try                 | What you should see                                     |
+| -------------------------------- | --------------------------- | ------------------------------------------------------- |
+| Minimum notice (hours)           | Change 24 to 72             | No times in the next 3 days                             |
+| Booking window (days)            | Change 60 to 7              | Only the next week can be booked                        |
+| Start times every                | Change 30 to 60 minutes     | Times are on the hour only                              |
+| Buffer between lessons (minutes) | Set 15, then book a lesson  | The 15 minutes after that lesson can't be booked either |
+| Allow same-day bookings          | Tick it and set notice to 0 | Times later today appear                                |
+| Studio time zone                 | Change to America/New_York  | Weekly hours now apply in Eastern Time                  |
 
-Put the settings back afterwards (24, 60, 30, 0, unticked, America/New_York), since later sections
-assume the defaults.
+Put the settings back afterwards (24, 60, 30, 0, unticked, America/Los_Angeles), since later
+sections assume the defaults.
 
 ## 4. Booking as a guest
 

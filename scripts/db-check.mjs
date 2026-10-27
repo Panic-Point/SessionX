@@ -822,6 +822,41 @@ await check('lesson_series has RLS and anon cannot execute the series functions'
 	}
 });
 
+// ---- default time zone ----
+await check('settings.timezone defaults to Pacific and the seed uses it', async () => {
+	const { rows: def } = await db.query(
+		`select column_default from information_schema.columns
+		  where table_name = 'settings' and column_name = 'timezone'`
+	);
+	assert(
+		def[0]?.column_default?.includes('America/Los_Angeles'),
+		`default ${def[0]?.column_default}`
+	);
+	const { rows } = await db.query('select timezone from settings');
+	assert(
+		rows.length === 1 && rows[0].timezone === 'America/Los_Angeles',
+		`seed ${rows[0]?.timezone}`
+	);
+	const lessons = await seriesBookings(SEED_SERIES);
+	const { rows: local } = await db.query(
+		`select distinct to_char(starts_at at time zone 'America/Los_Angeles', 'HH24:MI') as t
+		   from bookings where series_id = $1`,
+		[SEED_SERIES]
+	);
+	assert(
+		lessons.length > 0 && local.length === 1 && local[0].t === '16:00',
+		'series at 4pm Pacific'
+	);
+});
+
+await check('the default time zone migration keeps a saved zone', async () => {
+	await db.exec(`update settings set timezone = 'America/New_York'`);
+	const mig = readdirSync(migDir).find((f) => f.endsWith('_default_timezone_pacific.sql'));
+	await db.exec(readFileSync(join(migDir, mig), 'utf8'));
+	const { rows } = await db.query('select timezone from settings');
+	assert(rows[0].timezone === 'America/New_York', `zone ${rows[0].timezone}`);
+});
+
 // Supabase's pg_safeupdate rejects DELETE/UPDATE without a WHERE, even inside functions.
 await check('migrations have no DELETE without a WHERE clause', () => {
 	for (const f of readdirSync(migDir)) {

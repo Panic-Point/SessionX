@@ -19,15 +19,15 @@ import { demoData } from './store/demo-data';
 import { MemoryBookingStore } from './store/memory';
 import { fakeCalendar } from './calendar/fake-client.test-helpers';
 
-const now = DateTime.fromISO('2026-11-01T12:00', { zone: 'America/New_York' }).toJSDate();
+const now = DateTime.fromISO('2026-11-01T12:00', { zone: 'America/Los_Angeles' }).toJSDate();
 const LESSON_30 = '11111111-0000-0000-0000-000000000030';
 const PAT = '22222222-0000-0000-0000-00000000000b';
 const ADMIN = '22222222-0000-0000-0000-00000000000a';
 const AVA = '33333333-0000-0000-0000-0000000000a1';
 const LESSON_45 = '11111111-0000-0000-0000-000000000045';
-const MON_3PM = '2026-11-02T20:00:00.000Z';
-const MON_330PM = '2026-11-02T20:30:00.000Z';
-const TUE_3PM = '2026-11-03T20:00:00.000Z';
+const MON_3PM = '2026-11-02T23:00:00.000Z';
+const MON_330PM = '2026-11-02T23:30:00.000Z';
+const TUE_3PM = '2026-11-03T23:00:00.000Z';
 
 afterEach(() => vi.restoreAllMocks());
 
@@ -65,7 +65,7 @@ describe('admin service', () => {
 		await book(store, MON_3PM);
 		const views = await listPendingRequests(store, now);
 		expect(views.map((v) => v.startsAt.toISOString())).toEqual([MON_3PM, TUE_3PM]);
-		expect(views[0].whenLabel).toBe('Monday, November 2, 2026 at 3:00 PM EST');
+		expect(views[0].whenLabel).toBe('Monday, November 2, 2026 at 3:00 PM PST');
 		expect(views[0].priceLabel).toBe('$35.00');
 		expect(views[0].paid).toBe(false);
 	});
@@ -91,8 +91,8 @@ describe('admin service', () => {
 		await store.updateLessonType(LESSON_30, { ...type, durationMin: 90 });
 		await decideRequest(deps, created.bookingId, 'approved', '', now);
 		const ics = sent[0].attachments![0].content;
-		expect(ics).toContain('DTSTART:20261102T200000Z');
-		expect(ics).toContain('DTEND:20261102T203000Z');
+		expect(ics).toContain('DTSTART:20261102T230000Z');
+		expect(ics).toContain('DTEND:20261102T233000Z');
 		expect(sent[0].text).toContain(', 30 min)');
 		expect(sent[0].text).not.toContain('90 min');
 	});
@@ -136,7 +136,7 @@ describe('admin service', () => {
 	it('approve in the past returns message', async () => {
 		const { store, sent, deps } = setup();
 		const created = await book(store, MON_3PM);
-		const later = new Date('2026-11-02T21:00:00.000Z');
+		const later = new Date('2026-11-03T00:00:00.000Z');
 		const r = await decideRequest(deps, created.bookingId, 'approved', '', later);
 		expect(r).toEqual({ ok: false, message: 'This lesson time has already passed.' });
 		expect(sent).toHaveLength(0);
@@ -189,9 +189,9 @@ describe('admin service', () => {
 		const a = await book(store, MON_3PM);
 		const b = await book(store, MON_330PM, 'b@example.com');
 		const c = await book(store, TUE_3PM, 'c@example.com');
-		await book(store, '2026-11-04T20:00:00.000Z', 'd@example.com'); // stays pending
+		await book(store, '2026-11-04T23:00:00.000Z', 'd@example.com'); // stays pending
 		for (const x of [a, b, c]) await decideRequest(deps, x.bookingId, 'approved', '', now);
-		const later = new Date('2026-11-02T20:45:00.000Z');
+		const later = new Date('2026-11-02T23:45:00.000Z');
 		const upcoming = await listLessons(store, { range: 'upcoming', unpaidOnly: false }, later);
 		expect(upcoming.map((v) => v.id)).toEqual([c.bookingId]);
 		const past = await listLessons(store, { range: 'past', unpaidOnly: false }, later);
