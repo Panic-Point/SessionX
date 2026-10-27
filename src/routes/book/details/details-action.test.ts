@@ -42,12 +42,12 @@ const pat: Account = {
 const LIMIT =
 	'You already have 2 lesson requests waiting for approval. Please wait for a reply before requesting more.';
 
-/** A bookable weekday slot at least 3 days out, from 21:00 UTC (late afternoon in New York). */
+/** A bookable weekday slot at least 3 days out, from 23:00 UTC (afternoon in Los Angeles). */
 function slot(offsetMin: number): string {
 	const d = new Date();
 	d.setUTCDate(d.getUTCDate() + 3);
 	while ([0, 6].includes(d.getUTCDay())) d.setUTCDate(d.getUTCDate() + 1);
-	d.setUTCHours(21, offsetMin, 0, 0);
+	d.setUTCHours(23, offsetMin, 0, 0);
 	return d.toISOString();
 }
 

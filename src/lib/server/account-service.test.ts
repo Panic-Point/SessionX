@@ -13,7 +13,7 @@ import type { EmailMessage, Mailer } from './email/mailer';
 import { MemoryBookingStore } from './store/memory';
 import { fakeCalendar } from './calendar/fake-client.test-helpers';
 
-const now = DateTime.fromISO('2026-11-01T12:00', { zone: 'America/New_York' }).toJSDate();
+const now = DateTime.fromISO('2026-11-01T12:00', { zone: 'America/Los_Angeles' }).toJSDate();
 const LESSON_30 = '11111111-0000-0000-0000-000000000030';
 const PAT = '22222222-0000-0000-0000-00000000000b';
 const AVA = '33333333-0000-0000-0000-0000000000a1';
