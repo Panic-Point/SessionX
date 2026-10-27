@@ -7,13 +7,19 @@ import {
 } from './availability';
 import { calendarBusy } from './calendar/sync';
 import type { CalendarClient } from './calendar/types';
-import { newRequestEmail, requestReceivedEmail, type BookingEmailData } from './email/templates';
+import {
+	newRequestEmail,
+	registerInviteEmail,
+	requestReceivedEmail,
+	type BookingEmailData
+} from './email/templates';
 import type { Mailer } from './email/mailer';
 import { formatDateTime, formatMoney, formatTime } from './format';
 import { displayPriceCents } from './pricing';
 import {
 	AccountStoreError,
 	BookingStoreError,
+	type AdminStore,
 	type AppStore,
 	type BookingStore,
 	type BookingSummary,
@@ -272,8 +278,28 @@ async function sendRequestEmails(
 	}
 }
 
+/** Guests whose email has no password yet are invited to create an account. */
+async function sendRegisterInvite(
+	{ store, mailer, appUrl }: GuestServiceDeps,
+	email: string,
+	name: string
+): Promise<void> {
+	try {
+		const account = await store.findAccountByEmail(email);
+		if (account && (await store.getPasswordHash(account.id))) return;
+		const url = `${appUrl}/register?${new URLSearchParams({ email: email.toLowerCase() })}`;
+		await mailer.send(registerInviteEmail(email, account?.name ?? name, url));
+	} catch (e) {
+		console.error('Failed to send register-invite email', e);
+	}
+}
+
+export interface GuestServiceDeps extends ServiceDeps {
+	store: BookingStore & Pick<AdminStore, 'findAccountByEmail' | 'getPasswordHash'>;
+}
+
 export async function submitGuestRequest(
-	deps: ServiceDeps,
+	deps: GuestServiceDeps,
 	form: GuestRequestForm,
 	now: Date
 ): Promise<SubmitResult> {
@@ -327,6 +353,7 @@ export async function submitGuestRequest(
 		manageUrl: `${appUrl}/manage/${created.manageToken}`
 	};
 	await sendRequestEmails(deps, settings, data);
+	await sendRegisterInvite(deps, email, accountName);
 	return { ok: true, manageToken: created.manageToken };
 }
 

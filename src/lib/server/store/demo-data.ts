@@ -29,6 +29,10 @@ export interface DemoPassword {
 export const DEMO_PARENT_PASSWORD_HASH =
 	'pbkdf2-sha256$100000$Gdn8ZFyVGVjo3_9Mvebwbg$yIhLzGXbDC1e7kTUeENArJ5AllBcXi8dKeKzYRg4V1o';
 
+/** PBKDF2 hash of `sessionx-admin-dev`, the dev password for admin@sessionx.local. */
+export const DEMO_ADMIN_PASSWORD_HASH =
+	'pbkdf2-sha256$100000$5-RF-OeO6K0GiAxmCNyHyw$v6UK6KohW0ziVPzk3cei8wt5oGUztsGZg5-UjLMv9F8';
+
 export interface DemoData {
 	settings: StudioSettings;
 	weeklyHours: WeeklyHours[];
@@ -130,6 +134,10 @@ export function demoData(): DemoData {
 			}
 		],
 		passwords: [
+			{
+				accountId: '22222222-0000-0000-0000-00000000000a',
+				passwordHash: DEMO_ADMIN_PASSWORD_HASH
+			},
 			{
 				accountId: '22222222-0000-0000-0000-00000000000b',
 				passwordHash: DEMO_PARENT_PASSWORD_HASH

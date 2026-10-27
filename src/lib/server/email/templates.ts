@@ -74,14 +74,14 @@ export function newRequestEmail(
 	};
 }
 
-export function loginLinkEmail(to: string, name: string, url: string): EmailMessage {
-	const text = `Hi ${name},\n\nUse this link to sign in to SessionX. It expires in 15 minutes and can be used once.\n\n${url}\n\nIf you did not request this, you can ignore this email.\n`;
-	const footer = `<p style="margin:16px 0 0"><a href="${escapeHtml(url)}">${escapeHtml(url)}</a></p><p style="color:#555">It expires in 15 minutes and can be used once. If you did not request this, you can ignore this email.</p>`;
+export function registerInviteEmail(to: string, name: string, url: string): EmailMessage {
+	const text = `Hi ${name},\n\nThanks for your lesson request. Create a SessionX account with this email to see your lessons, book again faster and manage your requests in one place. Any lessons you have already booked with this email will be there.\n\nCreate your account: ${url}\n\nYou don't need an account: your request stands either way.\n`;
+	const footer = `<p style="margin:0 0 12px">Thanks for your lesson request. Create a SessionX account with this email to see your lessons, book again faster and manage your requests in one place. Any lessons you have already booked with this email will be there.</p><p style="margin:16px 0 0">Create your account: <a href="${escapeHtml(url)}">${escapeHtml(url)}</a></p><p style="color:#555">You don't need an account: your request stands either way.</p>`;
 	return {
 		to,
-		subject: 'Your SessionX sign-in link',
+		subject: 'Create your SessionX account',
 		text,
-		html: wrap(`Hi ${name}, sign in to SessionX`, [], footer)
+		html: wrap(`Hi ${name}, create your account`, [], footer)
 	};
 }
 

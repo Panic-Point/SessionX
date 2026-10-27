@@ -77,8 +77,8 @@ on conflict (email) do update set role = 'admin';
 
 If the teacher already booked as a guest, the second statement simply promotes that existing
 account. Opening hours, lesson types, and the cancellation policy are then edited in the app under
-`/admin`. The teacher signs in with an emailed link, so the email address must be one they can
-read.
+`/admin`. The teacher sets their password with **Forgot password?** on the sign-in page, which
+emails a reset link, so the email address must be one they can read.
 
 ## 5. Cloudflare Pages (#14)
 
@@ -179,9 +179,9 @@ Any commit or other repository activity resets the 60-day clock.
 ## 9. Post-deploy checks (#16)
 
 1. Open the site on your domain. It loads over https with no warnings.
-2. Sign in as the teacher: go to `/admin`, enter the admin email, and open the emailed link. It
-   opens a page where you click **Sign in** to confirm. The link works once and expires after 15
-   minutes.
+2. Sign in as the teacher: go to `/login`, click **Forgot password?**, enter the admin email, open
+   the emailed link and choose a password. You are signed in and land on `/admin`. The link works
+   once and expires after 30 minutes.
 3. In `/admin`, add at least one lesson type and set the weekly hours (a fresh database has
    none).
 4. In another browser, make a booking as a guest. Confirm the confirmation email arrives, and that

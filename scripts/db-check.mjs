@@ -521,9 +521,9 @@ const completeReset = async (hash, pw, now = '2026-11-01Z') =>
 const passwordOf = async (id) =>
 	(await db.query('select password_hash from accounts where id = $1', [id])).rows[0]?.password_hash;
 
-await check('seed gives parent@example.com the dev password', async () => {
+await check('seed gives the parent and the admin dev passwords', async () => {
 	assert((await passwordOf(PARENT))?.startsWith('pbkdf2-sha256$100000$'), 'parent hash');
-	assert((await passwordOf(ADMIN)) === null, 'admin has no password');
+	assert((await passwordOf(ADMIN))?.startsWith('pbkdf2-sha256$100000$'), 'admin hash');
 });
 
 await check('password_tokens and password_failures have RLS and no policies', async () => {

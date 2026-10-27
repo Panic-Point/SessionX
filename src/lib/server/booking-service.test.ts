@@ -99,12 +99,39 @@ describe('booking service', () => {
 		const r = await submitGuestRequest(deps, form(), now);
 		expect(r.ok).toBe(true);
 		if (!r.ok) return;
-		expect(sent.map((m) => m.to)).toEqual(['gina@example.com', 'admin@sessionx.local']);
+		expect(sent.map((m) => m.to)).toEqual([
+			'gina@example.com',
+			'admin@sessionx.local',
+			'gina@example.com'
+		]);
 		expect(sent[0].subject).toContain('Lesson request received');
 		expect(sent[1].subject).toContain('New lesson request');
 		const url = `https://example.test/manage/${r.manageToken}`;
 		expect(sent[0].text).toContain(url);
 		expect(sent[1].text).toContain('https://example.test/admin');
+	});
+
+	it('invites a guest without a password to register, with their email filled in', async () => {
+		const { deps, sent } = setup();
+		await submitGuestRequest(deps, form({ email: ' Gina@Example.com ' }), now);
+		const invite = sent.find((m) => m.subject === 'Create your SessionX account');
+		expect(invite?.to).toBe('Gina@Example.com');
+		expect(invite?.text).toContain('https://example.test/register?email=gina%40example.com');
+	});
+
+	it('does not invite a guest whose email already has a password', async () => {
+		const { deps, sent } = setup();
+		const r = await submitGuestRequest(deps, form({ email: 'parent@example.com' }), now);
+		expect(r.ok).toBe(true);
+		expect(sent.map((m) => m.subject)).not.toContain('Create your SessionX account');
+	});
+
+	it('invites an existing guest account that has no password yet', async () => {
+		const { deps, sent } = setup();
+		await submitGuestRequest(deps, form(), now);
+		sent.length = 0;
+		await submitGuestRequest(deps, form({ startsAt: MON_330PM }), now);
+		expect(sent.map((m) => m.subject)).toContain('Create your SessionX account');
 	});
 
 	it('required field errors', async () => {
@@ -184,7 +211,7 @@ describe('booking service', () => {
 		const { deps } = setup(true);
 		const r = await submitGuestRequest(deps, form(), now);
 		expect(r.ok).toBe(true);
-		expect(spy).toHaveBeenCalledTimes(2);
+		expect(spy).toHaveBeenCalledTimes(3);
 		spy.mockRestore();
 	});
 

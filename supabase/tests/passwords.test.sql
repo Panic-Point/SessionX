@@ -1,8 +1,7 @@
 begin;
 select plan(14);
 
--- Seed: Pat Parent (22222222-...-00b, parent@example.com) has a dev password and students Ava and Ben;
--- Studio Admin (22222222-...-00a) has no password.
+-- Seed: Pat Parent (22222222-...-00b, parent@example.com) has a dev password and students Ava and Ben.
 
 select ok(
   (select password_hash like 'pbkdf2-sha256$100000$%' from accounts where id = '22222222-0000-0000-0000-00000000000b'),
