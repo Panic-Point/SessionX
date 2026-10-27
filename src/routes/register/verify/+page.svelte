@@ -14,7 +14,9 @@
 
 <svelte:head>
 	<title>Finish creating your account · Brenda Sings</title>
-	<meta name="referrer" content="no-referrer" />
+	<!-- same-origin, not no-referrer: the token must not leak to other sites, but no-referrer
+		makes the browser send `Origin: null` on later form posts, which SvelteKit rejects. -->
+	<meta name="referrer" content="same-origin" />
 </svelte:head>
 
 <AuthCard title={invalid ? 'Link expired' : 'Finish creating your account'}>
