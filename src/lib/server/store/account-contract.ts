@@ -187,6 +187,25 @@ export function runAccountStoreContract(
 			expect(await store.listAccountBookings(account.id)).toHaveLength(1);
 		});
 
+		it('lists account bookings within a date range', async () => {
+			const store = await makeStore();
+			const { account } = await otherAccount(store);
+			const first = await store.requestAccountBooking(booking({ startsAt: DAY_1 }), NOW);
+			const second = await store.requestAccountBooking(
+				booking({ studentId: BEN, startsAt: DAY_2 }),
+				NOW
+			);
+			// from is inclusive, to exclusive.
+			const day2 = await store.listAccountBookings(PAT, { from: DAY_2, to: DAY_3 });
+			expect(day2.map((b) => b.id)).toEqual([second.bookingId]);
+			const upToDay2 = await store.listAccountBookings(PAT, { to: DAY_2 });
+			expect(upToDay2.map((b) => b.id)).toEqual([first.bookingId]);
+			// The other family's lesson is in range but never listed for Pat.
+			const wide = { from: DAY_1, to: new Date('2031-01-01T00:00:00Z') };
+			expect(await store.listAccountBookings(PAT, wide)).toHaveLength(2);
+			expect(await store.listAccountBookings(account.id, wide)).toHaveLength(1);
+		});
+
 		it('cancels own booking and frees the slot', async () => {
 			const store = await makeStore();
 			const created = await store.requestAccountBooking(booking(), NOW);

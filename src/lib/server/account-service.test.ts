@@ -79,6 +79,22 @@ describe('account home', () => {
 		expect(home.past[0]).toMatchObject({ statusLabel: 'Cancelled', canCancel: false });
 	});
 
+	it('lists every status in a period ascending, replacing upcoming and past', async () => {
+		const { store } = setup();
+		const period = { from: hoursFromNow(24), to: hoursFromNow(200) };
+		const outside = await book(store, AVA, hoursFromNow(300), true);
+		const later = await book(store, AVA, hoursFromNow(150));
+		const soon = await book(store, BEN, hoursFromNow(48), true);
+		await store.cancelBooking({ kind: 'account', bookingId: later.id, accountId: PAT }, false, now);
+		const home = await getAccountHome(store, PAT, now, period);
+		expect(home.inPeriod?.map((b) => b.id)).toEqual([soon.id, later.id]);
+		expect(home.inPeriod?.map((b) => b.statusLabel)).toEqual(['Confirmed', 'Cancelled']);
+		expect(home.upcoming).toEqual([]);
+		expect(home.past).toEqual([]);
+		expect(home.inPeriod?.some((b) => b.id === outside.id)).toBe(false);
+		expect((await getAccountHome(store, PAT, now)).inPeriod).toBeNull();
+	});
+
 	it('reports lateCancel as what happened, not what would happen', async () => {
 		const { store } = setup();
 		const upcomingSoon = await book(store, AVA, hoursFromNow(5), true);

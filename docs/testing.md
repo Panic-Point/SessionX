@@ -189,6 +189,23 @@ Sign in as `parent@example.com`.
 On **My lessons** you can also add a student or rename one under **Students**. Two students in one
 family can't have the same name.
 
+### Filtering by week, month or dates
+
+At the top of **My lessons**, **All** shows Upcoming and Past as above. The other choices replace
+both with one list, **Lessons, {period}**, of every lesson in that period (pending, confirmed,
+cancelled…), earliest first.
+
+1. Click **Week**. The list is titled "Lessons, Week of …" for this Monday-to-Sunday week. Click
+   **Next ›** and **‹ Previous** to step a week at a time, and **This week** to come back.
+2. Click **Month**. The title is the month, e.g. "November 2026", with the same Previous / This
+   month / Next links.
+3. Click **Custom**, pick a **From** and **To** date and click **Apply**. Both dates are included,
+   e.g. "Nov 2 – Nov 20, 2026". A start after the end shows "The start date must be on or before
+   the end date." and no list; a range longer than 366 days is cut to 366 days with a note.
+4. Signed in as another family, the same filters never show Pat's lessons.
+5. Edit the address bar to nonsense (e.g. `/account?period=week&date=banana`): the page falls back
+   to the current week instead of erroring.
+
 ## 6. Approving and declining requests (admin)
 
 Sign in as the admin. **Requests** lists every pending request that hasn't started yet.
@@ -211,6 +228,23 @@ Open **Lessons**.
 - Click **Mark paid** on a lesson. It shows **Paid ✓**; click **Mark unpaid** to undo.
 - Turn on **Unpaid only** to hide lessons that are already paid.
 - **Late cancels** lists lessons the family cancelled inside the cancellation cutoff (section 9).
+
+### Filtering by week, month or dates
+
+The **All / Week / Month / Custom** buttons above the tabs choose a period. **All** is the Upcoming
+/ Past view above. With a period chosen:
+
+- The tabs become **Lessons** (approved lessons in the period, earliest first) and **Late cancels**
+  (late cancellations in the period).
+- A line above the list counts the lessons and totals them, e.g. "3 lessons · $105.00, $70.00
+  unpaid". Mark one paid and the unpaid total drops.
+- **Week** and **Month** have **‹ Previous**, **This week** / **This month** and **Next ›**.
+  **Custom** has From and To dates and **Apply** (both days included).
+- **Unpaid only** works with any period and stays on as you step between weeks or months.
+- A lesson at 12:00am on a Monday is in that Monday's week, not the week before, including the
+  week the clocks change.
+- The address bar keeps the choice (e.g. `/admin/lessons?period=month&date=2026-11&unpaid=1`), so
+  you can bookmark or share it. Bad dates fall back to the current week or month.
 
 ## 8. Families and per-student prices (admin)
 
