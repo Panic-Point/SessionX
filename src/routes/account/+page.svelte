@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { enhance, type SubmitFunction } from '$app/forms';
+	import PeriodControl from '#lib/components/PeriodControl.svelte';
 	import type { PageProps } from './$types';
 
 	let { data, form }: PageProps = $props();
@@ -44,33 +45,68 @@
 		<p class="banner" role="status">{form.message}</p>
 	{/if}
 
-	<section class="card" aria-labelledby="upcoming-heading">
-		<h2 id="upcoming-heading">Upcoming lessons</h2>
-		{#if data.upcoming.length === 0}
-			<p class="empty">No upcoming lessons. <a href="/book">Book a lesson</a></p>
-		{:else}
-			<ul class="lessons">
-				{#each data.upcoming as lesson (lesson.id)}
-					<li>
-						<div class="lesson-main">
-							<p class="lesson-title">{lesson.studentName} · {lesson.lessonTypeName}</p>
-							<p class="meta">{lesson.whenLabel} · {lesson.priceLabel}</p>
-							<span class="badge {lesson.status}">{lesson.statusLabel}</span>
-							{#if lesson.seriesLabel}<span class="badge">{lesson.seriesLabel}</span>{/if}
-						</div>
-						{#if lesson.canCancel}
-							<a
-								class="button secondary"
-								href="/account/cancel/{lesson.id}"
-								aria-label="Cancel {lesson.lessonTypeName} for {lesson.studentName} on {lesson.whenLabel}"
-								>Cancel</a
-							>
-						{/if}
-					</li>
-				{/each}
-			</ul>
+	<section class="card" aria-labelledby="lessons-heading">
+		<h2 id="lessons-heading" class="visually-hidden">Show lessons</h2>
+		<PeriodControl period={data.period} path="/account" showLabel={false} />
+		{#if data.inPeriod}
+			<h3 id="period-heading">Lessons, {data.period?.label}</h3>
+			{#if data.inPeriod.length === 0}
+				<p class="empty">No lessons in this period.</p>
+			{:else}
+				<ul class="lessons" aria-labelledby="period-heading">
+					{#each data.inPeriod as lesson (lesson.id)}
+						<li>
+							<div class="lesson-main">
+								<p class="lesson-title">{lesson.studentName} · {lesson.lessonTypeName}</p>
+								<p class="meta">{lesson.whenLabel} · {lesson.priceLabel}</p>
+								<span class="badge {lesson.status}">{lesson.statusLabel}</span>
+								{#if lesson.seriesLabel}<span class="badge">{lesson.seriesLabel}</span>{/if}
+								{#if lesson.lateCancel}<span class="badge">Late cancellation</span>{/if}
+							</div>
+							{#if lesson.canCancel}
+								<a
+									class="button secondary"
+									href="/account/cancel/{lesson.id}"
+									aria-label="Cancel {lesson.lessonTypeName} for {lesson.studentName} on {lesson.whenLabel}"
+									>Cancel</a
+								>
+							{/if}
+						</li>
+					{/each}
+				</ul>
+			{/if}
 		{/if}
 	</section>
+
+	{#if !data.period}
+		<section class="card" aria-labelledby="upcoming-heading">
+			<h2 id="upcoming-heading">Upcoming lessons</h2>
+			{#if data.upcoming.length === 0}
+				<p class="empty">No upcoming lessons. <a href="/book">Book a lesson</a></p>
+			{:else}
+				<ul class="lessons">
+					{#each data.upcoming as lesson (lesson.id)}
+						<li>
+							<div class="lesson-main">
+								<p class="lesson-title">{lesson.studentName} · {lesson.lessonTypeName}</p>
+								<p class="meta">{lesson.whenLabel} · {lesson.priceLabel}</p>
+								<span class="badge {lesson.status}">{lesson.statusLabel}</span>
+								{#if lesson.seriesLabel}<span class="badge">{lesson.seriesLabel}</span>{/if}
+							</div>
+							{#if lesson.canCancel}
+								<a
+									class="button secondary"
+									href="/account/cancel/{lesson.id}"
+									aria-label="Cancel {lesson.lessonTypeName} for {lesson.studentName} on {lesson.whenLabel}"
+									>Cancel</a
+								>
+							{/if}
+						</li>
+					{/each}
+				</ul>
+			{/if}
+		</section>
+	{/if}
 
 	<section class="card" aria-labelledby="students-heading">
 		<h2 id="students-heading">Students</h2>
@@ -208,25 +244,27 @@
 		</form>
 	</section>
 
-	<section class="card" aria-labelledby="past-heading">
-		<h2 id="past-heading">Past lessons</h2>
-		{#if data.past.length === 0}
-			<p class="empty">No past lessons yet.</p>
-		{:else}
-			<ul class="lessons">
-				{#each data.past as lesson (lesson.id)}
-					<li>
-						<div class="lesson-main">
-							<p class="lesson-title">{lesson.studentName} · {lesson.lessonTypeName}</p>
-							<p class="meta">{lesson.whenLabel} · {lesson.priceLabel}</p>
-							<span class="badge {lesson.status}">{lesson.statusLabel}</span>
-							{#if lesson.lateCancel}<span class="badge">Late cancellation</span>{/if}
-						</div>
-					</li>
-				{/each}
-			</ul>
-		{/if}
-	</section>
+	{#if !data.period}
+		<section class="card" aria-labelledby="past-heading">
+			<h2 id="past-heading">Past lessons</h2>
+			{#if data.past.length === 0}
+				<p class="empty">No past lessons yet.</p>
+			{:else}
+				<ul class="lessons">
+					{#each data.past as lesson (lesson.id)}
+						<li>
+							<div class="lesson-main">
+								<p class="lesson-title">{lesson.studentName} · {lesson.lessonTypeName}</p>
+								<p class="meta">{lesson.whenLabel} · {lesson.priceLabel}</p>
+								<span class="badge {lesson.status}">{lesson.statusLabel}</span>
+								{#if lesson.lateCancel}<span class="badge">Late cancellation</span>{/if}
+							</div>
+						</li>
+					{/each}
+				</ul>
+			{/if}
+		</section>
+	{/if}
 </main>
 
 <style>
@@ -249,7 +287,8 @@
 		margin: 0;
 	}
 
-	h2 {
+	h2,
+	h3 {
 		font-size: 1.1rem;
 		margin: 0 0 0.75rem;
 	}

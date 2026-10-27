@@ -43,6 +43,7 @@ import {
 	type AdminBooking,
 	type AdminLessonType,
 	type BookingFilter,
+	type DateRange,
 	type BookingStatus,
 	type BookingSummary,
 	type CreatedBooking,
@@ -608,12 +609,15 @@ export function createSupabaseBookingStore(url: string, serviceRoleKey: string):
 			return (data as StudentPriceRow[]).map(mapStudentPriceRow);
 		},
 
-		async listAccountBookings(accountId: string): Promise<AdminBooking[]> {
-			const { data, error } = await db
+		async listAccountBookings(accountId: string, range: DateRange = {}): Promise<AdminBooking[]> {
+			let query = db
 				.from('bookings')
 				.select(OWNED_BOOKING_COLUMNS)
 				.eq('students.account_id', accountId)
 				.order('starts_at', { ascending: false });
+			if (range.from) query = query.gte('starts_at', range.from.toISOString());
+			if (range.to) query = query.lt('starts_at', range.to.toISOString());
+			const { data, error } = await query;
 			if (error) {
 				if (isMalformedId(error)) return [];
 				fail('listAccountBookings', error);

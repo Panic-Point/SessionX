@@ -84,26 +84,39 @@ function toView(b: AdminBooking, now: Date, timezone: string): AccountBookingVie
 	};
 }
 
+export interface AccountHome {
+	students: Student[];
+	upcoming: AccountBookingView[];
+	past: AccountBookingView[];
+	/** Every lesson in the chosen period, ascending; null when no period is chosen. */
+	inPeriod: AccountBookingView[] | null;
+}
+
 export async function getAccountHome(
 	store: AppStore,
 	accountId: string,
-	now: Date
-): Promise<{ students: Student[]; upcoming: AccountBookingView[]; past: AccountBookingView[] }> {
+	now: Date,
+	period: { from: Date; to: Date } | null = null
+): Promise<AccountHome> {
 	const [students, bookings, settings] = await Promise.all([
 		store.listStudents(accountId),
-		store.listAccountBookings(accountId),
+		store.listAccountBookings(accountId, period ?? undefined),
 		store.getSettings()
 	]);
 	const view = (b: AdminBooking) => toView(b, now, settings.timezone);
-	const isUpcoming = (b: AdminBooking) => isLive(b) && b.startsAt.getTime() >= now.getTime();
 	const byStart = (a: AdminBooking, b: AdminBooking) => a.startsAt.getTime() - b.startsAt.getTime();
+	if (period) {
+		return { students, upcoming: [], past: [], inPeriod: bookings.sort(byStart).map(view) };
+	}
+	const isUpcoming = (b: AdminBooking) => isLive(b) && b.startsAt.getTime() >= now.getTime();
 	return {
 		students,
 		upcoming: bookings.filter(isUpcoming).sort(byStart).map(view),
 		past: bookings
 			.filter((b) => !isUpcoming(b))
 			.sort((a, b) => byStart(b, a))
-			.map(view)
+			.map(view),
+		inPeriod: null
 	};
 }
 

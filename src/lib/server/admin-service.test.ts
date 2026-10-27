@@ -10,8 +10,10 @@ import {
 	saveStudentNotes,
 	saveStudentPrices,
 	setLessonPaid,
+	summarizeLessons,
 	type AdminDeps
 } from './admin-service';
+import { parsePeriod } from './periods';
 import type { EmailMessage, Mailer } from './email/mailer';
 import { demoData } from './store/demo-data';
 import { MemoryBookingStore } from './store/memory';
@@ -194,6 +196,47 @@ describe('admin service', () => {
 		expect(upcoming.map((v) => v.id)).toEqual([c.bookingId]);
 		const past = await listLessons(store, { range: 'past', unpaidOnly: false }, later);
 		expect(past.map((v) => v.id)).toEqual([b.bookingId, a.bookingId]);
+	});
+
+	it('lists a period ascending, at local midnight boundaries, combined with unpaid', async () => {
+		const { store, deps } = setup();
+		const week = parsePeriod(
+			new URLSearchParams('period=week&date=2026-11-02'),
+			'America/New_York',
+			now
+		)!.range!;
+		const midnightStart = await book(store, '2026-11-02T05:00:00.000Z'); // Mon 12:00am EST
+		const a = await book(store, MON_3PM, 'a@example.com');
+		const b = await book(store, TUE_3PM, 'b@example.com');
+		const nextWeek = await book(store, '2026-11-09T05:00:00.000Z', 'c@example.com');
+		const before = await book(store, '2026-11-02T03:00:00.000Z', 'd@example.com');
+		await book(store, '2026-11-04T20:00:00.000Z', 'e@example.com'); // stays pending
+		for (const x of [midnightStart, a, b, nextWeek, before]) {
+			await decideRequest(deps, x.bookingId, 'approved', '', now);
+		}
+		await setLessonPaid(store, a.bookingId, true, now);
+		const later = new Date('2026-11-03T12:00:00.000Z');
+		const all = await listLessons(
+			store,
+			{ range: 'upcoming', unpaidOnly: false, period: week },
+			later
+		);
+		expect(all.map((v) => v.id)).toEqual([midnightStart.bookingId, a.bookingId, b.bookingId]);
+		expect(summarizeLessons(all)).toBe('3 lessons · $105.00, $70.00 unpaid');
+		const unpaid = await listLessons(
+			store,
+			{ range: 'upcoming', unpaidOnly: true, period: week },
+			later
+		);
+		expect(unpaid.map((v) => v.id)).toEqual([midnightStart.bookingId, b.bookingId]);
+		expect(summarizeLessons(unpaid)).toBe('2 lessons · $70.00, $70.00 unpaid');
+	});
+
+	it('summarizes lessons and late cancels', () => {
+		expect(summarizeLessons([])).toBe('0 lessons · $0.00');
+		const one = { priceCents: 3500, paid: true } as Parameters<typeof summarizeLessons>[0][0];
+		expect(summarizeLessons([one])).toBe('1 lesson · $35.00');
+		expect(summarizeLessons([one, one], true)).toBe('2 late cancellations · $70.00');
 	});
 
 	it('unpaid filter', async () => {
