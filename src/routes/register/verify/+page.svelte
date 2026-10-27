@@ -13,7 +13,7 @@
 </script>
 
 <svelte:head>
-	<title>Finish creating your account · SessionX</title>
+	<title>Finish creating your account · Brenda Sings</title>
 	<meta name="referrer" content="no-referrer" />
 </svelte:head>
 

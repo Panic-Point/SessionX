@@ -12,7 +12,7 @@
 </script>
 
 <svelte:head>
-	<title>Choose a new password · SessionX</title>
+	<title>Choose a new password · Brenda Sings</title>
 	<meta name="referrer" content="no-referrer" />
 </svelte:head>
 

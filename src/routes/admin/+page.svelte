@@ -16,7 +16,7 @@
 </script>
 
 <svelte:head>
-	<title>Requests · Admin · SessionX</title>
+	<title>Requests · Admin · Brenda Sings</title>
 </svelte:head>
 
 <h1>Requests</h1>

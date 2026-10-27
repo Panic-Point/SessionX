@@ -30,7 +30,7 @@
 </script>
 
 <svelte:head>
-	<title>My lessons · SessionX</title>
+	<title>My lessons · Brenda Sings</title>
 </svelte:head>
 
 <main>

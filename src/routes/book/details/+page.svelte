@@ -43,7 +43,7 @@
 </script>
 
 <svelte:head>
-	<title>Your details · SessionX</title>
+	<title>Your details · Brenda Sings</title>
 </svelte:head>
 
 <main>

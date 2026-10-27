@@ -83,7 +83,7 @@
 </script>
 
 <svelte:head>
-	<title>Hours · Admin · SessionX</title>
+	<title>Hours · Admin · Brenda Sings</title>
 </svelte:head>
 
 <h1>Hours</h1>

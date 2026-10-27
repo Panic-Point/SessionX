@@ -17,7 +17,7 @@
 </script>
 
 <svelte:head>
-	<title>{data.series.studentName} · {data.series.scheduleLabel} · Admin · SessionX</title>
+	<title>{data.series.studentName} · {data.series.scheduleLabel} · Admin · Brenda Sings</title>
 </svelte:head>
 
 <p><a href="/admin/families/{data.series.accountId}">&larr; {data.series.accountName}</a></p>

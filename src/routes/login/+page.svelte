@@ -25,7 +25,7 @@
 </script>
 
 <svelte:head>
-	<title>Sign in · SessionX</title>
+	<title>Sign in · Brenda Sings</title>
 </svelte:head>
 
 <AuthCard title="Sign in">

@@ -5,7 +5,7 @@
 </script>
 
 <svelte:head>
-	<title>Request sent · SessionX</title>
+	<title>Request sent · Brenda Sings</title>
 </svelte:head>
 
 <main>

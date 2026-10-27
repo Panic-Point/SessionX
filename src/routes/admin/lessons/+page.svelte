@@ -25,7 +25,7 @@
 </script>
 
 <svelte:head>
-	<title>Lessons · Admin · SessionX</title>
+	<title>Lessons · Admin · Brenda Sings</title>
 </svelte:head>
 
 <h1>Lessons</h1>

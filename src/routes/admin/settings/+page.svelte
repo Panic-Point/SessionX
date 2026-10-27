@@ -31,7 +31,7 @@
 </script>
 
 <svelte:head>
-	<title>Settings · Admin · SessionX</title>
+	<title>Settings · Admin · Brenda Sings</title>
 </svelte:head>
 
 <h1>Settings</h1>
