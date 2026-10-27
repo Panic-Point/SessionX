@@ -50,7 +50,9 @@ Everyone signs in with an email and password. The seeded accounts have dev passw
 1. Click **Sign in** (top right), or go to http://localhost:5173/login.
 2. Enter `admin@sessionx.local` and `sessionx-admin-dev1`, and click **Sign in**.
 3. As the admin you land on the admin area at `/admin`. A family lands on **My lessons** at
-   `/account`.
+   `/account`. The family area has three tabs: **Lessons** (`/account`), **Manage family**
+   (`/account/family`) and **Security** (`/account/security`); **My account** in the top right
+   always comes back to Lessons.
 
 To sign in as the family instead, sign out first (**Sign out** in the admin menu or top right),
 then repeat with `parent@example.com`. Tip: use a private browser window for the second person so
@@ -76,7 +78,7 @@ Things to check:
   password** in Mailpit (valid 30 minutes, once). Choose a new password; you are signed in and the
   old password stops working. A reset also lifts a lockout. An unknown email shows the same "Check
   your email" message but sends nothing, so nobody can find out who has an account.
-- **Change a password:** on `/account`, the **Password** section changes it (the current password
+- **Change a password:** on **Security** (`/account/security`), the **Password** section changes it (the current password
   is required).
 - **Weak passwords:** a new password needs at least 8 characters, a number and a special
   character (`Abcdef1!` works). `Abc1!`, `Abcdefg1` and `Abcdefg!` are each rejected next to the
@@ -193,8 +195,13 @@ Sign in as `parent@example.com`.
    already known; just an optional note.
 4. **My lessons** now lists the request under **Upcoming lessons** as **Pending approval**.
 
-On **My lessons** you can also add a student or rename one under **Students**. Two students in one
-family can't have the same name.
+On the **Manage family** tab you can add a student or rename one under **Students**. Two students
+in one family can't have the same name.
+
+With two or more students, **My lessons** shows a row of student buttons above the period
+choices: **All students**, **Ava**, **Ben**. Picking one narrows Upcoming, Past and any period list
+to that student, and the headings say so ("Upcoming lessons for Ben"). The student stays picked
+while you change the period, and the period stays while you change the student.
 
 ### Filtering by week, month or dates
 
@@ -403,6 +410,27 @@ A request only expires once its lesson time has passed, so the count is usually 
 A series with no end, or one that runs past 12 weeks, only has lessons 12 weeks ahead. The daily
 scheduled job (section 13) adds the next ones; with `npm run dev` the sample series is filled in
 when the server starts.
+
+## 15. Deleting a family account
+
+1. Sign in as `parent@example.com` and book a lesson or two. (Pat's sample weekly series for Ben
+   also has upcoming lessons; one starting within 24 hours is cancelled as late.)
+2. Open **Security** and read **Delete account**: it says how many upcoming lessons will be
+   cancelled and that ones within the cutoff count as late.
+3. Click **Delete my account…**, enter a wrong password and click **Delete my account**: it says
+   "Current password is incorrect." and nothing changes. (An account without a password is asked to
+   type its email instead.)
+4. Enter `sessionx-parent-dev1`. You are signed out and land on the home page with "Your account
+   has been deleted." Signing in as Pat no longer works, and any other browser signed in as Pat is
+   signed out on its next page load.
+5. In Mailpit the admin has one **Account deleted: Pat Parent** email listing the cancelled
+   lessons, with any late one marked.
+6. As the admin, **Lessons** shows Pat's upcoming lessons as cancelled (the one inside the cutoff
+   as a late cancellation) and past lessons unchanged. **Families** still lists Pat Parent, marked
+   "Deleted their account", with no email. Recurring series are ended.
+7. Booking as a guest with `parent@example.com` again creates a brand-new family.
+
+The admin account has no **Delete account** section.
 
 ## Automated tests
 

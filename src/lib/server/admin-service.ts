@@ -187,7 +187,9 @@ export async function setLessonPaid(
 export interface FamilyListItem {
 	id: string;
 	name: string;
+	/** '' once the family has deleted their account. */
 	email: string;
+	deleted: boolean;
 	studentNames: string[];
 }
 
@@ -198,7 +200,8 @@ export async function listFamilies(store: AdminDataStore): Promise<FamilyListIte
 		.map((a) => ({
 			id: a.id,
 			name: a.name,
-			email: a.email,
+			email: a.deleted ? '' : a.email,
+			deleted: a.deleted,
 			studentNames: a.students.map((s) => s.name)
 		}));
 }
@@ -206,7 +209,9 @@ export async function listFamilies(store: AdminDataStore): Promise<FamilyListIte
 export interface FamilyView {
 	id: string;
 	name: string;
+	/** '' once the family has deleted their account. */
 	email: string;
+	deleted: boolean;
 	adminNotes: string;
 	students: {
 		id: string;
@@ -232,7 +237,8 @@ export async function getFamily(
 	return {
 		id: account.id,
 		name: account.name,
-		email: account.email,
+		email: account.deleted ? '' : account.email,
+		deleted: account.deleted,
 		adminNotes: account.adminNotes,
 		students: account.students.map((s) => ({
 			id: s.id,

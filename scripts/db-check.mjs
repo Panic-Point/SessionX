@@ -867,6 +867,57 @@ await check('lesson_series has RLS and anon cannot execute the series functions'
 	}
 });
 
+// ---- delete account ----
+await check('delete_account scrubs sign-in, frees the email and keeps the history', async () => {
+	const { rows: booked } = await accountBooking(PAT, AVA, LESSON_30, '2030-02-04T15:00:00Z');
+	await db.exec(
+		`insert into login_tokens (token_hash, account_id, expires_at)
+		   values ('lt', '${PAT}', '2030-01-01');
+		 insert into password_tokens (token_hash, purpose, account_id, expires_at)
+		   values ('pt', 'reset', '${PAT}', '2030-01-01')`
+	);
+	await db.query('select delete_account($1, $2)', [PAT, '2026-11-01T00:00:00Z']);
+	const { rows } = await db.query(
+		`select name, email, password_hash, deleted_at from accounts where id = $1`,
+		[PAT]
+	);
+	assert(rows[0].name === 'Pat Parent' && rows[0].deleted_at, 'row kept and marked');
+	assert(rows[0].email === `deleted-${PAT}@deleted.invalid`, `email ${rows[0].email}`);
+	assert(rows[0].password_hash === null, 'password kept');
+	const { rows: tokens } = await db.query(
+		`select (select count(*)::int from login_tokens where account_id = $1) l,
+		        (select count(*)::int from password_tokens where account_id = $1) p`,
+		[PAT]
+	);
+	assert(tokens[0].l === 0 && tokens[0].p === 0, 'tokens kept');
+	const { rows: b } = await db.query('select id from bookings where id = $1', [
+		booked[0].booking_id
+	]);
+	assert(b.length === 1, 'booking removed');
+	await db.exec(`insert into accounts (name, email) values ('Pat Again', 'parent@example.com')`);
+	await expectCode(
+		() => db.query('select delete_account($1, $2)', [PAT, '2026-11-01T00:00:00Z']),
+		'P0008'
+	);
+});
+
+await check('delete_account is service-role only and refuses admins', async () => {
+	const sig = 'delete_account(uuid,timestamptz)';
+	const { rows: p } = await db.query(
+		`select has_function_privilege('anon', '${sig}', 'execute') anon,
+		        has_function_privilege('authenticated', '${sig}', 'execute') authenticated,
+		        has_function_privilege('service_role', '${sig}', 'execute') service_role`
+	);
+	assert(!p[0].anon && !p[0].authenticated && p[0].service_role, JSON.stringify(p[0]));
+	await expectCode(
+		() =>
+			db.query(
+				`select delete_account((select id from accounts where role = 'admin' limit 1), now())`
+			),
+		'P0008'
+	);
+});
+
 // ---- default time zone ----
 await check('settings.timezone defaults to Pacific and the seed uses it', async () => {
 	const { rows: def } = await db.query(

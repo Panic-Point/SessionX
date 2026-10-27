@@ -309,6 +309,7 @@ describe('supabase mappers', () => {
 	it.each([
 		['P0003', 'not_found'],
 		['P0004', 'not_found'],
+		['P0008', 'not_found'],
 		['22P02', 'not_found'],
 		['23503', 'not_found'],
 		['P0005', 'not_cancellable'],
@@ -344,6 +345,7 @@ describe('supabase mappers', () => {
 			email: 'p@x.com',
 			role: 'client',
 			admin_notes: 'vip',
+			deleted_at: null,
 			students: [
 				{
 					id: 's2',
@@ -356,11 +358,25 @@ describe('supabase mappers', () => {
 			]
 		});
 		expect(result.adminNotes).toBe('vip');
+		expect(result.deleted).toBe(false);
 		expect(result.students.map((s) => s.name)).toEqual(['Ava', 'Ben']);
 		expect(result.students[1].prices).toEqual([
 			{ studentId: 's2', lessonTypeId: 'l', priceCents: 3000 }
 		]);
 		expect(result.students[0].notes).toBe('n');
+	});
+
+	it('marks a deleted account', () => {
+		const result = mapAccountWithStudentsRow({
+			id: 'a',
+			name: 'Pat',
+			email: 'deleted-a@deleted.invalid',
+			role: 'client',
+			admin_notes: '',
+			deleted_at: '2026-11-01T00:00:00Z',
+			students: []
+		});
+		expect(result.deleted).toBe(true);
 	});
 });
 

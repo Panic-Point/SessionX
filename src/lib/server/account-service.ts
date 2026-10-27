@@ -1,7 +1,10 @@
+import { currentPasswordProblem } from './auth/password-service';
 import {
+	accountDeletedEmail,
 	cancellationConfirmationEmail,
 	cancellationNoticeEmail,
-	type BookingEmailData
+	type BookingEmailData,
+	type CancelledLesson
 } from './email/templates';
 import { removeLessonFromCalendar } from './calendar/sync';
 import type { EmailMessage } from './email/mailer';
@@ -10,6 +13,7 @@ import { cadenceLabel } from './recurrence';
 import type { ServiceDeps } from './booking-service';
 import {
 	AccountStoreError,
+	type Account,
 	type AdminBooking,
 	type AppStore,
 	type BookingStatus,
@@ -92,15 +96,17 @@ export interface AccountHome {
 	inPeriod: AccountBookingView[] | null;
 }
 
+/** `studentId` narrows the lessons to one of the account's students. */
 export async function getAccountHome(
 	store: AppStore,
 	accountId: string,
 	now: Date,
-	period: { from: Date; to: Date } | null = null
+	period: { from: Date; to: Date } | null = null,
+	studentId: string | null = null
 ): Promise<AccountHome> {
 	const [students, bookings, settings] = await Promise.all([
 		store.listStudents(accountId),
-		store.listAccountBookings(accountId, period ?? undefined),
+		store.listAccountBookings(accountId, { ...period, studentId: studentId ?? undefined }),
 		store.getSettings()
 	]);
 	const view = (b: AdminBooking) => toView(b, now, settings.timezone);
@@ -270,4 +276,97 @@ export async function cancelLesson(
 		console.error('Failed to remove lesson from Google Calendar', e);
 	}
 	return { ok: true, late };
+}
+
+export interface DeleteAccountForm {
+	/** Required when the account has a password. */
+	currentPassword: string;
+	/** Required when it has none: the account's email, typed out. */
+	confirmEmail: string;
+}
+
+export type DeleteAccountResult =
+	{ ok: true; cancelled: number } | { ok: false; errors: Partial<Record<string, string>> };
+
+/**
+ * Deletes a family's own account once they confirm it with their password (or, without one, by
+ * typing their email). Every upcoming lesson is cancelled first, late when inside the
+ * cancellation policy, and recurring series are ended so no new lessons are added. Past lessons
+ * stay for the teacher's records. The admin gets one email listing what was cancelled.
+ */
+export async function deleteMyAccount(
+	deps: ServiceDeps & { store: AppStore },
+	account: Account,
+	form: DeleteAccountForm,
+	now: Date
+): Promise<DeleteAccountResult> {
+	const { store, mailer, appUrl } = deps;
+	if (account.role !== 'client') {
+		return { ok: false, errors: { form: 'The studio admin account cannot be deleted here.' } };
+	}
+	const stored = await store.getPasswordHash(account.id);
+	if (stored) {
+		const problem = await currentPasswordProblem(store, account, stored, form.currentPassword, now);
+		if (problem) return { ok: false, errors: { currentPassword: problem } };
+	} else if (form.confirmEmail.trim().toLowerCase() !== account.email.trim().toLowerCase()) {
+		return {
+			ok: false,
+			errors: {
+				confirmEmail: form.confirmEmail.trim()
+					? 'That is not the email on this account.'
+					: 'Type your email to confirm.'
+			}
+		};
+	}
+
+	const settings = await store.getSettings();
+	const upcoming = (await store.listAccountBookings(account.id, { from: now }))
+		.filter((b) => isLive(b) && b.startsAt.getTime() > now.getTime())
+		.sort((a, b) => a.startsAt.getTime() - b.startsAt.getTime());
+	const cancelled: CancelledLesson[] = [];
+	const target = (bookingId: string): CancelTarget => ({
+		kind: 'account',
+		bookingId,
+		accountId: account.id
+	});
+	for (const b of upcoming) {
+		const late = isLateCancel(b.status, b.startsAt, now, settings.cancelCutoffHours);
+		try {
+			await store.cancelBooking(target(b.id), late, now);
+		} catch (e) {
+			// Started or was decided in the meantime: nothing left to cancel.
+			if (e instanceof AccountStoreError && e.code === 'not_cancellable') continue;
+			throw e;
+		}
+		cancelled.push({ ...b, late });
+		await removeLessonFromCalendar(deps, b, settings);
+	}
+	// Stops the daily top-up; the occurrences were cancelled above.
+	for (const series of await store.listSeriesForAccount(account.id)) {
+		if (series.endedAt) continue;
+		for (const b of await store.endSeries(series.id, now, now)) {
+			cancelled.push({ ...b, late: false });
+			await removeLessonFromCalendar(deps, b, settings);
+		}
+	}
+
+	await store.deleteAccount(account.id, now);
+
+	if (settings.adminEmail) {
+		try {
+			await mailer.send(
+				accountDeletedEmail(
+					account.name,
+					cancelled,
+					settings.timezone,
+					settings.adminEmail,
+					`${appUrl}/admin/lessons`,
+					settings.cancelCutoffHours
+				)
+			);
+		} catch (e) {
+			console.error('Failed to send account deleted email', e);
+		}
+	}
+	return { ok: true, cancelled: cancelled.length };
 }

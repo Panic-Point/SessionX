@@ -4,19 +4,29 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { demoData } from '#lib/server/store/demo-data.ts';
 import { MemoryBookingStore } from '#lib/server/store/memory.ts';
 import type { Account } from '#lib/server/store/types.ts';
-import { actions as homeActions, load as homeLoad } from './+page.server';
+import { load as homeLoad } from './(tabs)/+page.server';
+import { actions as familyActions, load as familyLoad } from './(tabs)/family/+page.server';
+import { actions as securityActions, load as securityLoad } from './(tabs)/security/+page.server';
 import { actions as cancelActions, load as cancelLoad } from './cancel/[id]/+page.server';
 
 const ctx = vi.hoisted(() => ({ store: undefined as unknown as MemoryBookingStore }));
-vi.mock('#lib/server/context.ts', () => ({ getStore: () => ctx.store }));
+vi.mock('#lib/server/context.ts', () => ({
+	getStore: () => ctx.store,
+	getMailer: () => ({ send: async () => {} }),
+	getAppUrl: () => 'https://example.test',
+	getCalendar: () => undefined
+}));
 
 // Defense in depth: every /account load and action enforces the guard itself, because a data
 // request can skip layout loads. A signed-out visitor must be redirected before any store access.
 const handlers = {
 	'load /account': homeLoad,
-	'action /account?/addStudent': homeActions.addStudent,
-	'action /account?/renameStudent': homeActions.renameStudent,
-	'action /account?/password': homeActions.password,
+	'load /account/family': familyLoad,
+	'action /account/family?/addStudent': familyActions.addStudent,
+	'action /account/family?/renameStudent': familyActions.renameStudent,
+	'load /account/security': securityLoad,
+	'action /account/security?/password': securityActions.password,
+	'action /account/security?/deleteAccount': securityActions.deleteAccount,
 	'load /account/cancel/[id]': cancelLoad,
 	'action /account/cancel/[id]': cancelActions.default
 } as const;
@@ -98,6 +108,8 @@ describe('account lessons period', () => {
 			period: { label: string; error: string | null } | null;
 			inPeriod: { id: string; statusLabel: string }[] | null;
 			upcoming: { id: string }[];
+			student: { id: string; name: string } | null;
+			periodParams: Record<string, string>;
 		};
 	}
 
@@ -122,5 +134,79 @@ describe('account lessons period', () => {
 		const data = await home('period=custom&from=2026-11-20&to=2026-11-02');
 		expect(data.period?.error).toBeTruthy();
 		expect(data.inPeriod).toBeNull();
+	});
+
+	it("narrows to one of the family's students and keeps the period", async () => {
+		const BEN = '33333333-0000-0000-0000-0000000000b1';
+		const ben = await home(`student=${BEN}&period=month&date=${start.toFormat('yyyy-MM')}`);
+		expect(ben.student).toEqual({ id: BEN, name: 'Ben' });
+		expect(ben.periodParams).toEqual({ period: 'month', date: start.toFormat('yyyy-MM') });
+		expect(ben.inPeriod?.map((b) => b.id)).not.toContain(patBooking);
+		const ava = await home(`student=${AVA}`);
+		expect(ava.upcoming.map((b) => b.id)).toContain(patBooking);
+	});
+
+	it("ignores a student that isn't the family's", async () => {
+		const other = (await ctx.store.findAccountByEmail('other@example.com'))!;
+		const [zedStudent] = await ctx.store.listStudents(other.id);
+		const data = await home(`student=${zedStudent.id}`);
+		expect(data.student).toBeNull();
+		expect(data.upcoming.map((b) => b.id)).toContain(patBooking);
+	});
+});
+
+describe('/account/security delete account', () => {
+	const pat: Account = {
+		id: '22222222-0000-0000-0000-00000000000b',
+		name: 'Pat Parent',
+		email: 'parent@example.com',
+		role: 'client'
+	};
+
+	beforeEach(() => {
+		ctx.store = new MemoryBookingStore(demoData());
+	});
+
+	function event(fields: Record<string, string>) {
+		const body = new FormData();
+		for (const [k, v] of Object.entries(fields)) body.set(k, v);
+		const deleted: string[] = [];
+		return {
+			deleted,
+			event: {
+				locals: { account: pat },
+				cookies: { delete: (name: string) => deleted.push(name) },
+				request: new Request('http://localhost/account/security', { method: 'POST', body })
+			}
+		};
+	}
+
+	async function call(e: ReturnType<typeof event>['event']): Promise<unknown> {
+		try {
+			// eslint-disable-next-line @typescript-eslint/no-explicit-any
+			return await (securityActions.deleteAccount as any)(e);
+		} catch (err) {
+			return err;
+		}
+	}
+
+	it('keeps the account and session on a wrong password', async () => {
+		const { deleted, event: e } = event({ deletePassword: 'wrong-password' });
+		const result = await call(e);
+		expect(result).toMatchObject({
+			status: 400,
+			data: { target: 'delete', errors: { currentPassword: 'Current password is incorrect.' } }
+		});
+		expect(deleted).toEqual([]);
+		expect(await ctx.store.findAccountById(pat.id)).not.toBeNull();
+	});
+
+	it('deletes the account, signs out and goes home', async () => {
+		const { deleted, event: e } = event({ deletePassword: 'sessionx-parent-dev1' });
+		const result = await call(e);
+		expect(isRedirect(result)).toBe(true);
+		expect(result).toMatchObject({ status: 303, location: '/?accountDeleted=1' });
+		expect(deleted).toEqual(['sx_session']);
+		expect(await ctx.store.findAccountById(pat.id)).toBeNull();
 	});
 });

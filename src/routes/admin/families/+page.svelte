@@ -17,7 +17,11 @@
 		{#each data.families as f (f.id)}
 			<li class="card">
 				<h2><a href="/admin/families/{f.id}">{f.name}</a></h2>
-				<p class="meta"><a href="mailto:{f.email}">{f.email}</a></p>
+				{#if f.deleted}
+					<p class="meta">Deleted their account</p>
+				{:else}
+					<p class="meta"><a href="mailto:{f.email}">{f.email}</a></p>
+				{/if}
 				<p class="meta">
 					{f.studentNames.length > 0 ? f.studentNames.join(', ') : 'No students yet'}
 				</p>
