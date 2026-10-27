@@ -35,7 +35,7 @@
 </script>
 
 <svelte:head>
-	<title>Book a lesson · SessionX</title>
+	<title>Book a lesson · Brenda Sings</title>
 </svelte:head>
 
 {#snippet forStudent()}

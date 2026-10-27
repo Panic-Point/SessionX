@@ -1,13 +1,13 @@
 // Generates the app icons in static/icons/ as PNGs. Pure Node (zlib + a CRC32 table), no deps.
 // Run once with `node scripts/generate-icons.mjs` and commit the output.
 //
-// The mark is a white calendar on the accent blue (--accent in src/routes/+layout.svelte).
+// The mark is the Brenda Sings "BW" from src/lib/assets/favicon.svg: a white serif B and a coral
+// sound-wave W on plum (--brand in src/routes/+layout.svelte). Keep the two in step.
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { deflateSync } from 'node:zlib';
 
-const ACCENT = [0x0b, 0x6b, 0xcb];
-const ACCENT_DARK = [0x09, 0x57, 0xa6];
-const ACCENT_SOFT = [0xb9, 0xd3, 0xf0];
+const PLUM = [0x4a, 0x21, 0x60];
+const CORAL = [0xf2, 0x69, 0x4f];
 const WHITE = [0xff, 0xff, 0xff];
 
 // ---------- PNG encoding ----------
@@ -64,22 +64,92 @@ function inRoundRect(x, y, x0, y0, x1, y1, r) {
 	return (x - cx) ** 2 + (y - cy) ** 2 <= r * r;
 }
 
-/** Colour of the calendar glyph at (u, v) in its own 0..1 box, or null if transparent. */
-function glyph(u, v) {
-	// Binder rings sit above the page.
-	if (inRoundRect(u, v, 0.27, 0.08, 0.35, 0.28, 0.04)) return WHITE;
-	if (inRoundRect(u, v, 0.65, 0.08, 0.73, 0.28, 0.04)) return WHITE;
-	if (!inRoundRect(u, v, 0.1, 0.18, 0.9, 0.9, 0.09)) return null;
-	if (v < 0.37) return ACCENT_DARK; // header band
-	// A 3x2 grid of days; one is "booked".
-	for (const [row, cy] of [0.53, 0.73].entries()) {
-		for (const [col, cx] of [0.3, 0.5, 0.7].entries()) {
-			if (inRoundRect(u, v, cx - 0.065, cy - 0.065, cx + 0.065, cy + 0.065, 0.025)) {
-				return row === 0 && col === 1 ? ACCENT : ACCENT_SOFT;
+// The B outline in the favicon's 64-unit box (DM Serif Display, converted to M/L/Q/Z commands).
+const B_PATH =
+	'M17.14 47L5.97 47L5.97 46.56L6.76 46.25Q7.64 45.90 7.97 45.37Q8.30 44.84 8.30 43.96L8.30 43.96L8.30 21.00Q8.30 20.07 7.97 19.54Q7.64 19.02 6.76 18.71L6.76 18.71L5.97 18.40L5.97 17.96L18.60 17.96Q23.96 17.96 26.34 19.92Q28.72 21.88 28.72 24.87L28.72 24.87Q28.72 27.11 26.98 28.94Q25.24 30.76 21.02 31.51L21.02 31.51Q25.86 32.04 28.10 34.04Q30.34 36.04 30.34 38.90L30.34 38.90Q30.34 40.31 29.73 41.74Q29.11 43.17 27.64 44.36Q26.16 45.55 23.61 46.27Q21.06 47 17.14 47L17.14 47ZM14.81 18.84L14.81 31.47L16.70 31.47Q19.65 31.47 20.95 30.10Q22.25 28.74 22.25 25.35L22.25 25.35Q22.25 21.83 21.06 20.34Q19.87 18.84 17.19 18.84L17.19 18.84L14.81 18.84ZM14.81 32.35L14.81 46.12L17.01 46.12Q20.31 46.12 21.92 44.36Q23.52 42.60 23.52 38.86L23.52 38.86Q23.52 35.34 21.98 33.84Q20.44 32.35 16.92 32.35L16.92 32.35L14.81 32.35Z';
+
+/** Flattens absolute M/L/Q/Z path data into closed polygons of [x, y] points. */
+function toPolygons(d) {
+	const polygons = [];
+	let poly = [];
+	let [x, y] = [0, 0];
+	for (const [, cmd, args] of d.matchAll(/([MLQZ])([^MLQZ]*)/g)) {
+		const n = args.trim()
+			? args
+					.trim()
+					.split(/[\s,]+/)
+					.map(Number)
+			: [];
+		if (cmd === 'M') {
+			if (poly.length) polygons.push(poly);
+			poly = [[(x = n[0]), (y = n[1])]];
+		} else if (cmd === 'L') {
+			poly.push([(x = n[0]), (y = n[1])]);
+		} else if (cmd === 'Q') {
+			const [x0, y0] = [x, y];
+			for (let t = 1 / 8; t <= 1.0001; t += 1 / 8) {
+				const s = 1 - t;
+				poly.push([
+					s * s * x0 + 2 * s * t * n[0] + t * t * n[2],
+					s * s * y0 + 2 * s * t * n[1] + t * t * n[3]
+				]);
 			}
+			[x, y] = [n[2], n[3]];
+		} else if (poly.length) {
+			polygons.push(poly);
+			poly = [];
 		}
 	}
-	return WHITE;
+	if (poly.length) polygons.push(poly);
+	return polygons;
+}
+
+const B_POLYGONS = toPolygons(B_PATH);
+
+/** Even-odd fill test, so the counters of the B stay open. */
+function inPolygons(x, y, polygons) {
+	let inside = false;
+	for (const poly of polygons) {
+		for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+			const [xi, yi] = poly[i];
+			const [xj, yj] = poly[j];
+			if (yi > y !== yj > y && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi) inside = !inside;
+		}
+	}
+	return inside;
+}
+
+// The W: a polyline stroked 4 units wide with round joins and caps.
+const WAVE = [
+	[33, 22],
+	[38, 42],
+	[43, 30],
+	[48, 42],
+	[53, 22],
+	[56, 32]
+];
+const WAVE_HALF_WIDTH = 2;
+
+function nearPolyline(x, y, points, r) {
+	for (let i = 1; i < points.length; i++) {
+		const [ax, ay] = points[i - 1];
+		const [bx, by] = points[i];
+		const t = Math.max(
+			0,
+			Math.min(1, ((x - ax) * (bx - ax) + (y - ay) * (by - ay)) / ((bx - ax) ** 2 + (by - ay) ** 2))
+		);
+		if ((x - ax - t * (bx - ax)) ** 2 + (y - ay - t * (by - ay)) ** 2 <= r * r) return true;
+	}
+	return false;
+}
+
+/** Colour of the mark at (u, v) in its own 0..1 box, or null to show the plum background. */
+function glyph(u, v) {
+	const x = u * 64;
+	const y = v * 64;
+	if (nearPolyline(x, y, WAVE, WAVE_HALF_WIDTH)) return CORAL;
+	if (x < 30.5 && y > 17.9 && y < 47.1 && inPolygons(x, y, B_POLYGONS)) return WHITE;
+	return null;
 }
 
 /**
@@ -102,7 +172,7 @@ function render(size, { glyphBox, bgRadius }) {
 					const x = (px + (sx + 0.5) / SS) / size;
 					const y = (py + (sy + 0.5) / SS) / size;
 					if (bgRadius > 0 && !inRoundRect(x, y, 0, 0, 1, 1, bgRadius)) continue;
-					const colour = glyph((x - g0) / glyphBox, (y - g0) / glyphBox) ?? ACCENT;
+					const colour = glyph((x - g0) / glyphBox, (y - g0) / glyphBox) ?? PLUM;
 					r += colour[0];
 					g += colour[1];
 					b += colour[2];
@@ -127,14 +197,14 @@ const outDir = new URL('../static/icons/', import.meta.url);
 mkdirSync(outDir, { recursive: true });
 
 const icons = [
-	// "any" icons: rounded tile, glyph fills most of it.
-	['icon-192.png', 192, { glyphBox: 0.72, bgRadius: 0.22 }],
-	['icon-512.png', 512, { glyphBox: 0.72, bgRadius: 0.22 }],
-	// Maskable: full bleed; the glyph's corners stay inside the central 80% safe circle
-	// (content spans 0.8 x 0.66 = 0.53 of the canvas; half-diagonal 0.37 < 0.40).
-	['icon-maskable-512.png', 512, { glyphBox: 0.66, bgRadius: 0 }],
+	// "any" icons: rounded tile laid out exactly like favicon.svg.
+	['icon-192.png', 192, { glyphBox: 1, bgRadius: 0.22 }],
+	['icon-512.png', 512, { glyphBox: 1, bgRadius: 0.22 }],
+	// Maskable: full bleed; the mark stays inside the central 80% safe circle
+	// (at 0.8 scale the farthest point, a corner of the B, is 0.38 from the centre < 0.40).
+	['icon-maskable-512.png', 512, { glyphBox: 0.8, bgRadius: 0 }],
 	// iOS shows transparency as black and rounds corners itself, so stay opaque and square.
-	['apple-touch-icon.png', 180, { glyphBox: 0.72, bgRadius: 0 }]
+	['apple-touch-icon.png', 180, { glyphBox: 0.9, bgRadius: 0 }]
 ];
 
 for (const [name, size, opts] of icons) {

@@ -9,12 +9,12 @@
 </script>
 
 <svelte:head>
-	<title>You're offline · SessionX</title>
+	<title>You're offline · Brenda Sings</title>
 </svelte:head>
 
 <main class="offline">
 	<h1>You're offline</h1>
-	<p>SessionX needs a connection to show lessons and bookings. Check your signal or Wi-Fi.</p>
+	<p>Brenda Sings needs a connection to show lessons and bookings. Check your signal or Wi-Fi.</p>
 	<a class="retry" href="/" data-sveltekit-reload onclick={tryAgain}>Try again</a>
 </main>
 

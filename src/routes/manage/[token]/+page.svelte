@@ -14,7 +14,7 @@
 </script>
 
 <svelte:head>
-	<title>Your lesson · SessionX</title>
+	<title>Your lesson · Brenda Sings</title>
 	<meta name="robots" content="noindex" />
 </svelte:head>
 

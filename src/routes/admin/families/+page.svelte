@@ -5,7 +5,7 @@
 </script>
 
 <svelte:head>
-	<title>Families · Admin · SessionX</title>
+	<title>Families · Admin · Brenda Sings</title>
 </svelte:head>
 
 <h1>Families</h1>

@@ -100,7 +100,7 @@
 </script>
 
 <svelte:head>
-	<title>{data.family.name} · Admin · SessionX</title>
+	<title>{data.family.name} · Admin · Brenda Sings</title>
 </svelte:head>
 
 <p><a href="/admin/families">&larr; Families</a></p>

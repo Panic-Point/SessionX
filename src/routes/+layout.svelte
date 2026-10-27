@@ -1,5 +1,6 @@
 <script lang="ts">
 	import favicon from '#lib/assets/favicon.svg';
+	import logo from '#lib/assets/logo-inline.svg';
 	import { page } from '$app/state';
 	import type { LayoutProps } from './$types';
 
@@ -9,6 +10,8 @@
 	const showLink = $derived(
 		!page.url.pathname.startsWith('/admin') && !page.url.pathname.startsWith('/login')
 	);
+	// The home page shows the full logo itself.
+	const showLogo = $derived(page.url.pathname !== '/');
 </script>
 
 <svelte:head>
@@ -17,35 +20,42 @@
 </svelte:head>
 
 <div class="app">
-	{#if showLink}
-		<nav class="account-link" aria-label="Account">
-			{#if data.viewer === 'admin'}
-				<a href="/admin">Admin</a>
-			{:else if data.viewer === 'client'}
-				<a href="/account" aria-current={page.url.pathname === '/account' ? 'page' : undefined}
-					>My lessons</a
-				>
-				<form method="POST" action="/logout">
-					<button type="submit">Sign out</button>
-				</form>
-			{:else}
-				<a href="/login">Sign in</a>
-			{/if}
-		</nav>
-	{/if}
+	<header class="site-header">
+		{#if showLogo}
+			<a class="brand" href="/"><img src={logo} alt="Brenda Sings" width="170" height="32" /></a>
+		{/if}
+		{#if showLink}
+			<nav class="account-link" aria-label="Account">
+				{#if data.viewer === 'admin'}
+					<a href="/admin">Admin</a>
+				{:else if data.viewer === 'client'}
+					<a href="/account" aria-current={page.url.pathname === '/account' ? 'page' : undefined}
+						>My lessons</a
+					>
+					<form method="POST" action="/logout">
+						<button type="submit">Sign out</button>
+					</form>
+				{:else}
+					<a href="/login">Sign in</a>
+				{/if}
+			</nav>
+		{/if}
+	</header>
 	{@render children()}
 </div>
 
 <style>
 	:global(:root) {
-		--bg: #f6f7f9;
+		/* Brand colours from the Brenda Sings logo (src/lib/assets/logo.svg). */
+		--brand: #4a2160;
+		--bg: #f8f6f7;
 		--surface: #ffffff;
-		--text: #1a1d23;
-		--muted: #5f6672;
-		--border: #e2e5ea;
-		--accent: #0b6bcb;
-		--accent-hover: #0957a6;
-		--accent-soft: #e6f0fb;
+		--text: #1d1a21;
+		--muted: #645f6c;
+		--border: #e6e1e7;
+		--accent: var(--brand);
+		--accent-hover: #391850;
+		--accent-soft: #f3ecf6;
 		--danger: #b42318;
 		--radius: 12px;
 		--tap: 44px;
@@ -89,10 +99,32 @@
 		padding-bottom: calc(1rem + env(safe-area-inset-bottom));
 	}
 
+	.site-header {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 0.5rem;
+		min-height: var(--tap);
+		margin-bottom: 0.5rem;
+	}
+
+	.brand {
+		display: inline-flex;
+		align-items: center;
+		min-height: var(--tap);
+	}
+
+	.brand img {
+		display: block;
+		width: auto;
+		height: 2rem;
+	}
+
 	.account-link {
 		display: flex;
 		justify-content: flex-end;
 		gap: 0.25rem;
+		margin-left: auto;
 	}
 
 	.account-link a,
@@ -114,6 +146,10 @@
 	@media (min-width: 768px) {
 		.app {
 			padding: 2rem;
+		}
+
+		.brand img {
+			height: 2.5rem;
 		}
 	}
 </style>

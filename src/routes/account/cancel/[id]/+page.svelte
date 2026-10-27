@@ -6,7 +6,7 @@
 </script>
 
 <svelte:head>
-	<title>Cancel lesson · SessionX</title>
+	<title>Cancel lesson · Brenda Sings</title>
 </svelte:head>
 
 <CancelLesson lesson={data.lesson} backHref="/account" message={form?.message} />

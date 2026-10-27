@@ -11,7 +11,7 @@
 </script>
 
 <svelte:head>
-	<title>Reset password · SessionX</title>
+	<title>Reset password · Brenda Sings</title>
 </svelte:head>
 
 <AuthCard title="Reset your password">

@@ -14,7 +14,7 @@
 </script>
 
 <svelte:head>
-	<title>Register · SessionX</title>
+	<title>Register · Brenda Sings</title>
 </svelte:head>
 
 <AuthCard title={form?.sent ? 'Check your email' : 'Register'}>

@@ -46,7 +46,7 @@
 </script>
 
 <svelte:head>
-	<title>Lesson types · Admin · SessionX</title>
+	<title>Lesson types · Admin · Brenda Sings</title>
 </svelte:head>
 
 {#snippet fields(prefix: string, values: Values, errors: Errors)}

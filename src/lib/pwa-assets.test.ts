@@ -33,7 +33,7 @@ describe('manifest.webmanifest', () => {
 	const manifest = JSON.parse(readFileSync(new URL('manifest.webmanifest', staticDir), 'utf8'));
 
 	it('describes a standalone app that starts on the home page', () => {
-		expect(manifest.name).toBe('SessionX');
+		expect(manifest.name).toBe('Brenda Sings');
 		expect(manifest.short_name).toBeTruthy();
 		expect(manifest.display).toBe('standalone');
 		expect(manifest.start_url).toBe('/');
