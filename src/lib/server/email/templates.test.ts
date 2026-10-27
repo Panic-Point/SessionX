@@ -6,7 +6,9 @@ import {
 	cancellationNoticeEmail,
 	loginLinkEmail,
 	newRequestEmail,
+	passwordResetEmail,
 	requestReceivedEmail,
+	verifyRegistrationEmail,
 	type BookingEmailData
 } from './templates';
 
@@ -100,6 +102,30 @@ describe('new templates', () => {
 		expect(m.subject).toBe('Your SessionX sign-in link');
 		expect(m.text).toContain('https://x.test/login/verify?token=abc');
 		expect(m.html).toContain('https://x.test/login/verify?token=abc');
+	});
+});
+
+describe('password templates', () => {
+	it('registration verification email carries the link and escapes the name', () => {
+		const url = 'https://x.test/register/verify?token=abc';
+		const m = verifyRegistrationEmail('a@b.com', 'Ann <b>', url);
+		expect(m.to).toBe('a@b.com');
+		expect(m.subject).toBe('Finish creating your SessionX account');
+		expect(m.text).toContain(url);
+		expect(m.text).toContain('24 hours');
+		expect(m.html).toContain(url);
+		expect(m.html).toContain('Ann &lt;b&gt;');
+		expect(m.html).not.toContain('<b>');
+	});
+
+	it('password reset email carries the link and the 30-minute expiry', () => {
+		const url = 'https://x.test/login/reset/complete?token=abc';
+		const m = passwordResetEmail('a@b.com', 'Ann', url);
+		expect(m.to).toBe('a@b.com');
+		expect(m.subject).toBe('Reset your SessionX password');
+		expect(m.text).toContain(url);
+		expect(m.text).toContain('30 minutes');
+		expect(m.html).toContain(url);
 	});
 });
 

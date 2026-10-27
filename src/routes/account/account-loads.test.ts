@@ -9,6 +9,7 @@ const handlers = {
 	'load /account': homeLoad,
 	'action /account?/addStudent': homeActions.addStudent,
 	'action /account?/renameStudent': homeActions.renameStudent,
+	'action /account?/password': homeActions.password,
 	'load /account/cancel/[id]': cancelLoad,
 	'action /account/cancel/[id]': cancelActions.default
 } as const;

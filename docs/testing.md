@@ -42,10 +42,17 @@ addresses all work.
 
 ## 1. Signing in
 
-There are no passwords. You enter your email and get a one-time sign-in link.
+You can sign in with a password, or enter your email and get a one-time sign-in link. Any account
+can use either. The seeded family account has the dev password `sessionx-parent-dev`.
+
+**With a password:** go to http://localhost:5173/login, enter `parent@example.com` and
+`sessionx-parent-dev`, and click **Sign in**. You land on **My lessons** at `/account`.
+
+**With an emailed link:**
 
 1. Click **Sign in** (top right), or go to http://localhost:5173/login.
-2. Enter `admin@sessionx.local` and click **Email me a sign-in link**.
+2. Click **Email me a sign-in link instead**, enter `admin@sessionx.local` and click **Email me a
+   sign-in link**.
 3. The page says "Check your email". Open Mailpit (or the terminal) and find **Your SessionX
    sign-in link**.
 4. Open the link. You see a **Sign in to SessionX** button; click it.
@@ -69,6 +76,26 @@ Things to check:
 
 A guest who books a lesson (section 4) gets a family account automatically, so they can sign in
 with that email afterwards too.
+
+### Passwords and registration
+
+- **Register:** signed out, click **New here? Register** on the sign-in page. Enter a name, a new
+  email, and a password of at least 10 characters twice. The page says "Check your email to finish
+  creating your account". Open **Finish creating your SessionX account** in Mailpit, follow the
+  link and click **Confirm and sign in**. You land on `/account`.
+- **Existing family's email:** register again with `parent@example.com`. You see the same message,
+  and the old password keeps working until the emailed link is used. After that, the new password
+  works, the account is still named Pat Parent, and Ava and Ben are still there.
+- **Wrong password:** a wrong password, an unknown email and an account with no password all show
+  "Email or password is incorrect." After 5 failures in 15 minutes the form refuses even the right
+  password and suggests the emailed link instead.
+- **Forgot password:** click **Forgot password?**, enter the email, and open **Reset your SessionX
+  password** in Mailpit (valid 30 minutes, once). Choose a new password; you are signed in and the
+  old password stops working. A reset also lifts a lockout.
+- **Set or change a password:** on `/account`, the **Password** section sets a first password, or
+  changes it (the current password is required).
+- **Weak passwords:** fewer than 10 characters, or a common one such as `qwertyuiop`, is rejected
+  next to the field.
 
 ## 2. Lesson types and prices (admin)
 

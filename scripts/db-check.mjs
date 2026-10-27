@@ -499,6 +499,137 @@ await check('anon cannot execute either function', async () => {
 	}
 });
 
+// ---- passwords: registration and reset tokens, failure tracking ----
+const PARENT = '22222222-0000-0000-0000-00000000000b';
+const ADMIN = '22222222-0000-0000-0000-00000000000a';
+const addRegistration = (hash, email, name, pw, expires = '2030-01-01Z') =>
+	db.query(
+		`insert into password_tokens (token_hash, purpose, email, name, password_hash, expires_at)
+		 values ($1, 'register', $2, $3, $4, $5)`,
+		[hash, email, name, pw, expires]
+	);
+const addReset = (hash, accountId, expires = '2030-01-01Z') =>
+	db.query(
+		`insert into password_tokens (token_hash, purpose, account_id, expires_at)
+		 values ($1, 'reset', $2, $3)`,
+		[hash, accountId, expires]
+	);
+const completeRegistration = async (hash, now = '2026-11-01Z') =>
+	(await db.query('select complete_registration($1, $2) id', [hash, now])).rows[0].id;
+const completeReset = async (hash, pw, now = '2026-11-01Z') =>
+	(await db.query('select complete_password_reset($1, $2, $3) id', [hash, pw, now])).rows[0].id;
+const passwordOf = async (id) =>
+	(await db.query('select password_hash from accounts where id = $1', [id])).rows[0]?.password_hash;
+
+await check('seed gives parent@example.com the dev password', async () => {
+	assert((await passwordOf(PARENT))?.startsWith('pbkdf2-sha256$100000$'), 'parent hash');
+	assert((await passwordOf(ADMIN)) === null, 'admin has no password');
+});
+
+await check('password_tokens and password_failures have RLS and no policies', async () => {
+	for (const t of ['password_tokens', 'password_failures']) {
+		const { rows } = await db.query(
+			`select relrowsecurity rls, (select count(*)::int from pg_policies where tablename = $1) policies
+			   from pg_class where oid = ('public.' || $1)::regclass`,
+			[t]
+		);
+		assert(rows[0].rls === true && rows[0].policies === 0, `${t}: ${JSON.stringify(rows[0])}`);
+	}
+});
+
+await check('a reset token cannot carry registration columns', () =>
+	expectCode(
+		() =>
+			db.query(
+				`insert into password_tokens (token_hash, purpose, account_id, email, expires_at)
+				 values ('x', 'reset', $1, 'a@b.c', '2030-01-01Z')`,
+				[PARENT]
+			),
+		'23514'
+	)
+);
+
+await check('a registration token needs its name and password hash', () =>
+	expectCode(
+		() =>
+			db.query(
+				`insert into password_tokens (token_hash, purpose, email, expires_at)
+				 values ('y', 'register', 'a@b.c', '2030-01-01Z')`
+			),
+		'23514'
+	)
+);
+
+await check('registration creates a client account only when the link is used', async () => {
+	await addRegistration('r1', 'new@example.com', 'New Family', 'pw-new');
+	const before = await db.query(`select 1 from accounts where email = 'new@example.com'`);
+	assert(before.rows.length === 0, 'account created early');
+	const id = await completeRegistration('r1');
+	const { rows } = await db.query(
+		'select name, role, password_hash, email_verified_at from accounts where id = $1',
+		[id]
+	);
+	assert(rows[0].name === 'New Family' && rows[0].role === 'client', JSON.stringify(rows[0]));
+	assert(rows[0].password_hash === 'pw-new' && rows[0].email_verified_at, 'password not active');
+	assert((await completeRegistration('r1')) === null, 'token reused');
+});
+
+await check('registration for an existing email keeps name, role and students', async () => {
+	await addRegistration('r2', 'PARENT@example.com', 'Impostor', 'pw-2');
+	assert((await completeRegistration('r2')) === PARENT, 'wrong account');
+	const { rows } = await db.query('select name, role from accounts where id = $1', [PARENT]);
+	assert(rows[0].name === 'Pat Parent' && rows[0].role === 'client', JSON.stringify(rows[0]));
+	assert((await passwordOf(PARENT)) === 'pw-2', 'password not replaced');
+	const students = await db.query('select count(*)::int n from students where account_id = $1', [
+		PARENT
+	]);
+	assert(students.rows[0].n === 2, 'students changed');
+});
+
+await check('expired and wrong-purpose tokens return null and change nothing', async () => {
+	await addRegistration('r3', 'late@example.com', 'Late', 'pw', '2026-11-01Z');
+	assert((await completeRegistration('r3', '2026-11-01Z')) === null, 'expired accepted');
+	await addReset('s1', PARENT);
+	assert((await completeRegistration('s1')) === null, 'reset used as registration');
+	assert((await completeReset('r3', 'pw-x')) === null, 'registration used as reset');
+	assert((await completeReset('s1', 'pw-reset')) === PARENT, 'reset token was consumed');
+});
+
+await check('reset sets the password, voids other tokens and clears the lockout', async () => {
+	await addReset('s2', PARENT);
+	await addReset('s3', PARENT);
+	await addRegistration('r4', 'parent@example.com', 'P', 'pw-reg');
+	await db.query(
+		`insert into password_failures (email, failed_at) values ('Parent@Example.com', now()), ('other@example.com', now())`
+	);
+	assert((await completeReset('s2', 'pw-reset')) === PARENT, 'reset failed');
+	assert((await passwordOf(PARENT)) === 'pw-reset', 'password not set');
+	assert((await completeReset('s3', 'pw-other')) === null, 'other reset token still usable');
+	assert((await completeRegistration('r4')) === null, 'pending registration still usable');
+	const { rows } = await db.query('select email::text from password_failures');
+	assert(rows.length === 1 && rows[0].email === 'other@example.com', JSON.stringify(rows));
+});
+
+await check('only service_role can complete registrations and resets', async () => {
+	for (const sig of [
+		'complete_registration(text,timestamptz)',
+		'complete_password_reset(text,text,timestamptz)'
+	]) {
+		const { rows } = await db.query(
+			`select has_function_privilege('anon', '${sig}', 'execute') anon,
+			        has_function_privilege('authenticated', '${sig}', 'execute') authenticated,
+			        has_function_privilege('service_role', '${sig}', 'execute') service_role`
+		);
+		assert(rows[0].anon === false, `anon can execute ${sig}`);
+		assert(rows[0].authenticated === false, `authenticated can execute ${sig}`);
+		assert(rows[0].service_role === true, `service_role cannot execute ${sig}`);
+	}
+	const { rows } = await db.query(
+		`select has_function_privilege('service_role', 'password_link_used(uuid,citext,timestamptz)', 'execute') ok`
+	);
+	assert(rows[0].ok === false, 'service_role can call the internal helper');
+});
+
 // Supabase's pg_safeupdate rejects DELETE/UPDATE without a WHERE, even inside functions.
 await check('migrations have no DELETE without a WHERE clause', () => {
 	for (const f of readdirSync(migDir)) {
