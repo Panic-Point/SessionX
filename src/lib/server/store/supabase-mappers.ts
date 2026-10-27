@@ -11,6 +11,7 @@ import {
 	type DateOverrideWithNote,
 	type LessonType,
 	type LiveBooking,
+	type PasswordTokenData,
 	type Student,
 	type StudentPrice,
 	type StudioSettings
@@ -164,6 +165,38 @@ export function mapRpcError(error: { code?: string; message?: string }): Booking
 		default:
 			return null;
 	}
+}
+
+export interface PasswordTokenInsertRow {
+	token_hash: string;
+	purpose: PasswordTokenData['purpose'];
+	account_id: string | null;
+	email: string | null;
+	name: string | null;
+	password_hash: string | null;
+	expires_at: string;
+}
+
+/** Fills only the columns the token's purpose allows (see the password_tokens check). */
+export function toPasswordTokenRow(
+	tokenHash: string,
+	data: PasswordTokenData,
+	expiresAt: Date
+): PasswordTokenInsertRow {
+	const base = {
+		token_hash: tokenHash,
+		purpose: data.purpose,
+		expires_at: expiresAt.toISOString()
+	};
+	return data.purpose === 'register'
+		? {
+				...base,
+				account_id: null,
+				email: data.email.trim().toLowerCase(),
+				name: data.name,
+				password_hash: data.passwordHash
+			}
+		: { ...base, account_id: data.accountId, email: null, name: null, password_hash: null };
 }
 
 export function mapAccountRow(row: AccountRow): Account {

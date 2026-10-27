@@ -23,7 +23,7 @@ Success = a parent or student books from their phone in under a minute, and the 
 ## Decisions made in conversation
 
 - **Single teacher, single location** (the teacher's studio). No travel time, no addresses.
-- **Accounts and students:** one **account** (usually a parent, identified by email) can have **multiple students** (e.g. siblings). A first booking needs only the account holder's **name and email**, plus who the lesson is for. Accounts can later sign in with an **emailed magic link** (no passwords). Booking history and pricing attach by email whether or not they've signed in yet.
+- **Accounts and students:** one **account** (usually a parent, identified by email) can have **multiple students** (e.g. siblings). A first booking needs only the account holder's **name and email**, plus who the lesson is for. Accounts can later sign in with an **emailed magic link** or, once they set one, a **password** (issue #21: registration and passwords only take effect after the email is verified by a link). Booking history and pricing attach by email whether or not they've signed in yet.
 - **Payment:** collected manually. Admin can **mark a lesson paid**.
 - **Phone/text bookings are not handled** by the app.
 - **Confirmed:** a pending request **holds its slot**. Students get **email on approve/decline**. Students **can cancel**.
@@ -47,7 +47,7 @@ Success = a parent or student books from their phone in under a minute, and the 
 
 - **SvelteKit** with `@sveltejs/adapter-cloudflare`, deployed to Cloudflare Pages from GitHub `main`. The domain is pointed at Cloudflare.
 - **All DB access server-side** (`+page.server.ts` / `+server.ts`, Supabase service-role key). The browser never queries Supabase directly. RLS stays on with no anon policies as defense-in-depth. Price resolution happens on the server, and only the resolved price for the current viewer is sent to the page.
-- **Auth:** Supabase Auth magic links for accounts and the admin. The admin is an account with `role = 'admin'` (seeded by email). Supabase Auth uses **Resend as custom SMTP**.
+- **Auth:** custom sign-in (not Supabase Auth): emailed magic links, plus optional passwords (PBKDF2-SHA256 via Web Crypto, verified email required, 5 failed attempts per 15 minutes per email). Both set the same signed `sx_session` cookie, for accounts and the admin. The admin is an account with `role = 'admin'` (seeded by email). Supabase Auth uses **Resend as custom SMTP**.
 - **Email adapter** (`email.ts`) with two backends: Resend API in production, SMTP to the local **Mailpit/Inbucket** in Docker.
 - **Google Calendar:** a **service account**. The teacher shares their calendars with its email. On approve → create event. On cancel/decline → delete it. Availability calls `freebusy.query` on the admin-configured calendar IDs. Worker-compatible: JWT signed with Web Crypto, REST via `fetch`. Locally, a stub implementation is used unless credentials are set.
 - **Bot check:** Cloudflare Turnstile on the guest form (test keys locally).

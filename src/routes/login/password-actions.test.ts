@@ -1,0 +1,216 @@
+import { isActionFailure, isRedirect } from '@sveltejs/kit';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import type { EmailMessage } from '#lib/server/email/mailer.ts';
+import { demoData } from '#lib/server/store/demo-data.ts';
+import { MemoryBookingStore } from '#lib/server/store/memory.ts';
+
+const ctx = vi.hoisted(() => ({
+	store: undefined as unknown as MemoryBookingStore,
+	sent: [] as EmailMessage[],
+	background: [] as Promise<unknown>[]
+}));
+vi.mock('#lib/server/background.ts', () => ({
+	runInBackground: (task: Promise<unknown>) => void ctx.background.push(task)
+}));
+vi.mock('$app/env', () => ({ dev: true }));
+vi.mock('$app/env/private', () => ({
+	TURNSTILE_SITE_KEY: undefined,
+	TURNSTILE_SECRET_KEY: undefined
+}));
+vi.mock('#lib/server/context.ts', () => ({
+	getStore: () => ctx.store,
+	getMailer: () => ({ send: async (m: EmailMessage) => void ctx.sent.push(m) }),
+	getAppUrl: () => 'https://example.test',
+	getSessionSecret: () => 'test-secret'
+}));
+
+const login = await import('./+page.server');
+const reset = await import('./reset/+page.server');
+const resetComplete = await import('./reset/complete/+page.server');
+const register = await import('../register/+page.server');
+const registerVerify = await import('../register/verify/+page.server');
+
+function cookieJar() {
+	const set = new Map<string, string>();
+	return { set, cookies: { set: (name: string, value: string) => void set.set(name, value) } };
+}
+
+async function post(
+	// eslint-disable-next-line @typescript-eslint/no-explicit-any
+	action: (event: any) => unknown,
+	fields: Record<string, string>
+): Promise<{ result: unknown; cookies: Map<string, string> }> {
+	const body = new FormData();
+	for (const [k, v] of Object.entries(fields)) body.set(k, v);
+	const jar = cookieJar();
+	const event = {
+		request: new Request('http://localhost/x', { method: 'POST', body }),
+		cookies: jar.cookies,
+		getClientAddress: () => '127.0.0.1',
+		locals: { account: null }
+	};
+	try {
+		return { result: await action(event), cookies: jar.set };
+	} catch (e) {
+		return { result: e, cookies: jar.set };
+	}
+}
+
+/** Waits for the background email that carries a `path` link, and returns its token. */
+async function emailedToken(to: string, path: string): Promise<string> {
+	const re = new RegExp(`${path}\\?token=([A-Za-z0-9_-]+)`);
+	return vi.waitFor(() => {
+		const m = ctx.sent.find((e) => e.to === to && re.test(e.text));
+		expect(m).toBeDefined();
+		return re.exec(m!.text)![1];
+	});
+}
+
+beforeEach(() => {
+	ctx.store = new MemoryBookingStore(demoData());
+	ctx.sent = [];
+});
+
+// Let each test's background emails finish before the next test swaps the store.
+afterEach(async () => {
+	await Promise.all(ctx.background.splice(0));
+});
+
+describe('password sign-in action', () => {
+	it('signs in with the right password and lands on /account', async () => {
+		const { result, cookies } = await post(login.actions.password, {
+			email: 'parent@example.com',
+			password: 'sessionx-parent-dev'
+		});
+		expect(isRedirect(result)).toBe(true);
+		expect(result).toMatchObject({ status: 303, location: '/account' });
+		expect(cookies.get('sx_session')).toBeTruthy();
+	});
+
+	it('answers wrong password, no password and unknown email identically', async () => {
+		const answers = [];
+		for (const email of ['parent@example.com', 'admin@sessionx.local', 'nobody@example.com']) {
+			const { result, cookies } = await post(login.actions.password, {
+				email,
+				password: 'not the password'
+			});
+			expect(isActionFailure(result)).toBe(true);
+			expect(cookies.size).toBe(0);
+			answers.push({ ...(result as { data: Record<string, unknown> }).data, email: undefined });
+		}
+		expect(answers[0]).toMatchObject({ error: 'Email or password is incorrect.', locked: false });
+		expect(answers[1]).toEqual(answers[0]);
+		expect(answers[2]).toEqual(answers[0]);
+	});
+
+	it('refuses the 6th attempt even with the right password', async () => {
+		for (let i = 0; i < 5; i++) {
+			await post(login.actions.password, { email: 'parent@example.com', password: 'wrong guess' });
+		}
+		const { result, cookies } = await post(login.actions.password, {
+			email: 'parent@example.com',
+			password: 'sessionx-parent-dev'
+		});
+		expect(isActionFailure(result)).toBe(true);
+		expect(result).toMatchObject({
+			data: { error: 'Email or password is incorrect.', locked: true }
+		});
+		expect(cookies.size).toBe(0);
+	});
+
+	it('asks for missing fields', async () => {
+		const { result } = await post(login.actions.password, { email: '', password: '' });
+		expect(result).toMatchObject({
+			status: 400,
+			data: { errors: { email: 'Enter your email address.', password: 'Enter your password.' } }
+		});
+	});
+
+	it('the emailed-link form still works', async () => {
+		const { result } = await post(login.actions.link, { email: 'parent@example.com' });
+		expect(result).toEqual({ mode: 'link', sent: true });
+		expect(await emailedToken('parent@example.com', '/login/verify')).toBeTruthy();
+	});
+});
+
+describe('registration actions', () => {
+	const fields = (email: string) => ({
+		name: 'Robin',
+		email,
+		password: 'a brand new passphrase',
+		confirmPassword: 'a brand new passphrase'
+	});
+
+	it('answers the same for new and existing emails, and changes nothing yet', async () => {
+		const known = await post(register.actions.default, fields('parent@example.com'));
+		const unknown = await post(register.actions.default, fields('robin@example.com'));
+		expect(known.result).toEqual({ sent: true });
+		expect(unknown.result).toEqual(known.result);
+		expect(known.cookies.size + unknown.cookies.size).toBe(0);
+		expect(await ctx.store.findAccountByEmail('robin@example.com')).toBeNull();
+		expect(await ctx.store.findAccountByEmail('parent@example.com')).toMatchObject({
+			name: 'Pat Parent'
+		});
+		await emailedToken('parent@example.com', '/register/verify');
+		await emailedToken('robin@example.com', '/register/verify');
+	});
+
+	it('the verification link signs the new family in on /account', async () => {
+		await post(register.actions.default, fields('robin@example.com'));
+		const token = await emailedToken('robin@example.com', '/register/verify');
+
+		expect(
+			registerVerify.load({ url: new URL(`https://x/register/verify?token=${token}`) } as never)
+		).toEqual({
+			token
+		});
+		const { result, cookies } = await post(registerVerify.actions.default, { token });
+		expect(result).toMatchObject({ status: 303, location: '/account' });
+		expect(cookies.get('sx_session')).toBeTruthy();
+
+		const again = await post(registerVerify.actions.default, { token });
+		expect(again.result).toMatchObject({ status: 400, data: { invalid: true } });
+	});
+
+	it('shows field errors without sending anything', async () => {
+		const { result } = await post(register.actions.default, {
+			...fields('robin@example.com'),
+			confirmPassword: 'something else'
+		});
+		expect(result).toMatchObject({
+			status: 400,
+			data: {
+				values: { name: 'Robin', email: 'robin@example.com' },
+				errors: { confirmPassword: 'The passwords do not match.' }
+			}
+		});
+		expect(JSON.stringify(result)).not.toContain('a brand new passphrase');
+	});
+});
+
+describe('password reset actions', () => {
+	it('answers the same for known and unknown emails', async () => {
+		const known = await post(reset.actions.default, { email: 'parent@example.com' });
+		const unknown = await post(reset.actions.default, { email: 'nobody@example.com' });
+		expect(known.result).toEqual({ sent: true });
+		expect(unknown.result).toEqual(known.result);
+	});
+
+	it('reset link sets the new password and signs in', async () => {
+		await post(reset.actions.default, { email: 'parent@example.com' });
+		const token = await emailedToken('parent@example.com', '/login/reset/complete');
+		const { result, cookies } = await post(resetComplete.actions.default, {
+			token,
+			password: 'a brand new passphrase',
+			confirmPassword: 'a brand new passphrase'
+		});
+		expect(result).toMatchObject({ status: 303, location: '/account' });
+		expect(cookies.get('sx_session')).toBeTruthy();
+
+		const old = await post(login.actions.password, {
+			email: 'parent@example.com',
+			password: 'sessionx-parent-dev'
+		});
+		expect(isActionFailure(old.result)).toBe(true);
+	});
+});

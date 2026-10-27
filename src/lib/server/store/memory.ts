@@ -24,6 +24,7 @@ import {
 	type LessonType,
 	type LessonTypeInput,
 	type LiveBooking,
+	type PasswordTokenData,
 	type StudioSettings
 } from './types';
 
@@ -54,6 +55,12 @@ interface StoredLoginToken {
 	used: boolean;
 }
 
+interface StoredPasswordToken {
+	data: PasswordTokenData;
+	expiresAt: Date;
+	used: boolean;
+}
+
 const isLive = (b: StoredBooking) => b.status === 'pending' || b.status === 'approved';
 
 /** In-memory BookingStore that mirrors the request_guest_booking SQL function's semantics. */
@@ -61,12 +68,17 @@ export class MemoryBookingStore implements BookingStore, AdminStore, AccountStor
 	private readonly data: DemoData;
 	private readonly bookings: StoredBooking[] = [];
 	private readonly loginTokens = new Map<string, StoredLoginToken>();
+	// Kept apart from the account rows so a hash never leaks into a returned Account.
+	private readonly passwordHashes = new Map<string, string>();
+	private readonly passwordTokens = new Map<string, StoredPasswordToken>();
+	private readonly passwordFailures: { email: string; failedAt: Date }[] = [];
 	private readonly overrideNotes = new Map<string, string>();
 	private readonly accountNotes = new Map<string, string>();
 	private readonly studentNotes = new Map<string, string>();
 
 	constructor(data: DemoData = demoData()) {
 		this.data = structuredClone(data);
+		for (const p of this.data.passwords) this.passwordHashes.set(p.accountId, p.passwordHash);
 	}
 
 	async getSettings(): Promise<StudioSettings> {
@@ -201,6 +213,100 @@ export class MemoryBookingStore implements BookingStore, AdminStore, AccountStor
 		if (!token || token.used || token.expiresAt <= now) return null;
 		token.used = true;
 		return token.accountId;
+	}
+
+	async getPasswordHash(accountId: string): Promise<string | null> {
+		return this.passwordHashes.get(accountId) ?? null;
+	}
+
+	async setPasswordHash(accountId: string, passwordHash: string): Promise<void> {
+		if (!this.data.accounts.some((a) => a.id === accountId)) throw new AdminStoreError('not_found');
+		this.passwordHashes.set(accountId, passwordHash);
+	}
+
+	async createPasswordToken(
+		tokenHash: string,
+		data: PasswordTokenData,
+		expiresAt: Date
+	): Promise<void> {
+		const stored =
+			data.purpose === 'register'
+				? { ...data, email: data.email.trim().toLowerCase() }
+				: { ...data };
+		this.passwordTokens.set(tokenHash, { data: stored, expiresAt, used: false });
+	}
+
+	private usePasswordToken(
+		tokenHash: string,
+		purpose: PasswordTokenData['purpose'],
+		now: Date
+	): PasswordTokenData | null {
+		const token = this.passwordTokens.get(tokenHash);
+		if (!token || token.used || token.expiresAt <= now || token.data.purpose !== purpose) {
+			return null;
+		}
+		token.used = true;
+		return token.data;
+	}
+
+	/** Mirrors password_link_used: void the account's other unused tokens, clear its lockout. */
+	private passwordLinkUsed(accountId: string, email: string): void {
+		for (const token of this.passwordTokens.values()) {
+			const d = token.data;
+			if (
+				(d.purpose === 'reset' && d.accountId === accountId) ||
+				(d.purpose === 'register' && d.email === email)
+			) {
+				token.used = true;
+			}
+		}
+		this.removePasswordFailures(email);
+	}
+
+	private removePasswordFailures(email: string): void {
+		for (let i = this.passwordFailures.length - 1; i >= 0; i--) {
+			if (this.passwordFailures[i].email === email) this.passwordFailures.splice(i, 1);
+		}
+	}
+
+	async completeRegistration(tokenHash: string, now: Date): Promise<string | null> {
+		const data = this.usePasswordToken(tokenHash, 'register', now);
+		if (data?.purpose !== 'register') return null;
+		let account = this.data.accounts.find((a) => a.email.toLowerCase() === data.email);
+		if (!account) {
+			account = { id: crypto.randomUUID(), name: data.name, email: data.email, role: 'client' };
+			this.data.accounts.push(account);
+		}
+		this.passwordHashes.set(account.id, data.passwordHash);
+		this.passwordLinkUsed(account.id, data.email);
+		return account.id;
+	}
+
+	async completePasswordReset(
+		tokenHash: string,
+		passwordHash: string,
+		now: Date
+	): Promise<string | null> {
+		const data = this.usePasswordToken(tokenHash, 'reset', now);
+		if (data?.purpose !== 'reset') return null;
+		const account = this.data.accounts.find((a) => a.id === data.accountId);
+		if (!account) return null;
+		this.passwordHashes.set(account.id, passwordHash);
+		this.passwordLinkUsed(account.id, account.email.toLowerCase());
+		return account.id;
+	}
+
+	async countPasswordFailures(email: string, since: Date): Promise<number> {
+		const wanted = email.trim().toLowerCase();
+		return this.passwordFailures.filter((f) => f.email === wanted && f.failedAt > since).length;
+	}
+
+	async recordPasswordFailure(email: string, failedAt: Date): Promise<void> {
+		this.passwordFailures.push({ email: email.trim().toLowerCase(), failedAt });
+	}
+
+	async clearPasswordFailures(email: string): Promise<void> {
+		this.removePasswordFailures(email.trim().toLowerCase());
 	}
 
 	async listBookings(filter: BookingFilter): Promise<AdminBooking[]> {
