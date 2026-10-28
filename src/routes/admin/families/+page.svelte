@@ -5,7 +5,7 @@
 	let { data, form }: PageProps = $props();
 
 	const errors = $derived<Record<string, string>>(form?.errors ?? {});
-	const values = $derived(form?.values ?? { name: '', email: '', studentName: '', invite: true });
+	const values = $derived(form?.values ?? { name: '', email: '', studentName: '', invite: false });
 </script>
 
 <svelte:head>
@@ -42,8 +42,8 @@
 					Email them a link to set a password
 				</label>
 				<p class="hint">
-					They can also do this later with "Forgot password" or "Create account" using this email.
-					Either way, lessons you book for them are confirmed by email.
+					Off by default, so you can set up existing families quietly. They can set a password any
+					time with "Forgot password" or "Create account" using this email.
 				</p>
 			</div>
 			<button class="button" type="submit">Add family</button>

@@ -49,6 +49,7 @@ function form(overrides: Partial<SeriesForm> = {}): SeriesForm {
 		endsOn: '',
 		occurrenceCount: '10',
 		note: '',
+		notify: 'on',
 		...overrides
 	};
 }
@@ -292,6 +293,16 @@ describe('createSeries', () => {
 		expect(calendar.created[0].calendarId).toBe(CALENDAR);
 		expect(calendar.created[0].event.start).toEqual(at3pm('2026-11-03'));
 		expect((await store.listSeriesBookings(result.seriesId))[0].gcalEventId).toBe('evt-1');
+	});
+
+	it('books quietly when emailing is off, still adding calendar events', async () => {
+		const { store, calendar, sent, deps } = await setup();
+		const result = await createSeries(deps, PAT, form({ notify: '' }), now);
+		expect(result.ok).toBe(true);
+		if (!result.ok) return;
+		expect(await store.listSeriesBookings(result.seriesId)).toHaveLength(10);
+		expect(sent).toHaveLength(0);
+		expect(calendar.created).toHaveLength(10);
 	});
 
 	it('skips and reports clashing dates without touching existing bookings', async () => {

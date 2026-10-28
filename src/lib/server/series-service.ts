@@ -76,6 +76,8 @@ export interface SeriesForm {
 	endsOn: string;
 	occurrenceCount: string;
 	note: string;
+	/** 'on' emails the family the dates; anything else books quietly. */
+	notify: string;
 }
 
 export const SERIES_FORM_FIELDS: (keyof SeriesForm)[] = [
@@ -88,7 +90,8 @@ export const SERIES_FORM_FIELDS: (keyof SeriesForm)[] = [
 	'endMode',
 	'endsOn',
 	'occurrenceCount',
-	'note'
+	'note',
+	'notify'
 ];
 
 const isDate = (s: string) => DATE_PATTERN.test(s) && DateTime.fromISO(s).isValid;
@@ -321,7 +324,8 @@ function emailData(series: LessonSeries, timezone: string): SeriesEmailData {
 
 /**
  * Re-checks every date at submit, saves the series with the OK dates (the database skips any that
- * clash by now), then sends one email and adds one Google Calendar event per lesson. Skipped dates
+ * clash by now), then sends one email (unless `notify` is off) and adds one Google Calendar event
+ * per lesson. Skipped dates
  * are reported; nothing existing is changed.
  */
 export async function createSeries(
@@ -371,21 +375,23 @@ export async function createSeries(
 	const bookings = (await store.listSeriesBookings(series.id)).filter(
 		(b) => b.status === 'approved'
 	);
-	try {
-		await mailer.send(
-			seriesCreatedEmail(
-				emailData(series, settings.timezone),
-				bookings.map((b) => ({
-					bookingId: b.id,
-					startsAt: b.startsAt,
-					manageUrl: `${appUrl}/manage/${b.manageToken}`
-				})),
-				skipped,
-				{ policyText: settings.cancellationPolicyText, continues: preview.continues, now }
-			)
-		);
-	} catch (e) {
-		console.error('Failed to send series created email', e);
+	if (form.notify === 'on') {
+		try {
+			await mailer.send(
+				seriesCreatedEmail(
+					emailData(series, settings.timezone),
+					bookings.map((b) => ({
+						bookingId: b.id,
+						startsAt: b.startsAt,
+						manageUrl: `${appUrl}/manage/${b.manageToken}`
+					})),
+					skipped,
+					{ policyText: settings.cancellationPolicyText, continues: preview.continues, now }
+				)
+			);
+		} catch (e) {
+			console.error('Failed to send series created email', e);
+		}
 	}
 	for (const b of bookings) await addLessonToCalendar(deps, b, settings);
 

@@ -116,7 +116,11 @@ export const actions: Actions = {
 		return {
 			kind: 'book',
 			target: values.studentId,
-			booked: { whenLabel: result.whenLabel, studentName: result.studentName }
+			booked: {
+				whenLabel: result.whenLabel,
+				studentName: result.studentName,
+				emailed: values.notify === 'on'
+			}
 		};
 	},
 	seriesPreview: async ({ locals, request, params }) => {
@@ -164,7 +168,12 @@ export const actions: Actions = {
 		return {
 			kind: 'series',
 			target: values.studentId,
-			created: { seriesId: result.seriesId, booked: result.booked, skipped: result.skipped }
+			created: {
+				seriesId: result.seriesId,
+				booked: result.booked,
+				skipped: result.skipped,
+				emailed: values.notify === 'on'
+			}
 		};
 	}
 };

@@ -28,6 +28,7 @@
 		seriesId: string;
 		booked: string[];
 		skipped: { whenLabel: string; reason: string }[];
+		emailed: boolean;
 	};
 	const failed = $derived<Failed | null>(form && 'errors' in form ? (form as Failed) : null);
 	const saved = $derived(
@@ -62,9 +63,19 @@
 
 	const booked = $derived(
 		form && 'booked' in form
-			? (form as unknown as { target: string; booked: { whenLabel: string; studentName: string } })
+			? (form as unknown as {
+					target: string;
+					booked: { whenLabel: string; studentName: string; emailed: boolean };
+				})
 			: null
 	);
+
+	// After a booking, the next form keeps its email choice, so setting up quietly stays quiet.
+	const lastNotify = $derived.by(() => {
+		if (booked) return booked.booked.emailed ? 'on' : '';
+		if (created) return created.created.emailed ? 'on' : '';
+		return 'on';
+	});
 
 	/** The values to show in a student's booking form: the last failed submission, else defaults. */
 	function bookingValues(studentId: string): Record<string, string> {
@@ -75,7 +86,8 @@
 			lessonTypeId: data.lessonTypes[0]?.id ?? '',
 			date: '',
 			time: '',
-			note: ''
+			note: '',
+			notify: lastNotify
 		};
 	}
 
@@ -100,7 +112,8 @@
 			endMode: 'count',
 			endsOn: '',
 			occurrenceCount: '10',
-			note: ''
+			note: '',
+			notify: lastNotify
 		};
 	}
 
@@ -248,8 +261,10 @@
 	<h3>Book a lesson</h3>
 	{#if booked?.target === studentId}
 		<p class="banner" role="status">
-			Booked {booked.booked.studentName} for {booked.booked.whenLabel}. The family has been emailed
-			the confirmation.
+			Booked {booked.booked.studentName} for {booked.booked.whenLabel}.
+			{booked.booked.emailed
+				? 'The family has been emailed the confirmation.'
+				: "The family wasn't emailed."}
 		</p>
 	{/if}
 	<details open={failed?.kind === 'book' && failed.target === studentId}>
@@ -314,6 +329,7 @@
 					<p class="error" id="{id('note')}-error">{errs.note}</p>
 				{/if}
 			</div>
+			{@render notifyBox(id('notify'), v.notify, 'Email the family the confirmation')}
 			<button class="button" type="submit">Book and confirm</button>
 		</form>
 	</details>
@@ -462,6 +478,7 @@
 					<p class="error" id="{id('note')}-error">{errs.note}</p>
 				{/if}
 			</div>
+			{@render notifyBox(id('notify'), v.notify, 'Email the family the dates')}
 			<button class="button secondary" type="submit">Preview dates</button>
 		</form>
 
@@ -494,7 +511,9 @@
 						{p.bookable === 1 ? 'lesson' : 'lessons'} will be booked and confirmed{p.dates.length >
 						p.bookable
 							? `; ${p.dates.length - p.bookable} skipped`
-							: ''}. {studentName}'s family gets one email with every date.
+							: ''}. {previewed.values.notify === 'on'
+							? `${studentName}'s family gets one email with every date.`
+							: `${studentName}'s family won't be emailed.`}
 					</p>
 					<form method="POST" action="?/seriesCreate" use:enhance>
 						<input type="hidden" name="studentId" value={studentId} />
@@ -512,6 +531,16 @@
 			</div>
 		{/if}
 	</details>
+{/snippet}
+
+{#snippet notifyBox(boxId: string, value: string, label: string)}
+	<div class="field">
+		<label class="check" for={boxId}>
+			<input id={boxId} type="checkbox" name="notify" checked={value === 'on'} />
+			{label}
+		</label>
+		<p class="hint">Untick to add lessons that are already arranged without emailing anyone.</p>
+	</div>
 {/snippet}
 
 {#snippet select(

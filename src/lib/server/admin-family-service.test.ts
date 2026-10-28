@@ -59,6 +59,7 @@ function lesson(overrides: Partial<AdminBookingForm> = {}): AdminBookingForm {
 		date: '2026-11-03',
 		time: '15:00',
 		note: '',
+		notify: 'on',
 		...overrides
 	};
 }
@@ -184,6 +185,15 @@ describe('bookForStudent', () => {
 		expect(calendar.created).toHaveLength(1);
 	});
 
+	it('books quietly when emailing is off, still adding the calendar event', async () => {
+		const { store, sent, calendar, deps } = await setup();
+		const result = await bookForStudent(deps, PAT, lesson({ notify: '' }), now);
+		expect(result.ok).toBe(true);
+		if (result.ok) expect((await store.getBooking(result.bookingId))?.status).toBe('approved');
+		expect(sent).toHaveLength(0);
+		expect(calendar.created).toHaveLength(1);
+	});
+
 	it('ignores the public rules: notice, studio hours and the pending limit', async () => {
 		const { store, deps } = await setup();
 		await store.requestAccountBooking(
@@ -267,7 +277,8 @@ describe('bookForStudent', () => {
 					lessonTypeId: '',
 					date: '2026-02-30',
 					time: '3pm',
-					note: 'x'.repeat(1001)
+					note: 'x'.repeat(1001),
+					notify: 'on'
 				},
 				now
 			)

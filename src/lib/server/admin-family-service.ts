@@ -120,6 +120,8 @@ export interface AdminBookingForm {
 	/** HH:mm, studio local */
 	time: string;
 	note: string;
+	/** 'on' emails the family the confirmation; anything else books quietly. */
+	notify: string;
 }
 
 export const ADMIN_BOOKING_FORM_FIELDS: (keyof AdminBookingForm)[] = [
@@ -127,7 +129,8 @@ export const ADMIN_BOOKING_FORM_FIELDS: (keyof AdminBookingForm)[] = [
 	'lessonTypeId',
 	'date',
 	'time',
-	'note'
+	'note',
+	'notify'
 ];
 
 export type AdminBookingResult =
@@ -138,7 +141,8 @@ export type AdminBookingResult =
  * The admin books one lesson for a family's student. Like recurring lessons it is confirmed at
  * once and ignores the public booking rules (notice, advance window, weekly hours, the pending
  * limit, Turnstile), but not real clashes: live bookings, closed dates and Google Calendar busy
- * time. The family gets the usual confirmation email and the lesson goes on the calendar.
+ * time. The family gets the usual confirmation email (unless `notify` is off) and the lesson goes
+ * on the calendar.
  */
 export async function bookForStudent(
 	deps: AdminDeps,
@@ -212,7 +216,7 @@ export async function bookForStudent(
 
 	// The booking has committed: from here on failures only log.
 	const booking = await store.getBooking(bookingId);
-	if (booking) {
+	if (booking && form.notify === 'on') {
 		try {
 			await mailer.send(
 				bookingApprovedEmail(
@@ -235,8 +239,8 @@ export async function bookForStudent(
 		} catch (e) {
 			console.error('Failed to send booking confirmed email', e);
 		}
-		await addLessonToCalendar(deps, booking, settings);
 	}
+	if (booking) await addLessonToCalendar(deps, booking, settings);
 	return {
 		ok: true,
 		bookingId,
