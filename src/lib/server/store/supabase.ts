@@ -37,6 +37,7 @@ import {
 import {
 	AccountStoreError,
 	AdminStoreError,
+	BookingStoreError,
 	type Account,
 	type AccountBookingInput,
 	type AccountWithStudents,
@@ -678,6 +679,75 @@ export function createSupabaseBookingStore(url: string, serviceRoleKey: string):
 			};
 		},
 
+		async createApprovedBooking(input: AccountBookingInput, now: Date): Promise<CreatedBooking> {
+			// Same check order as request_account_booking; the overlap constraint catches clashes.
+			const student = await db
+				.from('students')
+				.select('id')
+				.eq('id', input.studentId)
+				.eq('account_id', input.accountId)
+				.maybeSingle();
+			if (student.error) failAccount('createApprovedBooking', student.error);
+			if (!student.data) throw new AccountStoreError('not_found');
+
+			const [lessonType, custom, settings] = await Promise.all([
+				db
+					.from('lesson_types')
+					.select('duration_min, price_cents')
+					.eq('id', input.lessonTypeId)
+					.eq('active', true)
+					.maybeSingle(),
+				db
+					.from('student_prices')
+					.select('price_cents')
+					.eq('student_id', input.studentId)
+					.eq('lesson_type_id', input.lessonTypeId)
+					.maybeSingle(),
+				db.from('settings').select('buffer_min').single()
+			]);
+			if (lessonType.error && !isMalformedId(lessonType.error)) {
+				fail('createApprovedBooking', lessonType.error);
+			}
+			if (!lessonType.data) throw new BookingStoreError('lesson_type_not_found');
+			if (custom.error) fail('createApprovedBooking', custom.error);
+			if (settings.error) fail('createApprovedBooking', settings.error);
+
+			const type = lessonType.data as { duration_min: number; price_cents: number };
+			const customPrice = custom.data as { price_cents: number } | null;
+			const bufferMin = (settings.data as { buffer_min: number | null }).buffer_min ?? 0;
+			const endsAt = new Date(input.startsAt.getTime() + type.duration_min * 60_000);
+			const { data, error } = await db
+				.from('bookings')
+				.insert({
+					student_id: input.studentId,
+					lesson_type_id: input.lessonTypeId,
+					starts_at: input.startsAt.toISOString(),
+					ends_at: endsAt.toISOString(),
+					blocked_until: new Date(endsAt.getTime() + bufferMin * 60_000).toISOString(),
+					status: 'approved',
+					decided_at: now.toISOString(),
+					price_cents: customPrice?.price_cents ?? type.price_cents,
+					note: input.note ?? ''
+				})
+				.select('id, manage_token, price_cents, starts_at, ends_at')
+				.single();
+			if (error) failAccount('createApprovedBooking', error);
+			const row = data as {
+				id: string;
+				manage_token: string;
+				price_cents: number;
+				starts_at: string;
+				ends_at: string;
+			};
+			return {
+				bookingId: row.id,
+				manageToken: row.manage_token,
+				priceCents: row.price_cents,
+				startsAt: new Date(row.starts_at),
+				endsAt: new Date(row.ends_at)
+			};
+		},
+
 		async getBookingByTarget(target: CancelTarget): Promise<AdminBooking | null> {
 			const query =
 				target.kind === 'token'
@@ -712,6 +782,20 @@ export function createSupabaseBookingStore(url: string, serviceRoleKey: string):
 			const booking = await getAdminBooking(data as string);
 			if (!booking) throw new AccountStoreError('not_found');
 			return booking;
+		},
+
+		async createAccount(name: string, email: string): Promise<Account> {
+			const { data, error } = await db
+				.from('accounts')
+				.insert({ name: name.trim(), email: email.trim().toLowerCase(), role: 'client' })
+				.select(ACCOUNT_COLUMNS)
+				.single();
+			if (error) {
+				// accounts.email is unique; a deleted account's email was already replaced.
+				if (error.code === '23505') throw new AccountStoreError('duplicate_email');
+				fail('createAccount', error);
+			}
+			return mapAccountRow(data as AccountRow);
 		},
 
 		async listAccounts(): Promise<AccountWithStudents[]> {
