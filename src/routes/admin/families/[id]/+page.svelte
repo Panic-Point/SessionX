@@ -5,12 +5,13 @@
 	let { data, form }: PageProps = $props();
 
 	// Submitted values and errors apply only to the form that was submitted.
-	type Kind = 'notes' | 'prices' | 'series';
+	type Kind = 'notes' | 'prices' | 'series' | 'student' | 'book';
 	type Failed = {
 		kind: Kind;
 		target: string;
 		errors: Record<string, string>;
 		notes?: string;
+		name?: string;
 		prices?: Record<string, string>;
 		values?: Record<string, string>;
 	};
@@ -57,6 +58,29 @@
 	);
 	const created = $derived(
 		form && 'created' in form ? (form as unknown as { target: string; created: Created }) : null
+	);
+
+	const booked = $derived(
+		form && 'booked' in form
+			? (form as unknown as { target: string; booked: { whenLabel: string; studentName: string } })
+			: null
+	);
+
+	/** The values to show in a student's booking form: the last failed submission, else defaults. */
+	function bookingValues(studentId: string): Record<string, string> {
+		if (failed?.kind === 'book' && failed.target === studentId && failed.values) {
+			return failed.values;
+		}
+		return {
+			lessonTypeId: data.lessonTypes[0]?.id ?? '',
+			date: '',
+			time: '',
+			note: ''
+		};
+	}
+
+	const newStudentName = $derived(
+		failed?.kind === 'student' && failed.name !== undefined ? failed.name : ''
 	);
 
 	const WEEKDAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
@@ -111,6 +135,13 @@
 	</p>
 {:else}
 	<p class="meta"><a href="mailto:{data.family.email}">{data.family.email}</a></p>
+{/if}
+{#if data.created}
+	<p class="banner" role="status">
+		Family added.{data.created === 'invited'
+			? ' We emailed them a link to set a password.'
+			: ' They can set a password any time with "Forgot password" using this email.'}
+	</p>
 {/if}
 
 {#snippet notesForm(target: string, action: string, studentId: string | null, stored: string)}
@@ -203,9 +234,90 @@
 			<button class="button" type="submit">Save prices</button>
 		</form>
 
+		{#if !data.family.deleted}
+			{@render bookOne(s.id, s.name)}
+		{/if}
 		{@render recurring(s.id, s.name)}
 	</section>
 {/each}
+
+{#snippet bookOne(studentId: string, studentName: string)}
+	{@const errs = errorsFor(studentId, 'book')}
+	{@const v = bookingValues(studentId)}
+	{@const id = (field: string) => `book-${field}-${studentId}`}
+	<h3>Book a lesson</h3>
+	{#if booked?.target === studentId}
+		<p class="banner" role="status">
+			Booked {booked.booked.studentName} for {booked.booked.whenLabel}. The family has been emailed
+			the confirmation.
+		</p>
+	{/if}
+	<details open={failed?.kind === 'book' && failed.target === studentId}>
+		<summary>Book one lesson for {studentName}</summary>
+		<p class="hint">
+			Confirmed straight away, at any time you choose: studio hours and booking notice don't apply.
+			Times that clash with another lesson, a closed day or a busy Google Calendar can't be booked.
+		</p>
+		{#if errs.form}
+			<p class="banner bad" role="alert">{errs.form}</p>
+		{/if}
+		{#if errs.studentId}
+			<p class="banner bad" role="alert">{errs.studentId}</p>
+		{/if}
+		<form method="POST" action="?/book" novalidate use:enhance={keepValues}>
+			<input type="hidden" name="studentId" value={studentId} />
+			<div class="grid">
+				{@render select(id('lessonTypeId'), 'lessonTypeId', 'Lesson type', v.lessonTypeId, errs, [
+					...data.lessonTypes.map((t) => [t.id, t.name] as [string, string])
+				])}
+				<div class="field">
+					<label for={id('date')}>Date</label>
+					<input
+						id={id('date')}
+						name="date"
+						type="date"
+						min={data.today}
+						value={v.date}
+						aria-invalid={errs.date ? 'true' : undefined}
+						aria-describedby={errs.date ? `${id('date')}-error` : undefined}
+					/>
+					{#if errs.date}
+						<p class="error" id="{id('date')}-error">{errs.date}</p>
+					{/if}
+				</div>
+				<div class="field">
+					<label for={id('time')}>Time</label>
+					<input
+						id={id('time')}
+						name="time"
+						type="time"
+						step="300"
+						value={v.time}
+						aria-invalid={errs.time ? 'true' : undefined}
+						aria-describedby={errs.time ? `${id('time')}-error` : undefined}
+					/>
+					{#if errs.time}
+						<p class="error" id="{id('time')}-error">{errs.time}</p>
+					{/if}
+				</div>
+			</div>
+			<div class="field">
+				<label for={id('note')}>Note (shown to the family)</label>
+				<textarea
+					id={id('note')}
+					name="note"
+					rows="2"
+					aria-invalid={errs.note ? 'true' : undefined}
+					aria-describedby={errs.note ? `${id('note')}-error` : undefined}>{v.note}</textarea
+				>
+				{#if errs.note}
+					<p class="error" id="{id('note')}-error">{errs.note}</p>
+				{/if}
+			</div>
+			<button class="button" type="submit">Book and confirm</button>
+		</form>
+	</details>
+{/snippet}
 
 {#snippet recurring(studentId: string, studentName: string)}
 	{@const list = data.series.filter((x) => x.studentId === studentId)}
@@ -430,6 +542,36 @@
 
 {#if data.family.students.length === 0}
 	<p class="card empty">No students yet.</p>
+{/if}
+
+{#if !data.family.deleted}
+	{@const errs = errorsFor('new', 'student')}
+	<section class="card">
+		<h2>Add a student</h2>
+		{#if wasSaved('new', 'student')}
+			<p class="banner" role="status">Student added.</p>
+		{/if}
+		{#if errs.form}
+			<p class="banner bad" role="alert">{errs.form}</p>
+		{/if}
+		<form method="POST" action="?/addStudent" novalidate use:enhance>
+			<div class="field">
+				<label for="new-student-name">Student's name</label>
+				<input
+					id="new-student-name"
+					name="name"
+					autocomplete="off"
+					value={newStudentName}
+					aria-invalid={errs.name ? 'true' : undefined}
+					aria-describedby={errs.name ? 'new-student-name-error' : undefined}
+				/>
+				{#if errs.name}
+					<p class="error" id="new-student-name-error">{errs.name}</p>
+				{/if}
+			</div>
+			<button class="button secondary" type="submit">Add student</button>
+		</form>
+	</section>
 {/if}
 
 <style>

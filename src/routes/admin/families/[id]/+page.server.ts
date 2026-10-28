@@ -5,6 +5,12 @@ import {
 	saveStudentNotes,
 	saveStudentPrices
 } from '#lib/server/admin-service.ts';
+import {
+	addFamilyStudent,
+	ADMIN_BOOKING_FORM_FIELDS,
+	bookForStudent,
+	type AdminBookingForm
+} from '#lib/server/admin-family-service.ts';
 import { formString, requireAdmin } from '#lib/server/admin-actions.ts';
 import { getAppUrl, getCalendar, getMailer, getStore } from '#lib/server/context.ts';
 import { localToday } from '#lib/server/recurrence.ts';
@@ -17,7 +23,7 @@ import {
 } from '#lib/server/series-service.ts';
 import type { Actions, PageServerLoad } from './$types';
 
-export const load: PageServerLoad = async ({ locals, params }) => {
+export const load: PageServerLoad = async ({ locals, params, url }) => {
 	requireAdmin(locals.account);
 	const store = getStore();
 	const family = await getFamily(store, params.id);
@@ -32,13 +38,21 @@ export const load: PageServerLoad = async ({ locals, params }) => {
 		family,
 		series,
 		lessonTypes: lessonTypes.map((t) => ({ id: t.id, name: t.name, durationMin: t.durationMin })),
-		today: localToday(now, settings.timezone)
+		today: localToday(now, settings.timezone),
+		/** Set right after the family was added on the Families page. */
+		created: url.searchParams.get('created')
 	};
 };
 
 function seriesForm(data: FormData): SeriesForm {
 	const form = {} as SeriesForm;
 	for (const field of SERIES_FORM_FIELDS) form[field] = formString(data, field);
+	return form;
+}
+
+function bookingForm(data: FormData): AdminBookingForm {
+	const form = {} as AdminBookingForm;
+	for (const field of ADMIN_BOOKING_FORM_FIELDS) form[field] = formString(data, field);
 	return form;
 }
 
@@ -77,6 +91,33 @@ export const actions: Actions = {
 		if (!result.ok)
 			return fail(400, { kind: 'prices', target: studentId, errors: result.errors, prices });
 		return { kind: 'prices', target: studentId, saved: true };
+	},
+	addStudent: async ({ locals, request, params }) => {
+		requireAdmin(locals.account);
+		const name = formString(await request.formData(), 'name');
+		const result = await addFamilyStudent(getStore(), params.id, name);
+		if (!result.ok)
+			return fail(400, { kind: 'student', target: 'new', errors: result.errors, name });
+		return { kind: 'student', target: 'new', saved: true, name: name.trim() };
+	},
+	book: async ({ locals, request, params }) => {
+		requireAdmin(locals.account);
+		const values = bookingForm(await request.formData());
+		const deps = {
+			store: getStore(),
+			mailer: getMailer(),
+			appUrl: getAppUrl(),
+			calendar: getCalendar()
+		};
+		const result = await bookForStudent(deps, params.id, values, new Date());
+		if (!result.ok) {
+			return fail(400, { kind: 'book', target: values.studentId, errors: result.errors, values });
+		}
+		return {
+			kind: 'book',
+			target: values.studentId,
+			booked: { whenLabel: result.whenLabel, studentName: result.studentName }
+		};
 	},
 	seriesPreview: async ({ locals, request, params }) => {
 		requireAdmin(locals.account);

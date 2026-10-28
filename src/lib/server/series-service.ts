@@ -159,7 +159,7 @@ export function validateSeriesForm(form: SeriesForm, today: string): Result<Seri
 
 // ---- Checking dates ----
 
-interface AssessedDate extends Occurrence {
+export interface AssessedDate extends Occurrence {
 	status: DateStatus;
 }
 
@@ -167,7 +167,7 @@ interface AssessedDate extends Occurrence {
  * Admin-created lessons ignore the public booking rules (notice, advance window, weekly hours)
  * but not real clashes: live bookings, closed date overrides and Google Calendar busy time.
  */
-async function assessDates(
+export async function assessDates(
 	deps: { store: AppStore; calendar?: CalendarClient },
 	settings: StudioSettings,
 	durationMin: number,

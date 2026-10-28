@@ -408,6 +408,91 @@ export function runAccountStoreContract(
 			expect((await store.getAccount(PAT))?.deleted).toBe(false);
 		});
 
+		it('createApprovedBooking confirms at once with the student price', async () => {
+			const store = await makeStore();
+			const created = await store.createApprovedBooking(
+				booking({ studentId: BEN, note: 'From Brenda' }),
+				NOW
+			);
+			expect(created.priceCents).toBe(3000);
+			expect(created.endsAt.getTime() - created.startsAt.getTime()).toBe(30 * 60_000);
+			expect(await store.getBooking(created.bookingId)).toMatchObject({
+				status: 'approved',
+				studentName: 'Ben',
+				accountEmail: 'parent@example.com',
+				note: 'From Brenda',
+				series: null
+			});
+			// No pending-request limit applies.
+			await store.requestAccountBooking(booking({ startsAt: DAY_2 }), NOW);
+			await store.requestAccountBooking(booking({ startsAt: DAY_3 }), NOW);
+			const more = await store.createApprovedBooking(
+				booking({ startsAt: new Date('2030-03-07T20:00:00Z') }),
+				NOW
+			);
+			expect(more.priceCents).toBe(3500);
+		});
+
+		it('createApprovedBooking rejects another family, unknown types and clashes', async () => {
+			const store = await makeStore();
+			const { student } = await otherAccount(store);
+			expect(
+				await accountCode(store.createApprovedBooking(booking({ studentId: student.id }), NOW))
+			).toBe('not_found');
+			expect(
+				await accountCode(store.createApprovedBooking(booking({ studentId: NO_SUCH_STUDENT }), NOW))
+			).toBe('not_found');
+			expect(
+				await bookingCode(
+					store.createApprovedBooking(booking({ lessonTypeId: NO_SUCH_LESSON }), NOW)
+				)
+			).toBe('lesson_type_not_found');
+			await store.requestAccountBooking(booking(), NOW);
+			expect(await bookingCode(store.createApprovedBooking(booking({ studentId: BEN }), NOW))).toBe(
+				'slot_taken'
+			);
+			expect(await store.listAccountBookings(PAT)).toHaveLength(1);
+		});
+
+		it('createAccount adds a client with no password or students', async () => {
+			const store = await makeStore();
+			const account = await store.createAccount('  Sam Smith ', ' Sam@Example.com ');
+			expect(account).toMatchObject({
+				name: 'Sam Smith',
+				email: 'sam@example.com',
+				role: 'client'
+			});
+			expect(await store.findAccountByEmail('SAM@example.com')).toEqual(account);
+			expect(await store.getPasswordHash(account.id)).toBeNull();
+			expect(await store.getAccount(account.id)).toMatchObject({
+				deleted: false,
+				adminNotes: '',
+				students: []
+			});
+			const student = await store.addStudent(account.id, 'Sky');
+			expect(
+				(
+					await store.createApprovedBooking(
+						booking({ accountId: account.id, studentId: student.id }),
+						NOW
+					)
+				).priceCents
+			).toBe(3500);
+		});
+
+		it("createAccount rejects an email in use, but not a deleted account's", async () => {
+			const store = await makeStore();
+			expect(await accountCode(store.createAccount('Pat', 'PARENT@example.com'))).toBe(
+				'duplicate_email'
+			);
+			expect(await accountCode(store.createAccount('Admin', 'admin@sessionx.local'))).toBe(
+				'duplicate_email'
+			);
+			await store.deleteAccount(PAT, NOW);
+			const fresh = await store.createAccount('Pat Again', 'parent@example.com');
+			expect(fresh.id).not.toBe(PAT);
+		});
+
 		it('lateCancelOnly filter', async () => {
 			const store = await makeStore();
 			const late = await store.requestAccountBooking(booking({ startsAt: DAY_1 }), NOW);

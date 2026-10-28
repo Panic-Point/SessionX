@@ -276,7 +276,8 @@ export type CancelTarget =
 	| { kind: 'account'; bookingId: string; accountId: string }
 	| { kind: 'token'; manageToken: string };
 
-export type AccountStoreErrorCode = 'not_found' | 'duplicate_student' | 'not_cancellable';
+export type AccountStoreErrorCode =
+	'not_found' | 'duplicate_student' | 'duplicate_email' | 'not_cancellable';
 
 export class AccountStoreError extends Error {
 	constructor(public readonly code: AccountStoreErrorCode) {
@@ -304,10 +305,23 @@ export interface AccountStore {
 	 * too_many_pending, slot_taken, in that order.
 	 */
 	requestAccountBooking(input: AccountBookingInput, now: Date): Promise<CreatedBooking>;
+	/**
+	 * A lesson the admin books for a student: approved at once, with no pending-request limit.
+	 * Price as requestAccountBooking. Throws AccountStoreError not_found (student not in account),
+	 * then BookingStoreError lesson_type_not_found, slot_taken, in that order.
+	 */
+	createApprovedBooking(input: AccountBookingInput, now: Date): Promise<CreatedBooking>;
 	/** Null when unknown, or when an account target names another account's booking. */
 	getBookingByTarget(target: CancelTarget): Promise<AdminBooking | null>;
 	/** Throws AccountStoreError not_found; not_cancellable (not pending/approved, or startsAt <= now). */
 	cancelBooking(target: CancelTarget, lateCancel: boolean, now: Date): Promise<AdminBooking>;
+	/**
+	 * A client account the admin sets up, with no password and no students; the family can claim it
+	 * later by registering or resetting the password with this email. Trims the name; the email is
+	 * trimmed and lowercased. Throws AccountStoreError duplicate_email when an account that has not
+	 * been deleted already uses it (case-insensitive).
+	 */
+	createAccount(name: string, email: string): Promise<Account>;
 	/** By name. */
 	listAccounts(): Promise<AccountWithStudents[]>;
 	getAccount(accountId: string): Promise<AccountWithStudents | null>;

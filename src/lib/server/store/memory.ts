@@ -573,6 +573,44 @@ export class MemoryBookingStore implements BookingStore, AdminStore, AccountStor
 		};
 	}
 
+	async createApprovedBooking(input: AccountBookingInput, now: Date): Promise<CreatedBooking> {
+		const student = this.data.students.find(
+			(s) => s.id === input.studentId && s.accountId === input.accountId
+		);
+		if (!student) throw new AccountStoreError('not_found');
+		const lessonType = this.data.lessonTypes.find((t) => t.id === input.lessonTypeId);
+		if (!lessonType || !lessonType.active) throw new BookingStoreError('lesson_type_not_found');
+		const window = this.requireFreeSlot(input.startsAt, lessonType.durationMin);
+		const custom = this.data.studentPrices.find(
+			(p) => p.studentId === student.id && p.lessonTypeId === lessonType.id
+		);
+		const booking: StoredBooking = {
+			id: crypto.randomUUID(),
+			manageToken: crypto.randomUUID().replaceAll('-', ''),
+			studentId: student.id,
+			lessonTypeId: lessonType.id,
+			startsAt: input.startsAt,
+			...window,
+			status: 'approved',
+			priceCents: custom?.priceCents ?? lessonType.priceCents,
+			note: input.note ?? '',
+			paidAt: null,
+			declineReason: null,
+			decidedAt: now,
+			lateCancel: false,
+			gcalEventId: null,
+			seriesId: null
+		};
+		this.bookings.push(booking);
+		return {
+			bookingId: booking.id,
+			manageToken: booking.manageToken,
+			priceCents: booking.priceCents,
+			startsAt: booking.startsAt,
+			endsAt: booking.endsAt
+		};
+	}
+
 	async getBookingByTarget(target: CancelTarget): Promise<AdminBooking | null> {
 		const booking = this.findByTarget(target);
 		return booking ? this.toAdminBooking(booking) : null;
@@ -585,6 +623,22 @@ export class MemoryBookingStore implements BookingStore, AdminStore, AccountStor
 		booking.status = 'cancelled';
 		booking.lateCancel = lateCancel;
 		return this.toAdminBooking(booking);
+	}
+
+	async createAccount(name: string, email: string): Promise<Account> {
+		const normalized = email.trim().toLowerCase();
+		// Deleted accounts no longer hold their email (see deletedEmail).
+		if (this.data.accounts.some((a) => a.email.toLowerCase() === normalized)) {
+			throw new AccountStoreError('duplicate_email');
+		}
+		const account: Account = {
+			id: crypto.randomUUID(),
+			name: name.trim(),
+			email: normalized,
+			role: 'client'
+		};
+		this.data.accounts.push(account);
+		return { ...account };
 	}
 
 	async listAccounts(): Promise<AccountWithStudents[]> {

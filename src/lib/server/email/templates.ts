@@ -85,6 +85,18 @@ export function registerInviteEmail(to: string, name: string, url: string): Emai
 	};
 }
 
+/** Sent when the admin sets up a family's account; the link starts the usual registration. */
+export function familyInviteEmail(to: string, name: string, url: string): EmailMessage {
+	const text = `Hi ${name},\n\nYour teacher has set up a SessionX account for your family. Choose a password to see your lessons, book new ones and manage them in one place.\n\nSet up your password: ${url}\n\nYou don't have to: any lesson booked for you is still confirmed by email.\n`;
+	const footer = `<p style="margin:0 0 12px">Your teacher has set up a SessionX account for your family. Choose a password to see your lessons, book new ones and manage them in one place.</p><p style="margin:16px 0 0">Set up your password: <a href="${escapeHtml(url)}">${escapeHtml(url)}</a></p><p style="color:#555">You don't have to: any lesson booked for you is still confirmed by email.</p>`;
+	return {
+		to,
+		subject: 'Your SessionX account is ready',
+		text,
+		html: wrap(`Hi ${name}, your account is ready`, [], footer)
+	};
+}
+
 /** `name` is the existing account holder's, or null for an email with no account yet. */
 export function verifyRegistrationEmail(
 	to: string,
