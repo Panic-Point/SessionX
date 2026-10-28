@@ -317,3 +317,35 @@ export function seriesEndedEmail(d: SeriesEmailData, cancelled: Date[]): EmailMe
 		html: wrap(`Hi ${d.accountName}, recurring lessons have been cancelled`, rows, footer)
 	};
 }
+
+export interface CancelledLesson {
+	studentName: string;
+	lessonTypeName: string;
+	startsAt: Date;
+	late: boolean;
+}
+
+/** Tells the admin a family deleted their account, listing the upcoming lessons it cancelled. */
+export function accountDeletedEmail(
+	accountName: string,
+	cancelled: CancelledLesson[],
+	timezone: string,
+	adminEmail: string,
+	adminUrl: string,
+	cutoffHours: number
+): EmailMessage {
+	const line = (c: CancelledLesson) =>
+		`${c.studentName} · ${c.lessonTypeName} · ${formatDateTime(c.startsAt, timezone)}${c.late ? ` (less than ${cutoffHours} hours' notice)` : ''}`;
+	const summary =
+		cancelled.length === 0
+			? 'They had no upcoming lessons.'
+			: 'Their upcoming lessons were cancelled:';
+	const text = `${accountName} deleted their account. Their past lessons are still listed in SessionX.\n\n${summary}\n${cancelled.map((c) => `- ${line(c)}`).join('\n')}\n\nLessons: ${adminUrl}\n`;
+	const list = cancelled.length > 0 ? htmlList(cancelled.map((c) => escapeHtml(line(c)))) : '';
+	return {
+		to: adminEmail,
+		subject: `Account deleted: ${accountName}`,
+		text,
+		html: `<div style="font-family:Arial,Helvetica,sans-serif;font-size:15px;color:#222;max-width:560px"><h2 style="font-size:18px;margin:0 0 12px">${escapeHtml(`${accountName} deleted their account`)}</h2><p style="margin:0 0 12px">Their past lessons are still listed in SessionX.</p><p style="margin:0">${escapeHtml(summary)}</p>${list}<p style="margin:16px 0 0">Lessons: <a href="${escapeHtml(adminUrl)}">${escapeHtml(adminUrl)}</a></p></div>`
+	};
+}

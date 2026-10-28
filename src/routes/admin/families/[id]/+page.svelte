@@ -105,7 +105,13 @@
 
 <p><a href="/admin/families">&larr; Families</a></p>
 <h1>{data.family.name}</h1>
-<p class="meta"><a href="mailto:{data.family.email}">{data.family.email}</a></p>
+{#if data.family.deleted}
+	<p class="meta">
+		This family deleted their account. Their past lessons are kept here for your records.
+	</p>
+{:else}
+	<p class="meta"><a href="mailto:{data.family.email}">{data.family.email}</a></p>
+{/if}
 
 {#snippet notesForm(target: string, action: string, studentId: string | null, stored: string)}
 	{@const errs = errorsFor(target, 'notes')}

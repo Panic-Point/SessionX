@@ -4,6 +4,7 @@ import {
 	LATE_CANCEL_WARNING,
 	addMyStudent,
 	cancelLesson,
+	deleteMyAccount,
 	getAccountHome,
 	getCancelView,
 	isLateCancel,
@@ -93,6 +94,18 @@ describe('account home', () => {
 		expect(home.past).toEqual([]);
 		expect(home.inPeriod?.some((b) => b.id === outside.id)).toBe(false);
 		expect((await getAccountHome(store, PAT, now)).inPeriod).toBeNull();
+	});
+
+	it('narrows every list to one student', async () => {
+		const { store } = setup();
+		const ava = await book(store, AVA, hoursFromNow(72));
+		const ben = await book(store, BEN, hoursFromNow(48), true);
+		const home = await getAccountHome(store, PAT, now, null, BEN);
+		expect(home.upcoming.map((b) => b.id)).toEqual([ben.id]);
+		expect(home.students).toHaveLength(2);
+		const period = { from: hoursFromNow(24), to: hoursFromNow(200) };
+		const inPeriod = await getAccountHome(store, PAT, now, period, AVA);
+		expect(inPeriod.inPeriod?.map((b) => b.id)).toEqual([ava.id]);
 	});
 
 	it('reports lateCancel as what happened, not what would happen', async () => {
@@ -327,5 +340,124 @@ describe('cancelLesson google calendar', () => {
 		expect(r.ok).toBe(true);
 		expect(calendar.deleted).toEqual([]);
 		expect(calendar.created).toEqual([]);
+	});
+});
+
+describe('deleteMyAccount', () => {
+	const PAT_ACCOUNT = {
+		id: PAT,
+		name: 'Pat Parent',
+		email: 'parent@example.com',
+		role: 'client' as const
+	};
+	const PASSWORD = 'sessionx-parent-dev1';
+	const form = (fields: Partial<{ currentPassword: string; confirmEmail: string }>) => ({
+		currentPassword: '',
+		confirmEmail: '',
+		...fields
+	});
+
+	it('needs the current password and changes nothing without it', async () => {
+		const { store, sent, deps } = setup();
+		const b = await book(store, AVA, hoursFromNow(72), true);
+		expect(await deleteMyAccount(deps, PAT_ACCOUNT, form({}), now)).toEqual({
+			ok: false,
+			errors: { currentPassword: 'Enter your current password.' }
+		});
+		expect(
+			await deleteMyAccount(deps, PAT_ACCOUNT, form({ currentPassword: 'wrong-password' }), now)
+		).toEqual({ ok: false, errors: { currentPassword: 'Current password is incorrect.' } });
+		expect(await store.countPasswordFailures('parent@example.com', hoursFromNow(-1))).toBe(1);
+		expect(await store.findAccountById(PAT)).not.toBeNull();
+		expect((await store.getBooking(b.id))!.status).toBe('approved');
+		expect(sent).toEqual([]);
+	});
+
+	it('cancels upcoming lessons, ends series, keeps the past and deletes the account', async () => {
+		const { store, sent, deps } = setup();
+		const soon = await book(store, AVA, hoursFromNow(5), true);
+		const later = await book(store, BEN, hoursFromNow(72));
+		const past = await book(store, AVA, hoursFromNow(1), true);
+		const at = hoursFromNow(2);
+
+		const result = await deleteMyAccount(
+			deps,
+			PAT_ACCOUNT,
+			form({ currentPassword: PASSWORD }),
+			at
+		);
+
+		expect(result).toEqual({ ok: true, cancelled: 2 });
+		expect(await store.getBooking(soon.id)).toMatchObject({
+			status: 'cancelled',
+			lateCancel: true
+		});
+		expect(await store.getBooking(later.id)).toMatchObject({
+			status: 'cancelled',
+			lateCancel: false
+		});
+		expect((await store.getBooking(past.id))!.status).toBe('approved');
+		expect((await store.listSeriesForAccount(PAT)).every((x) => x.endedAt !== null)).toBe(true);
+		expect(await store.findAccountById(PAT)).toBeNull();
+		expect((await store.getAccount(PAT))!.deleted).toBe(true);
+		expect(sent).toHaveLength(1);
+		expect(sent[0]).toMatchObject({
+			to: 'admin@sessionx.local',
+			subject: 'Account deleted: Pat Parent'
+		});
+		expect(sent[0].text).toContain("less than 24 hours' notice");
+		expect(sent[0].text).toContain('Ben · ');
+	});
+
+	it('asks for the email when the account has no password', async () => {
+		const { store, deps } = setup();
+		await store.requestGuestBooking(
+			{
+				email: 'robin@example.com',
+				accountName: 'Robin',
+				studentName: 'Rey',
+				lessonTypeId: LESSON_30,
+				startsAt: hoursFromNow(80),
+				note: ''
+			},
+			now
+		);
+		const account = (await store.findAccountByEmail('robin@example.com'))!;
+		expect(await deleteMyAccount(deps, account, form({}), now)).toEqual({
+			ok: false,
+			errors: { confirmEmail: 'Type your email to confirm.' }
+		});
+		expect(await deleteMyAccount(deps, account, form({ confirmEmail: 'x@y.z' }), now)).toEqual({
+			ok: false,
+			errors: { confirmEmail: 'That is not the email on this account.' }
+		});
+		expect(
+			await deleteMyAccount(deps, account, form({ confirmEmail: ' Robin@Example.com ' }), now)
+		).toEqual({ ok: true, cancelled: 1 });
+		expect(await store.findAccountById(account.id)).toBeNull();
+	});
+
+	it('refuses the admin account', async () => {
+		const { store, deps } = setup();
+		const admin = (await store.findAccountByEmail('admin@sessionx.local'))!;
+		const result = await deleteMyAccount(deps, admin, form({ confirmEmail: admin.email }), now);
+		expect(result.ok).toBe(false);
+		expect(await store.findAccountById(admin.id)).not.toBeNull();
+	});
+
+	it('removes cancelled lessons from the calendar', async () => {
+		const { store, deps } = setup();
+		const settings = await store.getSettings();
+		await store.updateSettings({ ...settings, gcalWriteCalendarId: 'teacher@example.com' });
+		const calendar = fakeCalendar();
+		const b = await book(store, AVA, hoursFromNow(72), true);
+		await store.setCalendarEventId(b.id, 'evt-1');
+		await deleteMyAccount(
+			{ ...deps, calendar },
+			PAT_ACCOUNT,
+			form({ currentPassword: PASSWORD }),
+			now
+		);
+		expect(calendar.deleted).toEqual([{ calendarId: 'teacher@example.com', eventId: 'evt-1' }]);
 	});
 });

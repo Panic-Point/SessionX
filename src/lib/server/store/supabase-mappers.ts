@@ -363,6 +363,7 @@ export interface StudentPriceRow {
 /** Accounts select with students and their student_prices embedded. */
 export interface AccountWithStudentsRow extends AccountRow {
 	admin_notes: string;
+	deleted_at: string | null;
 	students: (StudentRow & { student_prices: StudentPriceRow[] })[];
 }
 
@@ -382,6 +383,7 @@ export function mapAccountWithStudentsRow(row: AccountWithStudentsRow): AccountW
 	return {
 		...mapAccountRow(row),
 		adminNotes: row.admin_notes,
+		deleted: row.deleted_at !== null,
 		students: row.students
 			.map((s) => ({ ...mapStudentRow(s), prices: s.student_prices.map(mapStudentPriceRow) }))
 			.sort((a, b) => a.name.localeCompare(b.name))
@@ -389,8 +391,8 @@ export function mapAccountWithStudentsRow(row: AccountWithStudentsRow): AccountW
 }
 
 /**
- * Translates request_account_booking / cancel_booking / student-write SQLSTATEs into store
- * errors; null when unrecognised. 22P02 (malformed uuid) and 23503 (unknown foreign key) are treated as not found.
+ * Translates request_account_booking / cancel_booking / delete_account / student-write SQLSTATEs
+ * into store errors; null when unrecognised. 22P02 (malformed uuid) and 23503 (unknown foreign key) are treated as not found.
  */
 export function mapAccountRpcError(error: {
 	code?: string;
@@ -399,6 +401,7 @@ export function mapAccountRpcError(error: {
 	switch (error.code) {
 		case 'P0003':
 		case 'P0004':
+		case 'P0008':
 		case '22P02':
 		case '23503':
 			return new AccountStoreError('not_found');

@@ -32,7 +32,7 @@ vi.mock('#lib/server/context.ts', () => ({
 }));
 
 const { actions, load } = await import('./+page.server');
-const accountPage = await import('../../account/+page.server');
+const accountPage = await import('../../account/(tabs)/+page.server');
 
 const LESSON_30 = '11111111-0000-0000-0000-000000000030';
 const AVA = '33333333-0000-0000-0000-0000000000a1';

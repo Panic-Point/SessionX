@@ -206,6 +206,27 @@ export function runAccountStoreContract(
 			expect(await store.listAccountBookings(account.id, wide)).toHaveLength(1);
 		});
 
+		it('lists account bookings for one student', async () => {
+			const store = await makeStore();
+			const { student: zed } = await otherAccount(store);
+			const ava = await store.requestAccountBooking(booking({ startsAt: DAY_1 }), NOW);
+			const ben = await store.requestAccountBooking(
+				booking({ studentId: BEN, startsAt: DAY_2 }),
+				NOW
+			);
+			expect((await store.listAccountBookings(PAT, { studentId: AVA })).map((b) => b.id)).toEqual([
+				ava.bookingId
+			]);
+			const benOnDay2 = await store.listAccountBookings(PAT, {
+				studentId: BEN,
+				from: DAY_2,
+				to: DAY_3
+			});
+			expect(benOnDay2.map((b) => b.id)).toEqual([ben.bookingId]);
+			// Another family's student never matches.
+			expect(await store.listAccountBookings(PAT, { studentId: zed.id })).toEqual([]);
+		});
+
 		it('cancels own booking and frees the slot', async () => {
 			const store = await makeStore();
 			const created = await store.requestAccountBooking(booking(), NOW);
@@ -336,6 +357,55 @@ export function runAccountStoreContract(
 			expect((await store.listStudents(PAT)).find((s) => s.id === AVA)?.notes).toBe('Left-handed');
 			expect(await accountCode(store.updateAccountNotes(NO_SUCH_ACCOUNT, 'x'))).toBe('not_found');
 			expect(await accountCode(store.updateStudentNotes(NO_SUCH_STUDENT, 'x'))).toBe('not_found');
+		});
+
+		it('deleteAccount stops sign-in, frees the email and keeps the history', async () => {
+			const store = await makeStore();
+			const created = await store.requestAccountBooking(booking(), NOW);
+			const later = new Date(NOW.getTime() + 3_600_000);
+			await store.createLoginToken(PAT, 'login-hash', later);
+			await store.createPasswordToken('reset-hash', { purpose: 'reset', accountId: PAT }, later);
+
+			await store.deleteAccount(PAT, NOW);
+
+			expect(await store.findAccountById(PAT)).toBeNull();
+			expect(await store.findAccountByEmail('parent@example.com')).toBeNull();
+			expect(await store.getPasswordHash(PAT)).toBeNull();
+			expect(await store.consumeLoginToken('login-hash', NOW)).toBeNull();
+			expect(await store.peekPasswordToken('reset-hash', 'reset', NOW)).toBeNull();
+			const kept = (await store.getAccount(PAT))!;
+			expect(kept).toMatchObject({ name: 'Pat Parent', deleted: true });
+			expect(kept.email).not.toBe('parent@example.com');
+			expect(kept.students.map((s) => s.name)).toEqual(['Ava', 'Ben']);
+			expect((await store.listAccounts()).find((a) => a.id === PAT)?.deleted).toBe(true);
+			expect((await store.getBooking(created.bookingId))?.status).toBe('pending');
+
+			// The same email starts a fresh account.
+			await store.requestGuestBooking(
+				{
+					email: 'parent@example.com',
+					accountName: 'Pat Again',
+					studentName: 'Ava',
+					lessonTypeId: LESSON_30,
+					startsAt: DAY_3,
+					note: ''
+				},
+				NOW
+			);
+			const fresh = (await store.findAccountByEmail('parent@example.com'))!;
+			expect(fresh.id).not.toBe(PAT);
+			expect(fresh.name).toBe('Pat Again');
+
+			expect(await accountCode(store.deleteAccount(PAT, NOW))).toBe('not_found');
+		});
+
+		it('deleteAccount refuses unknown accounts and admins', async () => {
+			const store = await makeStore();
+			const admin = (await store.findAccountByEmail('admin@sessionx.local'))!;
+			expect(await accountCode(store.deleteAccount(NO_SUCH_ACCOUNT, NOW))).toBe('not_found');
+			expect(await accountCode(store.deleteAccount(admin.id, NOW))).toBe('not_found');
+			expect(await store.findAccountById(admin.id)).not.toBeNull();
+			expect((await store.getAccount(PAT))?.deleted).toBe(false);
 		});
 
 		it('lateCancelOnly filter', async () => {

@@ -208,6 +208,33 @@ export async function completePasswordReset(
 	return account ? { ok: true, account } : { ok: false, invalid: true };
 }
 
+/**
+ * Checks a signed-in account's current password against `stored`. Wrong guesses count towards
+ * the same lockout as sign-in. Returns the error to show, or null when it matches.
+ */
+export async function currentPasswordProblem(
+	store: AdminStore,
+	account: Account,
+	stored: string,
+	currentPassword: string,
+	now: Date
+): Promise<string | null> {
+	const email = normalize(account.email);
+	const failures = await store.countPasswordFailures(
+		email,
+		new Date(now.getTime() - LOCKOUT_WINDOW_MS)
+	);
+	if (failures >= LOCKOUT_ATTEMPTS) {
+		return 'Too many incorrect attempts. Try again in 15 minutes, or reset your password from the sign-in page.';
+	}
+	if (!currentPassword) return 'Enter your current password.';
+	if (!(await verifyPassword(currentPassword, stored))) {
+		await store.recordPasswordFailure(email, now);
+		return 'Current password is incorrect.';
+	}
+	return null;
+}
+
 export interface ChangePasswordForm {
 	currentPassword: string;
 	password: string;
@@ -226,24 +253,10 @@ export async function changePassword(
 ): Promise<{ ok: true } | { ok: false; errors: FieldErrors }> {
 	const stored = await store.getPasswordHash(account.id);
 	const errors = newPasswordErrors(form.password, form.confirmPassword);
-
 	if (stored) {
-		const email = normalize(account.email);
-		const failures = await store.countPasswordFailures(
-			email,
-			new Date(now.getTime() - LOCKOUT_WINDOW_MS)
-		);
-		if (failures >= LOCKOUT_ATTEMPTS) {
-			errors.currentPassword =
-				'Too many incorrect attempts. Try again in 15 minutes, or reset your password from the sign-in page.';
-		} else if (!form.currentPassword) {
-			errors.currentPassword = 'Enter your current password.';
-		} else if (!(await verifyPassword(form.currentPassword, stored))) {
-			await store.recordPasswordFailure(email, now);
-			errors.currentPassword = 'Current password is incorrect.';
-		}
+		const problem = await currentPasswordProblem(store, account, stored, form.currentPassword, now);
+		if (problem) errors.currentPassword = problem;
 	}
-
 	if (Object.keys(errors).length) return { ok: false, errors };
 	await store.setPasswordHash(account.id, await hashPassword(form.password));
 	return { ok: true };

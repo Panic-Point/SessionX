@@ -274,6 +274,14 @@ describe('admin service', () => {
 		expect(pat.studentNames).toContain('Ava');
 	});
 
+	it('marks a deleted family and hides its email', async () => {
+		const { store } = setup();
+		await store.deleteAccount(PAT, now);
+		const pat = (await listFamilies(store)).find((f) => f.id === PAT)!;
+		expect(pat).toMatchObject({ name: 'Pat Parent', email: '', deleted: true });
+		expect((await getFamily(store, PAT))!).toMatchObject({ email: '', deleted: true });
+	});
+
 	it('family view shows custom and blank prices', async () => {
 		const { store } = setup();
 		await store.setStudentPrice(AVA, LESSON_30, 3000);

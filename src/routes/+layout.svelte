@@ -29,8 +29,10 @@
 				{#if data.viewer === 'admin'}
 					<a href="/admin">Admin</a>
 				{:else if data.viewer === 'client'}
-					<a href="/account" aria-current={page.url.pathname === '/account' ? 'page' : undefined}
-						>My lessons</a
+					<a
+						href="/account"
+						aria-current={page.url.pathname.startsWith('/account') ? 'page' : undefined}
+						>My account</a
 					>
 					<form method="POST" action="/logout">
 						<button type="submit">Sign out</button>

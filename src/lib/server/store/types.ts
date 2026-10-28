@@ -143,6 +143,11 @@ export interface DateRange {
 	to?: Date;
 }
 
+export interface AccountBookingFilter extends DateRange {
+	/** Only this student's lessons; another account's student matches nothing. */
+	studentId?: string;
+}
+
 /** `from` is inclusive and `to` exclusive, both on startsAt. */
 export interface BookingFilter {
 	statuses: BookingStatus[];
@@ -262,6 +267,8 @@ export interface AccountBookingInput {
 
 export interface AccountWithStudents extends Account {
 	adminNotes: string;
+	/** The family deleted their account; kept so their lesson history stays with the teacher. */
+	deleted: boolean;
 	students: (Student & { prices: StudentPrice[] })[];
 }
 
@@ -287,10 +294,10 @@ export interface AccountStore {
 	renameStudent(accountId: string, studentId: string, name: string): Promise<Student>;
 	listStudentPrices(studentIds: string[]): Promise<StudentPrice[]>;
 	/**
-	 * All statuses, all the account's students, startsAt descending. `from` is inclusive and `to`
-	 * exclusive on startsAt.
+	 * All statuses, all the account's students (or just `studentId`), startsAt descending. `from` is
+	 * inclusive and `to` exclusive on startsAt.
 	 */
-	listAccountBookings(accountId: string, range?: DateRange): Promise<AdminBooking[]>;
+	listAccountBookings(accountId: string, filter?: AccountBookingFilter): Promise<AdminBooking[]>;
 	/**
 	 * Price is the student's custom price, else the lesson type's. Throws AccountStoreError
 	 * not_found (student not in account), then BookingStoreError lesson_type_not_found,
@@ -314,6 +321,14 @@ export interface AccountStore {
 	updateAccountNotes(accountId: string, notes: string): Promise<void>;
 	/** Throws AccountStoreError not_found. */
 	updateStudentNotes(studentId: string, notes: string): Promise<void>;
+	/**
+	 * Deletes a client account: it can no longer sign in (findAccountById/ByEmail return null), its
+	 * email is freed for a fresh account, and its password and unused sign-in links are gone. The
+	 * name, students and bookings stay for the teacher's records, and listAccounts/getAccount still
+	 * return it with `deleted` set. Bookings are untouched: cancel them first. Throws
+	 * AccountStoreError not_found (unknown, already deleted, or an admin).
+	 */
+	deleteAccount(accountId: string, now: Date): Promise<void>;
 }
 
 export interface SeriesInput {

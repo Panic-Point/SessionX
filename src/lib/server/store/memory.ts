@@ -15,7 +15,7 @@ import {
 	type AdminLessonType,
 	type AdminStore,
 	type BookingFilter,
-	type DateRange,
+	type AccountBookingFilter,
 	type BookingStatus,
 	type BookingStore,
 	type BookingSummary,
@@ -78,6 +78,9 @@ interface StoredPasswordToken {
 	used: boolean;
 }
 
+/** Matches the delete_account SQL function, so the old email is free for a new account. */
+const deletedEmail = (accountId: string) => `deleted-${accountId}@deleted.invalid`;
+
 const isLive = (b: StoredBooking) => b.status === 'pending' || b.status === 'approved';
 
 /** In-memory BookingStore that mirrors the request_guest_booking SQL function's semantics. */
@@ -93,6 +96,7 @@ export class MemoryBookingStore implements BookingStore, AdminStore, AccountStor
 	private readonly overrideNotes = new Map<string, string>();
 	private readonly accountNotes = new Map<string, string>();
 	private readonly studentNotes = new Map<string, string>();
+	private readonly deletedAccounts = new Set<string>();
 
 	constructor(data: DemoData = demoData()) {
 		this.data = structuredClone(data);
@@ -221,12 +225,12 @@ export class MemoryBookingStore implements BookingStore, AdminStore, AccountStor
 	async findAccountByEmail(email: string): Promise<Account | null> {
 		const wanted = email.trim().toLowerCase();
 		const account = this.data.accounts.find((a) => a.email.toLowerCase() === wanted);
-		return account ? { ...account } : null;
+		return account && !this.deletedAccounts.has(account.id) ? { ...account } : null;
 	}
 
 	async findAccountById(id: string): Promise<Account | null> {
 		const account = this.data.accounts.find((a) => a.id === id);
-		return account ? { ...account } : null;
+		return account && !this.deletedAccounts.has(account.id) ? { ...account } : null;
 	}
 
 	async createLoginToken(accountId: string, tokenHash: string, expiresAt: Date): Promise<void> {
@@ -499,7 +503,10 @@ export class MemoryBookingStore implements BookingStore, AdminStore, AccountStor
 			.map((p) => ({ ...p }));
 	}
 
-	async listAccountBookings(accountId: string, range: DateRange = {}): Promise<AdminBooking[]> {
+	async listAccountBookings(
+		accountId: string,
+		filter: AccountBookingFilter = {}
+	): Promise<AdminBooking[]> {
 		const own = new Set(
 			this.data.students.filter((s) => s.accountId === accountId).map((s) => s.id)
 		);
@@ -507,8 +514,9 @@ export class MemoryBookingStore implements BookingStore, AdminStore, AccountStor
 			.filter(
 				(b) =>
 					own.has(b.studentId) &&
-					(!range.from || b.startsAt >= range.from) &&
-					(!range.to || b.startsAt < range.to)
+					(!filter.studentId || b.studentId === filter.studentId) &&
+					(!filter.from || b.startsAt >= filter.from) &&
+					(!filter.to || b.startsAt < filter.to)
 			)
 			.sort((a, b) => b.startsAt.getTime() - a.startsAt.getTime())
 			.map((b) => this.toAdminBooking(b));
@@ -619,6 +627,24 @@ export class MemoryBookingStore implements BookingStore, AdminStore, AccountStor
 			throw new AccountStoreError('not_found');
 		}
 		this.studentNotes.set(studentId, notes);
+	}
+
+	async deleteAccount(accountId: string, _now: Date): Promise<void> {
+		const account = this.data.accounts.find((a) => a.id === accountId);
+		if (!account || account.role !== 'client' || this.deletedAccounts.has(accountId)) {
+			throw new AccountStoreError('not_found');
+		}
+		this.deletedAccounts.add(accountId);
+		account.email = deletedEmail(accountId);
+		this.passwordHashes.delete(accountId);
+		for (const [hash, token] of this.loginTokens) {
+			if (token.accountId === accountId) this.loginTokens.delete(hash);
+		}
+		for (const [hash, token] of this.passwordTokens) {
+			if (token.data.purpose === 'reset' && token.data.accountId === accountId) {
+				this.passwordTokens.delete(hash);
+			}
+		}
 	}
 
 	// ---- SeriesStore ----
@@ -823,7 +849,12 @@ export class MemoryBookingStore implements BookingStore, AdminStore, AccountStor
 				prices: this.data.studentPrices.filter((p) => p.studentId === s.id).map((p) => ({ ...p }))
 			}))
 			.sort((a, b) => a.name.localeCompare(b.name));
-		return { ...account, adminNotes: this.accountNotes.get(account.id) ?? '', students };
+		return {
+			...account,
+			adminNotes: this.accountNotes.get(account.id) ?? '',
+			deleted: this.deletedAccounts.has(account.id),
+			students
+		};
 	}
 
 	private requireBooking(id: string): StoredBooking {

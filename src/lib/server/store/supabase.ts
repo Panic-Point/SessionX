@@ -45,7 +45,7 @@ import {
 	type AdminBooking,
 	type AdminLessonType,
 	type BookingFilter,
-	type DateRange,
+	type AccountBookingFilter,
 	type BookingStatus,
 	type BookingSummary,
 	type CreatedBooking,
@@ -106,7 +106,7 @@ const SERIES_COLUMNS =
 const OWNED_SERIES_COLUMNS = SERIES_COLUMNS.replace('students(', 'students!inner(');
 
 const STUDENT_COLUMNS = 'id, account_id, name, notes';
-const ACCOUNT_WITH_STUDENTS_COLUMNS = `${ACCOUNT_COLUMNS}, admin_notes, students(${STUDENT_COLUMNS}, student_prices(student_id, lesson_type_id, price_cents))`;
+const ACCOUNT_WITH_STUDENTS_COLUMNS = `${ACCOUNT_COLUMNS}, admin_notes, deleted_at, students(${STUDENT_COLUMNS}, student_prices(student_id, lesson_type_id, price_cents))`;
 // !inner so that filtering on students.account_id drops other accounts' bookings.
 const OWNED_BOOKING_COLUMNS = BOOKING_COLUMNS.replace('students(', 'students!inner(');
 
@@ -270,6 +270,7 @@ export function createSupabaseBookingStore(url: string, serviceRoleKey: string):
 				.from('accounts')
 				.select(ACCOUNT_COLUMNS)
 				.eq('email', email.trim().toLowerCase())
+				.is('deleted_at', null)
 				.maybeSingle();
 			if (error) fail('findAccountByEmail', error);
 			return data ? mapAccountRow(data as AccountRow) : null;
@@ -280,6 +281,7 @@ export function createSupabaseBookingStore(url: string, serviceRoleKey: string):
 				.from('accounts')
 				.select(ACCOUNT_COLUMNS)
 				.eq('id', id)
+				.is('deleted_at', null)
 				.maybeSingle();
 			if (error) fail('findAccountById', error);
 			return data ? mapAccountRow(data as AccountRow) : null;
@@ -635,14 +637,18 @@ export function createSupabaseBookingStore(url: string, serviceRoleKey: string):
 			return (data as StudentPriceRow[]).map(mapStudentPriceRow);
 		},
 
-		async listAccountBookings(accountId: string, range: DateRange = {}): Promise<AdminBooking[]> {
+		async listAccountBookings(
+			accountId: string,
+			filter: AccountBookingFilter = {}
+		): Promise<AdminBooking[]> {
 			let query = db
 				.from('bookings')
 				.select(OWNED_BOOKING_COLUMNS)
 				.eq('students.account_id', accountId)
 				.order('starts_at', { ascending: false });
-			if (range.from) query = query.gte('starts_at', range.from.toISOString());
-			if (range.to) query = query.lt('starts_at', range.to.toISOString());
+			if (filter.studentId) query = query.eq('student_id', filter.studentId);
+			if (filter.from) query = query.gte('starts_at', filter.from.toISOString());
+			if (filter.to) query = query.lt('starts_at', filter.to.toISOString());
 			const { data, error } = await query;
 			if (error) {
 				if (isMalformedId(error)) return [];
@@ -778,6 +784,14 @@ export function createSupabaseBookingStore(url: string, serviceRoleKey: string):
 				.select('id');
 			if (error) failAccount('updateStudentNotes', error);
 			if ((data as { id: string }[]).length === 0) throw new AccountStoreError('not_found');
+		},
+
+		async deleteAccount(accountId: string, now: Date): Promise<void> {
+			const { error } = await db.rpc('delete_account', {
+				p_account_id: accountId,
+				p_now: now.toISOString()
+			});
+			if (error) failAccount('deleteAccount', error);
 		},
 
 		// ---- SeriesStore ----
