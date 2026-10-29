@@ -5,7 +5,7 @@ import { addLessonToCalendar, calendarBusy, removeLessonFromCalendar } from './c
 import type { CalendarClient } from './calendar/types';
 import type { Mailer } from './email/mailer';
 import {
-	cancellationConfirmationEmail,
+	lessonCancelledByTeacherEmail,
 	seriesCreatedEmail,
 	seriesEndedEmail,
 	type SeriesEmailData,
@@ -447,16 +447,23 @@ export async function endSeries(
 	return { ok: true, cancelled: cancelled.length };
 }
 
+const MAX_CANCEL_REASON = 500;
+
 /**
- * The admin cancels one lesson. Never a late cancellation; the family gets the usual
- * cancellation email and the calendar event is removed.
+ * The admin cancels one lesson, from any admin page. Never a late cancellation; the family is
+ * emailed (with `reason` when given) and the calendar event is removed.
  */
 export async function adminCancelLesson(
 	deps: SeriesDeps,
 	bookingId: string,
-	now: Date
+	now: Date,
+	reason = ''
 ): Promise<ActionResult> {
 	const { store, mailer, appUrl } = deps;
+	const trimmed = reason.trim();
+	if (trimmed.length > MAX_CANCEL_REASON) {
+		return { ok: false, message: 'Reason must be 500 characters or fewer.' };
+	}
 	const existing = await store.getBooking(bookingId);
 	if (!existing) return { ok: false, message: 'Lesson not found.' };
 	let booking: AdminBooking;
@@ -472,21 +479,31 @@ export async function adminCancelLesson(
 		}
 		throw e;
 	}
-	const settings = await store.getSettings();
+	// The cancellation has committed: from here on a failure must only log.
+	let settings: StudioSettings;
+	try {
+		settings = await store.getSettings();
+	} catch (e) {
+		console.error('Failed to read settings after cancelling a lesson', e);
+		return { ok: true };
+	}
 	try {
 		await mailer.send(
-			cancellationConfirmationEmail({
-				accountName: booking.accountName,
-				email: booking.accountEmail,
-				studentName: booking.studentName,
-				lessonTypeName: booking.lessonTypeName,
-				durationMin: booking.durationMin,
-				startsAt: booking.startsAt,
-				timezone: settings.timezone,
-				priceCents: booking.priceCents,
-				note: booking.note,
-				manageUrl: `${appUrl}/manage/${booking.manageToken}`
-			})
+			lessonCancelledByTeacherEmail(
+				{
+					accountName: booking.accountName,
+					email: booking.accountEmail,
+					studentName: booking.studentName,
+					lessonTypeName: booking.lessonTypeName,
+					durationMin: booking.durationMin,
+					startsAt: booking.startsAt,
+					timezone: settings.timezone,
+					priceCents: booking.priceCents,
+					note: booking.note,
+					manageUrl: `${appUrl}/manage/${booking.manageToken}`
+				},
+				trimmed || null
+			)
 		);
 	} catch (e) {
 		console.error('Failed to send cancellation email', e);

@@ -554,6 +554,24 @@ describe('cancelling', () => {
 		});
 	});
 
+	it('the admin can tell the family why a lesson was cancelled', async () => {
+		const { store, sent, deps, seriesId } = await withSeries();
+		const [first, second] = await store.listSeriesBookings(seriesId);
+		expect(await adminCancelLesson(deps, first.id, now, 'x'.repeat(501))).toEqual({
+			ok: false,
+			message: 'Reason must be 500 characters or fewer.'
+		});
+		expect((await store.getBooking(first.id))?.status).toBe('approved');
+
+		sent.length = 0;
+		expect(await adminCancelLesson(deps, second.id, now, '  Teacher is unwell  ')).toEqual({
+			ok: true
+		});
+		expect(sent).toHaveLength(1);
+		expect(sent[0].text).toContain('Your teacher has cancelled this lesson.');
+		expect(sent[0].text).toContain('Reason: Teacher is unwell');
+	});
+
 	it('a family cancelling one lesson uses the usual late rules and keeps the rest', async () => {
 		const { store, deps, seriesId } = await withSeries();
 		const [first] = await store.listSeriesBookings(seriesId);

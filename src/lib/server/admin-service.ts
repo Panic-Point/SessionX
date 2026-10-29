@@ -92,6 +92,22 @@ export async function listLessons(
 	return rows.map((b) => toView(b, timezone));
 }
 
+/** A family's confirmed lessons that have not started yet, soonest first. */
+export async function listFamilyUpcomingLessons(
+	store: AdminDataStore,
+	accountId: string,
+	now: Date
+): Promise<AdminBookingView[]> {
+	const [{ timezone }, rows] = await Promise.all([
+		store.getSettings(),
+		store.listAccountBookings(accountId, { from: now })
+	]);
+	return rows
+		.filter((b) => b.status === 'approved' && b.startsAt.getTime() > now.getTime())
+		.sort((a, b) => a.startsAt.getTime() - b.startsAt.getTime())
+		.map((b) => toView(b, timezone));
+}
+
 /** e.g. "12 lessons · $420.00, $90.00 unpaid" for the lessons on the page. */
 export function summarizeLessons(lessons: AdminBookingView[], lateCancels = false): string {
 	const n = lessons.length;

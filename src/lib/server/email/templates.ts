@@ -182,6 +182,28 @@ ${textRows(rows)}
 	};
 }
 
+/** The teacher cancelled the family's lesson, optionally saying why. */
+export function lessonCancelledByTeacherEmail(
+	d: BookingEmailData,
+	reason: string | null
+): EmailMessage {
+	const when = formatDateTime(d.startsAt, d.timezone);
+	const rows = details(d);
+	if (reason) rows.push(['Reason', reason]);
+	const text = `Hi ${d.accountName},
+
+Your teacher has cancelled this lesson.
+
+${textRows(rows)}
+`;
+	return {
+		to: d.email,
+		subject: `Lesson cancelled – ${d.lessonTypeName} on ${when}`,
+		text,
+		html: wrap(`Hi ${d.accountName}, your teacher has cancelled this lesson`, rows, '')
+	};
+}
+
 export function cancellationNoticeEmail(
 	d: BookingEmailData,
 	adminEmail: string,

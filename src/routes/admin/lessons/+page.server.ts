@@ -2,7 +2,8 @@ import { fail } from '@sveltejs/kit';
 import { listLessons, setLessonPaid, summarizeLessons } from '#lib/server/admin-service.ts';
 import { parsePeriod, periodQuery } from '#lib/server/periods.ts';
 import { formString, requireAdmin } from '#lib/server/admin-actions.ts';
-import { getStore } from '#lib/server/context.ts';
+import { getAppUrl, getCalendar, getMailer, getStore } from '#lib/server/context.ts';
+import { adminCancelLesson } from '#lib/server/series-service.ts';
 import type { Actions, PageServerLoad } from './$types';
 
 export const load: PageServerLoad = async ({ locals, url }) => {
@@ -38,7 +39,8 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 			priceLabel: l.priceLabel,
 			paid: l.paid,
 			seriesId: l.series?.id ?? null,
-			seriesLabel: l.seriesLabel
+			seriesLabel: l.seriesLabel,
+			canCancel: l.status === 'approved' && l.startsAt.getTime() > now.getTime()
 		}))
 	};
 };
@@ -53,5 +55,23 @@ async function markPaid(locals: App.Locals, request: Request, paid: boolean) {
 
 export const actions: Actions = {
 	paid: ({ locals, request }) => markPaid(locals, request, true),
-	unpaid: ({ locals, request }) => markPaid(locals, request, false)
+	unpaid: ({ locals, request }) => markPaid(locals, request, false),
+	cancel: async ({ locals, request }) => {
+		requireAdmin(locals.account);
+		const data = await request.formData();
+		const deps = {
+			store: getStore(),
+			mailer: getMailer(),
+			appUrl: getAppUrl(),
+			calendar: getCalendar()
+		};
+		const result = await adminCancelLesson(
+			deps,
+			formString(data, 'id'),
+			new Date(),
+			formString(data, 'reason')
+		);
+		if (!result.ok) return fail(400, { message: result.message });
+		return { message: null, cancelled: 'Lesson cancelled. The family has been emailed.' };
+	}
 };
