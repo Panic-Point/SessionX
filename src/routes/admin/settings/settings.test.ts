@@ -12,6 +12,7 @@ const ctx = vi.hoisted(() => ({
 vi.mock('#lib/server/context.ts', () => ({
 	getStore: () => ctx.store,
 	getCalendar: () => ctx.calendar,
+	getAppUrl: () => 'https://example.test',
 	getCalendarStatus: () => ({
 		enabled: ctx.calendar.enabled,
 		serviceAccountEmail: ctx.calendar.serviceAccountEmail,
@@ -98,7 +99,7 @@ describe('/admin/settings load', () => {
 
 describe('/admin/settings save', () => {
 	it('uses only named actions (SvelteKit rejects default alongside named)', () => {
-		expect(Object.keys(actions).sort()).toEqual(['checkConnection', 'save']);
+		expect(Object.keys(actions).sort()).toEqual(['checkConnection', 'save', 'syncLessons']);
 	});
 
 	it('forbids a client', async () => {
@@ -181,5 +182,67 @@ describe('/admin/settings checkConnection', () => {
 				lines: ['Google Calendar is not configured on the server (GOOGLE_SERVICE_ACCOUNT_JSON).']
 			}
 		});
+	});
+});
+
+describe('/admin/settings syncLessons', () => {
+	const PARENT = '22222222-0000-0000-0000-00000000000b';
+	const AVA = '33333333-0000-0000-0000-0000000000a1';
+	const LESSON_30 = '11111111-0000-0000-0000-000000000030';
+
+	async function bookUpcoming() {
+		const now = new Date();
+		const startsAt = new Date(now.getTime() + 3 * 24 * 60 * 60 * 1000);
+		startsAt.setUTCMinutes(0, 0, 0);
+		await ctx.store.createApprovedBooking(
+			{ accountId: PARENT, studentId: AVA, lessonTypeId: LESSON_30, startsAt, note: '' },
+			now
+		);
+	}
+
+	async function saveLessonCalendar() {
+		await ctx.store.updateSettings({
+			...(await ctx.store.getSettings()),
+			gcalWriteCalendarId: 'lessons@x.com'
+		});
+	}
+
+	it('forbids a client', async () => {
+		const result = await run(() => call(actions.syncLessons, post(client)));
+		expect(isHttpError(result)).toBe(true);
+		expect(result).toMatchObject({ status: 403 });
+	});
+
+	it('asks for setup when there is no lesson calendar', async () => {
+		await bookUpcoming();
+		const result = await call(actions.syncLessons, post(admin));
+		expect(result).toMatchObject({ sync: { ok: false } });
+		expect(ctx.calendar.created).toEqual([]);
+	});
+
+	it('adds upcoming lessons and then reports nothing left', async () => {
+		await saveLessonCalendar();
+		await bookUpcoming();
+		expect(await call(actions.syncLessons, post(admin))).toEqual({
+			sync: { ok: true, lines: ['Added 1 lesson.'] }
+		});
+		expect(ctx.calendar.created).toHaveLength(1);
+		expect(await call(actions.syncLessons, post(admin))).toEqual({
+			sync: { ok: true, lines: ['All upcoming lessons are already on the calendar.'] }
+		});
+	});
+
+	it('reports failures', async () => {
+		const err = vi.spyOn(console, 'error').mockImplementation(() => {});
+		await saveLessonCalendar();
+		await bookUpcoming();
+		ctx.calendar.fail.create = true;
+		expect(await call(actions.syncLessons, post(admin))).toEqual({
+			sync: {
+				ok: false,
+				lines: ['Could not add 1 lesson. Click Check connection to see why.']
+			}
+		});
+		err.mockRestore();
 	});
 });

@@ -442,11 +442,31 @@ describe('topUpSeries', () => {
 	it('materialises the demo series from today', async () => {
 		const { store, deps } = await setup();
 		const result = await topUpSeries(deps, now);
-		expect(result).toEqual({ series: 1, lessonsAdded: 12 });
+		expect(result).toEqual({ series: 1, lessonsAdded: 12, deferred: 0, subrequests: 29 });
 		const lessons = await store.listSeriesBookings(DEMO_SERIES);
 		expect(lessons[0].startsAt).toEqual(
 			DateTime.fromISO('2026-11-03T16:00', { zone: ZONE }).toJSDate()
 		);
+	});
+});
+
+describe('topUpSeries budget', () => {
+	it('leaves series past the budget for the next run, but always does the first', async () => {
+		const { store, deps } = await setup();
+		const a = await createSeries(deps, PAT, form({ endMode: 'none' }), now);
+		const b = await createSeries(deps, PAT, form({ endMode: 'none', weekday: '3' }), now);
+		if (!a.ok || !b.ok) throw new Error('create failed');
+		await topUpSeries(deps, now); // the demo series' first dates
+		const later = days(now, 3); // both reach a new date
+
+		const first = await topUpSeries(deps, later, 1);
+		expect(first).toMatchObject({ series: 1, lessonsAdded: 1, subrequests: 7 });
+		expect(first.deferred).toBeGreaterThan(0);
+
+		const second = await topUpSeries(deps, later);
+		expect(second.deferred).toBe(0);
+		expect(await store.listSeriesBookings(a.seriesId)).toHaveLength(13);
+		expect(await store.listSeriesBookings(b.seriesId)).toHaveLength(13);
 	});
 });
 

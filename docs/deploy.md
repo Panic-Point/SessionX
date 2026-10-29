@@ -155,8 +155,10 @@ line) and choose the calendars in the admin settings. Leave it unset to run with
 ## 8. GitHub Actions secrets (hourly job)
 
 An hourly workflow (`.github/workflows/cron.yml`) calls `POST /api/cron`, which keeps the free
-Supabase database awake and marks requests whose start time has passed as expired (freeing the
-slot). In the GitHub repository go to Settings, Secrets and variables, Actions, and
+Supabase database awake, marks requests whose start time has passed as expired (freeing the
+slot), books the next dates of recurring series and puts upcoming lessons missing from Google
+Calendar on it. Each run stops before the Workers free plan's 50-subrequest limit and leaves the
+rest for the next hour. In the GitHub repository go to Settings, Secrets and variables, Actions, and
 add two repository secrets:
 
 | Secret        | Value                                                              |

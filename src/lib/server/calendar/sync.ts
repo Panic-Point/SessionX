@@ -36,20 +36,61 @@ export function lessonEvent(
 	};
 }
 
+/** True only when a new event was created and saved on the booking. */
 export async function addLessonToCalendar(
 	deps: { store: AppStore; calendar?: CalendarClient; appUrl: string },
 	booking: AdminBooking,
 	settings: StudioSettings
-): Promise<void> {
+): Promise<boolean> {
 	const { store, calendar, appUrl } = deps;
 	const calendarId = settings.gcalWriteCalendarId;
-	if (!calendar?.enabled || !calendarId || booking.gcalEventId) return;
+	if (!calendar?.enabled || !calendarId || booking.gcalEventId) return false;
 	try {
 		const eventId = await calendar.createEvent(calendarId, lessonEvent(booking, settings, appUrl));
 		await store.setCalendarEventId(booking.id, eventId);
+		return true;
 	} catch (e) {
 		console.error('Failed to add lesson to Google Calendar', e);
+		return false;
 	}
+}
+
+/**
+ * Lessons added per click. Each costs two subrequests (Google + database), which keeps one request
+ * well under the Cloudflare Workers free plan's 50-subrequest limit.
+ */
+export const SYNC_BATCH_SIZE = 15;
+
+export interface SyncResult {
+	added: number;
+	failed: number;
+	/** Upcoming approved lessons still missing from the calendar after this run. */
+	remaining: number;
+}
+
+/**
+ * Adds upcoming approved lessons that have no calendar event yet, such as ones booked before the
+ * calendar was connected. Past lessons are left alone. Safe to repeat: synced lessons are skipped.
+ */
+export async function syncLessonsToCalendar(
+	deps: { store: AppStore; calendar?: CalendarClient; appUrl: string },
+	settings: StudioSettings,
+	now: Date,
+	limit = SYNC_BATCH_SIZE
+): Promise<SyncResult> {
+	if (!deps.calendar?.enabled || !settings.gcalWriteCalendarId || limit <= 0) {
+		return { added: 0, failed: 0, remaining: 0 };
+	}
+	const lessons = await deps.store.listBookings({
+		statuses: ['approved'],
+		from: now,
+		order: 'asc'
+	});
+	const missing = lessons.filter((b) => !b.gcalEventId);
+	const batch = missing.slice(0, limit);
+	let added = 0;
+	for (const b of batch) if (await addLessonToCalendar(deps, b, settings)) added++;
+	return { added, failed: batch.length - added, remaining: missing.length - added };
 }
 
 export async function removeLessonFromCalendar(

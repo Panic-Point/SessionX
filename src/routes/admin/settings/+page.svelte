@@ -6,10 +6,12 @@
 
 	let submitting = $state(false);
 	let checking = $state(false);
+	let syncing = $state(false);
 
 	const values = $derived(form?.values ?? data.values);
 	const errors: Partial<Record<string, string>> = $derived(form?.errors ?? {});
 	const check = $derived(form?.check);
+	const sync = $derived(form?.sync);
 
 	const US_ZONES = [
 		'America/Los_Angeles',
@@ -277,6 +279,39 @@
 	{/if}
 	<button class="button secondary" type="submit" disabled={checking}>
 		{checking ? 'Checking…' : 'Check connection'}
+	</button>
+</form>
+
+<form
+	class="card"
+	method="POST"
+	action="?/syncLessons"
+	aria-labelledby="sync-heading"
+	use:enhance={() => {
+		syncing = true;
+		return async ({ update }) => {
+			await update({ reset: false });
+			syncing = false;
+		};
+	}}
+>
+	<h2 id="sync-heading">Add existing lessons</h2>
+	<p class="hint intro">
+		New lessons go on the lesson calendar by themselves. This adds upcoming approved lessons booked
+		before the calendar was connected, or that couldn't be added at the time. Lessons already on the
+		calendar are skipped, so it's safe to click more than once.
+	</p>
+	{#if sync}
+		<div class={sync.ok ? 'banner' : 'banner bad'} role={sync.ok ? 'status' : 'alert'}>
+			<ul class="lines">
+				{#each sync.lines as line, i (i)}
+					<li>{line}</li>
+				{/each}
+			</ul>
+		</div>
+	{/if}
+	<button class="button secondary" type="submit" disabled={syncing}>
+		{syncing ? 'Adding…' : 'Add lessons'}
 	</button>
 </form>
 
