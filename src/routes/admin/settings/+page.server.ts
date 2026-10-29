@@ -2,7 +2,8 @@ import { fail } from '@sveltejs/kit';
 import { validateSettings } from '#lib/server/admin-validation.ts';
 import { formString, requireAdmin } from '#lib/server/admin-actions.ts';
 import { checkCalendarConnection } from '#lib/server/calendar/check.ts';
-import { getCalendar, getCalendarStatus, getStore } from '#lib/server/context.ts';
+import { syncLessonsToCalendar } from '#lib/server/calendar/sync.ts';
+import { getAppUrl, getCalendar, getCalendarStatus, getStore } from '#lib/server/context.ts';
 import type { Actions, PageServerLoad } from './$types';
 
 const FIELDS = [
@@ -61,5 +62,35 @@ export const actions: Actions = {
 		requireAdmin(locals.account);
 		const settings = await getStore().getSettings();
 		return { check: await checkCalendarConnection(getCalendar(), settings, new Date()) };
+	},
+
+	/** Adds upcoming approved lessons that aren't on the lesson calendar yet, one batch per click. */
+	syncLessons: async ({ locals }) => {
+		requireAdmin(locals.account);
+		const settings = await getStore().getSettings();
+		const calendar = getCalendar();
+		if (!calendar.enabled || !settings.gcalWriteCalendarId) {
+			return { sync: { ok: false, lines: [SYNC_NOT_READY] } };
+		}
+		const deps = { store: getStore(), calendar, appUrl: getAppUrl() };
+		const r = await syncLessonsToCalendar(deps, settings, new Date());
+		const lines: string[] = [];
+		if (r.added > 0) lines.push(`Added ${plural(r.added)}.`);
+		if (r.failed > 0) {
+			lines.push(`Could not add ${plural(r.failed)}. Click Check connection to see why.`);
+		}
+		if (r.remaining > r.failed) {
+			lines.push(`${plural(r.remaining)} still to add. Click Add lessons again.`);
+		}
+		if (lines.length === 0) lines.push(SYNC_NOTHING);
+		return { sync: { ok: r.failed === 0, lines } };
 	}
 };
+
+const SYNC_NOT_READY =
+	'Set up Google Calendar and save a lesson calendar first, then click Check connection.';
+const SYNC_NOTHING = 'All upcoming lessons are already on the calendar.';
+
+function plural(n: number): string {
+	return `${n} ${n === 1 ? 'lesson' : 'lessons'}`;
+}

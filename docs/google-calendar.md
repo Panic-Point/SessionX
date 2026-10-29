@@ -142,5 +142,15 @@ calendar:
   service account yet, or the ID was copied wrong. Fix it, save, and check again. A new share can
   take a few minutes to start working.
 
+## 10. Add lessons booked before the connection
+
+New lessons go on the lesson calendar by themselves once the connection works. To add the upcoming
+approved lessons that were booked before you connected, click **Add lessons** under **Add existing
+lessons** on the same page. It adds up to 20 lessons per click and says how many are left, so click
+again until it says every upcoming lesson is already on the calendar. Past lessons, pending requests
+and cancelled lessons aren't added. Lessons already on the calendar are skipped, so clicking again
+never makes duplicates. If a lesson couldn't be added when it was approved (for example Google was
+down), this adds it too.
+
 If Google Calendar has a problem later, booking keeps working. SessionX just skips the calendar
 until it's fixed.
