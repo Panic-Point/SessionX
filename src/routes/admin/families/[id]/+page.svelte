@@ -5,7 +5,7 @@
 	let { data, form }: PageProps = $props();
 
 	// Submitted values and errors apply only to the form that was submitted.
-	type Kind = 'notes' | 'prices' | 'series' | 'student' | 'book';
+	type Kind = 'notes' | 'prices' | 'series' | 'student' | 'book' | 'song';
 	type Failed = {
 		kind: Kind;
 		target: string;
@@ -128,6 +128,20 @@
 		return async ({ update }) => update({ reset: false });
 	};
 
+	const songMessage = $derived(
+		form && 'message' in form && form.kind === 'song'
+			? { target: form.target as string, text: form.message as string, added: 'added' in form }
+			: null
+	);
+
+	/** The values to show in a song form: the last failed submission for it, else `stored`. */
+	function songValues(target: string, stored: Record<string, string>): Record<string, string> {
+		if (failed?.kind === 'song' && failed.target === target && failed.values) return failed.values;
+		return stored;
+	}
+
+	const NEW_SONG = { title: '', artist: '', status: 'learning', notes: '' };
+
 	function priceValue(studentId: string, lessonTypeId: string, stored: string): string {
 		if (failed && failed.kind === 'prices' && failed.target === studentId && failed.prices) {
 			return failed.prices[lessonTypeId] ?? stored;
@@ -247,12 +261,111 @@
 			<button class="button" type="submit">Save prices</button>
 		</form>
 
+		{@render repertoire(s.id, s.name)}
+
 		{#if !data.family.deleted}
 			{@render bookOne(s.id, s.name)}
 		{/if}
 		{@render recurring(s.id, s.name)}
 	</section>
 {/each}
+
+{#snippet repertoire(studentId: string, studentName: string)}
+	{@const songs = data.songs.filter((x) => x.studentId === studentId)}
+	{@const errs = errorsFor(studentId, 'song')}
+	<h3>Repertoire</h3>
+	{#if songMessage && (songMessage.target === studentId || songs.some((x) => x.id === songMessage.target))}
+		<p class="banner" role="status">{songMessage.text}</p>
+	{/if}
+	{#if errs.form}
+		<p class="banner bad" role="alert">{errs.form}</p>
+	{/if}
+	{#if songs.length === 0}
+		<p class="meta">No songs yet.</p>
+	{:else}
+		<ul class="songs">
+			{#each songs as song (song.id)}
+				{@const songErrs = errorsFor(song.id, 'song')}
+				<li>
+					<div class="song">
+						<span>
+							<strong>{song.title}</strong>
+							{#if song.artist}<span class="artist">· {song.artist}</span>{/if}
+						</span>
+						<span class="badge {song.status === 'ready' ? 'ok' : ''}">{song.statusLabel}</span>
+					</div>
+					{#if song.notes}
+						<p class="meta song-notes">{song.notes}</p>
+					{/if}
+					<details open={failed?.kind === 'song' && failed.target === song.id}>
+						<summary>Edit {song.title}</summary>
+						{#if songErrs.form}
+							<p class="banner bad" role="alert">{songErrs.form}</p>
+						{/if}
+						<form method="POST" action="?/updateSong" novalidate use:enhance={keepValues}>
+							<input type="hidden" name="studentId" value={studentId} />
+							<input type="hidden" name="songId" value={song.id} />
+							{@render songFields(`song-${song.id}`, songValues(song.id, { ...song }), songErrs)}
+							<button class="button secondary" type="submit">Save song</button>
+						</form>
+						<form method="POST" action="?/removeSong" use:enhance>
+							<input type="hidden" name="studentId" value={studentId} />
+							<input type="hidden" name="songId" value={song.id} />
+							<button class="button danger" type="submit">Remove from list</button>
+						</form>
+					</details>
+				</li>
+			{/each}
+		</ul>
+	{/if}
+	<!-- Stays open after adding, so a whole list can go in one after another. -->
+	<details
+		open={(failed?.kind === 'song' && failed.target === studentId && !errs.form) ||
+			(songMessage?.added === true && songMessage.target === studentId)}
+	>
+		<summary>Add a song for {studentName}</summary>
+		<form method="POST" action="?/addSong" novalidate use:enhance>
+			<input type="hidden" name="studentId" value={studentId} />
+			{@render songFields(`song-new-${studentId}`, songValues(studentId, NEW_SONG), errs)}
+			<button class="button secondary" type="submit">Add song</button>
+		</form>
+	</details>
+{/snippet}
+
+{#snippet songFields(prefix: string, v: Record<string, string>, errs: Record<string, string>)}
+	<div class="grid">
+		{#each [['title', 'Title'], ['artist', 'Composer or artist (optional)']] as [name, label] (name)}
+			<div class="field">
+				<label for="{prefix}-{name}">{label}</label>
+				<input
+					id="{prefix}-{name}"
+					{name}
+					autocomplete="off"
+					value={v[name]}
+					aria-invalid={errs[name] ? 'true' : undefined}
+					aria-describedby={errs[name] ? `${prefix}-${name}-error` : undefined}
+				/>
+				{#if errs[name]}
+					<p class="error" id="{prefix}-{name}-error">{errs[name]}</p>
+				{/if}
+			</div>
+		{/each}
+		{@render select(`${prefix}-status`, 'status', 'Status', v.status, errs, data.songStatuses)}
+	</div>
+	<div class="field">
+		<label for="{prefix}-notes">Notes (shown to the family)</label>
+		<textarea
+			id="{prefix}-notes"
+			name="notes"
+			rows="2"
+			aria-invalid={errs.notes ? 'true' : undefined}
+			aria-describedby={errs.notes ? `${prefix}-notes-error` : undefined}>{v.notes}</textarea
+		>
+		{#if errs.notes}
+			<p class="error" id="{prefix}-notes-error">{errs.notes}</p>
+		{/if}
+	</div>
+{/snippet}
 
 {#snippet bookOne(studentId: string, studentName: string)}
 	{@const errs = errorsFor(studentId, 'book')}
@@ -628,6 +741,38 @@
 	.series {
 		margin: 0 0 0.75rem;
 		padding-left: 1.25rem;
+	}
+
+	.songs {
+		margin: 0 0 0.5rem;
+		padding: 0;
+		list-style: none;
+	}
+
+	.songs > li {
+		padding: 0.5rem 0;
+		border-bottom: 1px solid var(--border);
+	}
+
+	.song {
+		display: flex;
+		flex-wrap: wrap;
+		justify-content: space-between;
+		align-items: center;
+		gap: 0.25rem 0.75rem;
+	}
+
+	.artist {
+		color: var(--muted);
+	}
+
+	.song-notes {
+		margin: 0.25rem 0 0;
+		white-space: pre-line;
+	}
+
+	.songs form + form {
+		margin-top: 0.5rem;
 	}
 
 	details {

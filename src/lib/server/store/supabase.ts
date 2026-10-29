@@ -16,6 +16,7 @@ import {
 	mapSettingsRow,
 	mapStudentPriceRow,
 	mapStudentRow,
+	mapRepertoireSongRow,
 	mapWeeklyHoursRow,
 	toPasswordTokenRow,
 	mapPasswordTokenRow,
@@ -32,6 +33,7 @@ import {
 	type SettingsRow,
 	type StudentPriceRow,
 	type StudentRow,
+	type RepertoireSongRow,
 	type WeeklyHoursRow
 } from './supabase-mappers';
 import {
@@ -59,6 +61,8 @@ import {
 	type OccurrenceResult,
 	type PasswordTokenData,
 	type RegistrationDetails,
+	type RepertoireSong,
+	type SongInput,
 	type SeriesInput,
 	type Student,
 	type StudentPrice,
@@ -107,9 +111,17 @@ const SERIES_COLUMNS =
 const OWNED_SERIES_COLUMNS = SERIES_COLUMNS.replace('students(', 'students!inner(');
 
 const STUDENT_COLUMNS = 'id, account_id, name, notes';
+const SONG_COLUMNS = 'id, student_id, title, artist, status, notes, created_at';
 const ACCOUNT_WITH_STUDENTS_COLUMNS = `${ACCOUNT_COLUMNS}, admin_notes, deleted_at, students(${STUDENT_COLUMNS}, student_prices(student_id, lesson_type_id, price_cents))`;
 // !inner so that filtering on students.account_id drops other accounts' bookings.
 const OWNED_BOOKING_COLUMNS = BOOKING_COLUMNS.replace('students(', 'students!inner(');
+
+const songColumns = (input: SongInput) => ({
+	title: input.title.trim(),
+	artist: input.artist.trim(),
+	status: input.status,
+	notes: input.notes.trim()
+});
 
 const lessonTypeColumns = (input: LessonTypeInput) => ({
 	name: input.name,
@@ -979,6 +991,56 @@ export function createSupabaseBookingStore(url: string, serviceRoleKey: string):
 				.order('starts_at');
 			if (rows.error) fail('endSeries', rows.error);
 			return (rows.data as unknown as AdminBookingRow[]).map(mapAdminBookingRow);
+		},
+
+		// ---- RepertoireStore ----
+
+		async listRepertoire(studentIds: string[]): Promise<RepertoireSong[]> {
+			if (studentIds.length === 0) return [];
+			const { data, error } = await db
+				.from('repertoire_songs')
+				.select(SONG_COLUMNS)
+				.in('student_id', studentIds)
+				.order('title');
+			if (error) {
+				if (isMalformedId(error)) return [];
+				fail('listRepertoire', error);
+			}
+			return (data as RepertoireSongRow[]).map(mapRepertoireSongRow);
+		},
+
+		async addSong(studentId: string, input: SongInput): Promise<RepertoireSong> {
+			const { data, error } = await db
+				.from('repertoire_songs')
+				.insert({ student_id: studentId, ...songColumns(input) })
+				.select(SONG_COLUMNS)
+				.single();
+			if (error) failAccount('addSong', error);
+			return mapRepertoireSongRow(data as RepertoireSongRow);
+		},
+
+		async updateSong(studentId: string, songId: string, input: SongInput): Promise<RepertoireSong> {
+			const { data, error } = await db
+				.from('repertoire_songs')
+				.update(songColumns(input))
+				.eq('id', songId)
+				.eq('student_id', studentId)
+				.select(SONG_COLUMNS);
+			if (error) failAccount('updateSong', error);
+			const row = (data as RepertoireSongRow[])[0];
+			if (!row) throw new AccountStoreError('not_found');
+			return mapRepertoireSongRow(row);
+		},
+
+		async deleteSong(studentId: string, songId: string): Promise<void> {
+			const { data, error } = await db
+				.from('repertoire_songs')
+				.delete()
+				.eq('id', songId)
+				.eq('student_id', studentId)
+				.select('id');
+			if (error) failAccount('deleteSong', error);
+			if ((data as { id: string }[]).length === 0) throw new AccountStoreError('not_found');
 		}
 	};
 }

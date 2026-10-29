@@ -31,6 +31,9 @@ import {
 	type RegistrationDetails,
 	type SeriesInput,
 	type SeriesStore,
+	type RepertoireSong,
+	type RepertoireStore,
+	type SongInput,
 	type SeriesTag,
 	SeriesStoreError,
 	type StudioSettings
@@ -81,10 +84,19 @@ interface StoredPasswordToken {
 /** Matches the delete_account SQL function, so the old email is free for a new account. */
 const deletedEmail = (accountId: string) => `deleted-${accountId}@deleted.invalid`;
 
+const trimSong = (input: SongInput): SongInput => ({
+	title: input.title.trim(),
+	artist: input.artist.trim(),
+	status: input.status,
+	notes: input.notes.trim()
+});
+
 const isLive = (b: StoredBooking) => b.status === 'pending' || b.status === 'approved';
 
 /** In-memory BookingStore that mirrors the request_guest_booking SQL function's semantics. */
-export class MemoryBookingStore implements BookingStore, AdminStore, AccountStore, SeriesStore {
+export class MemoryBookingStore
+	implements BookingStore, AdminStore, AccountStore, SeriesStore, RepertoireStore
+{
 	private readonly data: DemoData;
 	private readonly bookings: StoredBooking[] = [];
 	private readonly series: StoredSeries[];
@@ -97,6 +109,7 @@ export class MemoryBookingStore implements BookingStore, AdminStore, AccountStor
 	private readonly accountNotes = new Map<string, string>();
 	private readonly studentNotes = new Map<string, string>();
 	private readonly deletedAccounts = new Set<string>();
+	private readonly songs: RepertoireSong[] = [];
 
 	constructor(data: DemoData = demoData()) {
 		this.data = structuredClone(data);
@@ -788,6 +801,37 @@ export class MemoryBookingStore implements BookingStore, AdminStore, AccountStor
 		return cancelled
 			.sort((a, b) => a.startsAt.getTime() - b.startsAt.getTime())
 			.map((b) => this.toAdminBooking(b));
+	}
+
+	// ---- RepertoireStore ----
+
+	async listRepertoire(studentIds: string[]): Promise<RepertoireSong[]> {
+		return this.songs
+			.filter((x) => studentIds.includes(x.studentId))
+			.sort((a, b) => a.title.localeCompare(b.title))
+			.map((x) => ({ ...x }));
+	}
+
+	async addSong(studentId: string, input: SongInput): Promise<RepertoireSong> {
+		if (!this.data.students.some((s) => s.id === studentId)) {
+			throw new AccountStoreError('not_found');
+		}
+		const song = { id: crypto.randomUUID(), studentId, createdAt: new Date(), ...trimSong(input) };
+		this.songs.push(song);
+		return { ...song };
+	}
+
+	async updateSong(studentId: string, songId: string, input: SongInput): Promise<RepertoireSong> {
+		const song = this.songs.find((x) => x.id === songId && x.studentId === studentId);
+		if (!song) throw new AccountStoreError('not_found');
+		Object.assign(song, trimSong(input));
+		return { ...song };
+	}
+
+	async deleteSong(studentId: string, songId: string): Promise<void> {
+		const i = this.songs.findIndex((x) => x.id === songId && x.studentId === studentId);
+		if (i < 0) throw new AccountStoreError('not_found');
+		this.songs.splice(i, 1);
 	}
 
 	/** Mirrors create_series_occurrences: skip clashes and starts not after now, then advance. */

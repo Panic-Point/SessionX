@@ -12,6 +12,7 @@ import {
 	mapOverridesWithNotes,
 	mapAccountRpcError,
 	mapStudentRow,
+	mapRepertoireSongRow,
 	mapStudentPriceRow,
 	mapAccountWithStudentsRow,
 	mapLessonSeriesRow,
@@ -324,6 +325,28 @@ describe('supabase mappers', () => {
 	it('returns null for unknown account RPC codes', () => {
 		expect(mapAccountRpcError({ code: '22023', message: 'x' })).toBeNull();
 		expect(mapAccountRpcError({ message: 'x' })).toBeNull();
+	});
+
+	it('maps repertoire song rows', () => {
+		expect(
+			mapRepertoireSongRow({
+				id: 'x',
+				student_id: 's',
+				title: 'Edelweiss',
+				artist: 'Rodgers & Hammerstein',
+				status: 'ready',
+				notes: 'n',
+				created_at: '2026-11-01T17:00:00+00:00'
+			})
+		).toEqual({
+			id: 'x',
+			studentId: 's',
+			title: 'Edelweiss',
+			artist: 'Rodgers & Hammerstein',
+			status: 'ready',
+			notes: 'n',
+			createdAt: new Date('2026-11-01T17:00:00Z')
+		});
 	});
 
 	it('maps student and student price rows', () => {

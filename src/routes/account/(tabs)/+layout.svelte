@@ -6,6 +6,7 @@
 
 	const tabs = [
 		{ href: '/account', label: 'Lessons' },
+		{ href: '/account/repertoire', label: 'Repertoire' },
 		{ href: '/account/family', label: 'Manage family' },
 		{ href: '/account/security', label: 'Security' }
 	];

@@ -953,6 +953,34 @@ await check('the default time zone migration keeps a saved zone', async () => {
 	assert(rows[0].timezone === 'America/New_York', `zone ${rows[0].timezone}`);
 });
 
+await check(
+	'repertoire songs need a title and a known status, and go with their student',
+	async () => {
+		const BEN = '33333333-0000-0000-0000-0000000000b1';
+		const add = (title, status = 'learning') =>
+			db.query('insert into repertoire_songs (student_id, title, status) values ($1, $2, $3)', [
+				BEN,
+				title,
+				status
+			]);
+		await expectCode(() => add('Edelweiss'), null);
+		await expectCodeKeepGoing(() => add('  '), '23514');
+		await expectCodeKeepGoing(() => add('Moon River', 'sheet-music'), '23514');
+		const { rows } = await db.query(
+			`insert into students (account_id, name) values ('22222222-0000-0000-0000-00000000000b', 'Cy')
+		 returning id`
+		);
+		await db.query(`insert into repertoire_songs (student_id, title) values ($1, 'Danny Boy')`, [
+			rows[0].id
+		]);
+		await db.query('delete from students where id = $1', [rows[0].id]);
+		const left = await db.query('select 1 from repertoire_songs where student_id = $1', [
+			rows[0].id
+		]);
+		assert(left.rows.length === 0, 'songs left behind');
+	}
+);
+
 // Supabase's pg_safeupdate rejects DELETE/UPDATE without a WHERE, even inside functions.
 await check('migrations have no DELETE without a WHERE clause', () => {
 	for (const f of readdirSync(migDir)) {
