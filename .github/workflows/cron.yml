@@ -11,21 +11,31 @@ jobs:
   tick:
     runs-on: ubuntu-latest
     timeout-minutes: 5
-    env:
-      APP_URL: ${{ secrets.APP_URL }}
-      CRON_SECRET: ${{ secrets.CRON_SECRET }}
     steps:
-      - name: Skip until the app is deployed
-        id: gate
-        run: |
+      # One job for every site keeps the bill at one Actions minute an hour. Each site is skipped
+      # until its URL and secret are set, and a failure on one still lets the others run.
+      # SvelteKit treats a POST with no Content-Type and no Origin as a cross-site form
+      # submission and answers 403, so the JSON content type is required.
+      - name: Production
+        env:
+          APP_URL: ${{ secrets.APP_URL }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: &tick |
           if [ -z "$APP_URL" ] || [ -z "$CRON_SECRET" ]; then
-            echo "::notice::APP_URL or CRON_SECRET repo secret is not set; skipping."
-            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "::notice::App URL or cron secret for this site is not set; skipping."
+            exit 0
           fi
-      - name: Trigger scheduled jobs
-        if: steps.gate.outputs.skip != 'true'
-        # SvelteKit treats a POST with no Content-Type and no Origin as a cross-site form
-        # submission and answers 403, so the JSON content type is required.
-        run: >-
-          curl -fsS --max-time 60 -X POST -H "Authorization: Bearer $CRON_SECRET"
-          -H "Content-Type: application/json" "${APP_URL%/}/api/cron"
+          curl -fsS --max-time 60 -X POST -H "Authorization: Bearer $CRON_SECRET" \
+            -H "Content-Type: application/json" "${APP_URL%/}/api/cron"
+      - name: QA
+        if: ${{ !cancelled() }}
+        env:
+          APP_URL: ${{ secrets.QA_APP_URL }}
+          CRON_SECRET: ${{ secrets.QA_CRON_SECRET }}
+        run: *tick
+      - name: Dev
+        if: ${{ !cancelled() }}
+        env:
+          APP_URL: ${{ secrets.DEV_APP_URL }}
+          CRON_SECRET: ${{ secrets.DEV_CRON_SECRET }}
+        run: *tick
