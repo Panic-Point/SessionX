@@ -8,11 +8,11 @@ feature branch ──PR──▶ dev ──PR──▶ qa ──PR──▶ main
                  dev site     QA site   production site
 ```
 
-| Branch | Site                             | Database                  | Who uses it                      |
-| ------ | -------------------------------- | ------------------------- | -------------------------------- |
-| `dev`  | `https://dev.sessionx.pages.dev` | Test Supabase project     | You, on a browser and your phone |
-| `qa`   | `https://qa.sessionx.pages.dev`  | Test project (or its own) | Final check before release       |
-| `main` | Your custom domain (production)  | Production project        | The teacher and families         |
+| Branch | Site                                 | Database                  | Who uses it                      |
+| ------ | ------------------------------------ | ------------------------- | -------------------------------- |
+| `dev`  | `https://dev.sessionx-c49.pages.dev` | Test Supabase project     | You, on a browser and your phone |
+| `qa`   | `https://qa.sessionx-c49.pages.dev`  | Test project (or its own) | Final check before release       |
+| `main` | Your custom domain (production)      | Production project        | The teacher and families         |
 
 - New work branches off `dev` and its pull request targets `dev`.
 - To release, open a pull request from `dev` into `qa`, test the QA site, then open one from `qa`
@@ -69,23 +69,25 @@ In the Cloudflare dashboard open Workers & Pages, the `sessionx` project, Settin
 
 1. **Builds, Branch control:** keep `main` as the production branch. Set preview branches to
    **Custom branches** and include `dev` and `qa` (exclude everything else). Each push to those
-   branches then updates `https://dev.sessionx.pages.dev` and `https://qa.sessionx.pages.dev`.
+   branches then updates `https://dev.sessionx-c49.pages.dev` and `https://qa.sessionx-c49.pages.dev`.
+   Until this is set, every pull request branch also gets a preview build that uses the Preview
+   variables, so first check that Preview holds no production database keys.
 2. **Variables and Secrets, Preview environment:** add the variables below, all as type
    **Secret**, like production. Do not copy the production values for the database, session or
    cron secrets.
 
-| Variable                             | Preview value                                                                                                            |
-| ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------ |
-| `SUPABASE_URL`                       | The **test** project's URL                                                                                               |
-| `SUPABASE_SERVICE_ROLE_KEY`          | The **test** project's `service_role` key                                                                                |
-| `SESSION_SECRET`                     | A new random string (`openssl rand -base64 32`)                                                                          |
-| `CRON_SECRET`                        | A new random string, different from production                                                                           |
-| `EMAIL_TRANSPORT`                    | `resend` (to get real sign-in emails) or leave unset to only log them                                                    |
-| `RESEND_API_KEY`                     | Same key as production is fine                                                                                           |
-| `EMAIL_FROM`                         | e.g. `SessionX Dev <bookings@lessons.example.com>`, so test mail stands out                                              |
-| `PUBLIC_APP_URL`                     | **Leave unset.** Email links then use whichever site sent them (dev or QA)                                               |
-| `GOOGLE_SERVICE_ACCOUNT_JSON`        | **Leave unset**, so tests never touch the real calendar                                                                  |
-| `TURNSTILE_SITE_KEY` / `_SECRET_KEY` | Leave unset, or add `dev.sessionx.pages.dev` and `qa.sessionx.pages.dev` to the widget's hostnames and use the same keys |
+| Variable                             | Preview value                                                                                                                    |
+| ------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------- |
+| `SUPABASE_URL`                       | The **test** project's URL                                                                                                       |
+| `SUPABASE_SERVICE_ROLE_KEY`          | The **test** project's `service_role` key                                                                                        |
+| `SESSION_SECRET`                     | A new random string (`openssl rand -base64 32`)                                                                                  |
+| `CRON_SECRET`                        | A new random string, different from production                                                                                   |
+| `EMAIL_TRANSPORT`                    | `resend` (to get real sign-in emails) or leave unset to only log them                                                            |
+| `RESEND_API_KEY`                     | Same key as production is fine                                                                                                   |
+| `EMAIL_FROM`                         | e.g. `SessionX Dev <bookings@lessons.example.com>`, so test mail stands out                                                      |
+| `PUBLIC_APP_URL`                     | **Leave unset.** Email links then use whichever site sent them (dev or QA)                                                       |
+| `GOOGLE_SERVICE_ACCOUNT_JSON`        | **Leave unset**, so tests never touch the real calendar                                                                          |
+| `TURNSTILE_SITE_KEY` / `_SECRET_KEY` | Leave unset, or add `dev.sessionx-c49.pages.dev` and `qa.sessionx-c49.pages.dev` to the widget's hostnames and use the same keys |
 
 3. Redeploy (or push to `dev`) so the variables take effect.
 
@@ -112,7 +114,7 @@ already have keep their names. Add:
 | -------------------------- | ------------------------------------------------ |
 | `DEV_SUPABASE_PROJECT_REF` | The test project ref                             |
 | `DEV_SUPABASE_DB_PASSWORD` | The test project's database password             |
-| `DEV_APP_URL`              | `https://dev.sessionx.pages.dev`                 |
+| `DEV_APP_URL`              | `https://dev.sessionx-c49.pages.dev`             |
 | `DEV_CRON_SECRET`          | The same value as `CRON_SECRET` in Pages Preview |
 
 Leave the `QA_SUPABASE_PROJECT_REF`, `QA_SUPABASE_DB_PASSWORD`, `QA_APP_URL` and `QA_CRON_SECRET`
@@ -132,7 +134,7 @@ Settings, Rules (or Branches), add a rule for each of `main`, `qa` and `dev`:
 
 1. Merge any small pull request into `dev`. In Actions, CI then Migrate database run green, and
    the Migrate log says it linked the test project.
-2. Open `https://dev.sessionx.pages.dev`, sign in with **Forgot password?** using your email, add a
+2. Open `https://dev.sessionx-c49.pages.dev`, sign in with **Forgot password?** using your email, add a
    lesson type and hours, and make a test booking.
 3. On your phone, open the dev address and add it to the home screen (iPhone: Safari, Share, Add
    to Home Screen; Android: Chrome menu, Install app).
