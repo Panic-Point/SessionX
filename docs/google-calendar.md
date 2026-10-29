@@ -144,13 +144,14 @@ calendar:
 
 ## 10. Add lessons booked before the connection
 
-New lessons go on the lesson calendar by themselves once the connection works. To add the upcoming
-approved lessons that were booked before you connected, click **Add lessons** under **Add existing
-lessons** on the same page. It adds up to 20 lessons per click and says how many are left, so click
-again until it says every upcoming lesson is already on the calendar. Past lessons, pending requests
-and cancelled lessons aren't added. Lessons already on the calendar are skipped, so clicking again
-never makes duplicates. If a lesson couldn't be added when it was approved (for example Google was
-down), this adds it too.
+New lessons go on the lesson calendar by themselves once the connection works. The hourly job
+also adds any upcoming approved lesson that isn't on the calendar yet (a few at a time, so it can
+take a few hours to catch up), so lessons booked before you connected get there on their own.
+
+To add them straight away, click **Add lessons** under **Add existing lessons** on the same page. It
+adds up to 15 lessons per click and says how many are left, so click again until it says every
+upcoming lesson is already on the calendar. Past lessons, pending requests and cancelled lessons
+aren't added. Lessons already on the calendar are skipped, so clicking again never makes duplicates.
 
 If Google Calendar has a problem later, booking keeps working. SessionX just skips the calendar
 until it's fixed.

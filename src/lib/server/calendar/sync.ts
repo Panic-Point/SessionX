@@ -56,10 +56,10 @@ export async function addLessonToCalendar(
 }
 
 /**
- * Lessons added per run. Each costs two subrequests (Google + database), which keeps one run well
- * under the Cloudflare Workers free plan's 50-subrequest limit.
+ * Lessons added per click. Each costs two subrequests (Google + database), which keeps one request
+ * well under the Cloudflare Workers free plan's 50-subrequest limit.
  */
-export const SYNC_BATCH_SIZE = 20;
+export const SYNC_BATCH_SIZE = 15;
 
 export interface SyncResult {
 	added: number;
@@ -75,15 +75,19 @@ export interface SyncResult {
 export async function syncLessonsToCalendar(
 	deps: { store: AppStore; calendar?: CalendarClient; appUrl: string },
 	settings: StudioSettings,
-	now: Date
+	now: Date,
+	limit = SYNC_BATCH_SIZE
 ): Promise<SyncResult> {
+	if (!deps.calendar?.enabled || !settings.gcalWriteCalendarId || limit <= 0) {
+		return { added: 0, failed: 0, remaining: 0 };
+	}
 	const lessons = await deps.store.listBookings({
 		statuses: ['approved'],
 		from: now,
 		order: 'asc'
 	});
 	const missing = lessons.filter((b) => !b.gcalEventId);
-	const batch = missing.slice(0, SYNC_BATCH_SIZE);
+	const batch = missing.slice(0, limit);
 	let added = 0;
 	for (const b of batch) if (await addLessonToCalendar(deps, b, settings)) added++;
 	return { added, failed: batch.length - added, remaining: missing.length - added };

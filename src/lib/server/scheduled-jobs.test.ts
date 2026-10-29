@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
+import { fakeCalendar } from './calendar/fake-client.test-helpers';
 import { runScheduledJobs } from './scheduled-jobs';
 import { demoData } from './store/demo-data';
 import { MemoryBookingStore } from './store/memory';
@@ -27,7 +28,29 @@ describe('runScheduledJobs', () => {
 		expect(await runScheduledJobs({ store, appUrl: 'https://example.test' }, now)).toEqual({
 			expired: 3,
 			seriesToppedUp: 1,
-			lessonsAdded: 12
+			lessonsAdded: 12,
+			seriesDeferred: 0,
+			calendarAdded: 0
 		});
+	});
+
+	it('puts lessons left off the calendar on it with the budget left after top-ups', async () => {
+		const store = new MemoryBookingStore(demoData());
+		await store.updateSettings({ ...(await store.getSettings()), gcalWriteCalendarId: 'c@x.com' });
+		const calendar = fakeCalendar();
+		// The demo series' 12 lessons get events during the top-up; this one was missed earlier.
+		await store.createApprovedBooking(
+			{
+				accountId: '22222222-0000-0000-0000-00000000000b',
+				studentId: '33333333-0000-0000-0000-0000000000a1',
+				lessonTypeId: '11111111-0000-0000-0000-000000000030',
+				startsAt: new Date('2026-11-05T23:00:00Z'),
+				note: ''
+			},
+			now
+		);
+		const result = await runScheduledJobs({ store, calendar, appUrl: 'https://example.test' }, now);
+		expect(result).toMatchObject({ lessonsAdded: 12, calendarAdded: 1 });
+		expect(calendar.created).toHaveLength(13);
 	});
 });

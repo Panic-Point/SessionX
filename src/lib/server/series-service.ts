@@ -501,15 +501,29 @@ export interface TopUpResult {
 	/** Series that got new dates considered. */
 	series: number;
 	lessonsAdded: number;
+	/** Series left for the next run because the subrequest budget ran out. */
+	deferred: number;
+	/** Worst-case subrequests spent on series (not counting the fixed reads up front). */
+	subrequests: number;
 }
+
+/** Per series: live bookings, date overrides, Google busy, add occurrences, list bookings. */
+const TOP_UP_SERIES_SUBREQUESTS = 5;
+/** Per new lesson: create the Google event, save its id. */
+const TOP_UP_LESSON_SUBREQUESTS = 2;
 
 /**
  * Creates occurrences up to 12 weeks ahead for open-ended and long series, skipping dates that
  * clash, as at creation. Sends no email; adds a calendar event per new lesson.
+ *
+ * Stops before a series whose worst-case cost would take it past `budget` subrequests, so one run
+ * stays under the Workers limit; the rest are still due and the next (hourly) run picks them up.
+ * The first series always runs, so a run always makes progress.
  */
 export async function topUpSeries(
 	deps: { store: AppStore; calendar?: CalendarClient; appUrl: string },
-	now: Date
+	now: Date,
+	budget = Infinity
 ): Promise<TopUpResult> {
 	const { store } = deps;
 	const settings = await store.getSettings();
@@ -517,9 +531,10 @@ export async function topUpSeries(
 	const today = localToday(now, zone);
 	const horizon = addDays(today, HORIZON_DAYS);
 	const lessonTypes = await store.listAllLessonTypes();
-	const result: TopUpResult = { series: 0, lessonsAdded: 0 };
+	const result: TopUpResult = { series: 0, lessonsAdded: 0, deferred: 0, subrequests: 0 };
 
-	for (const series of await store.listSeriesNeedingTopUp(horizon)) {
+	const due = await store.listSeriesNeedingTopUp(horizon);
+	for (const [i, series] of due.entries()) {
 		try {
 			const through = materialiseThrough(series, today);
 			const next = series.materializedThrough
@@ -531,6 +546,12 @@ export async function topUpSeries(
 			const durationMin =
 				lessonTypes.find((t) => t.id === series.lessonTypeId)?.durationMin ?? series.durationMin;
 			const occurrences = occurrenceStarts(series, zone, from, through);
+			const cost = TOP_UP_SERIES_SUBREQUESTS + TOP_UP_LESSON_SUBREQUESTS * occurrences.length;
+			if (result.subrequests > 0 && result.subrequests + cost > budget) {
+				result.deferred = due.length - i;
+				break;
+			}
+			result.subrequests += cost;
 			const assessed = await assessDates(deps, settings, durationMin, occurrences, now);
 			const added = await store.addSeriesOccurrences(
 				series.id,
