@@ -424,4 +424,33 @@ export interface SeriesStore {
 	endSeries(id: string, from: Date, now: Date): Promise<AdminBooking[]>;
 }
 
-export type AppStore = BookingStore & AdminStore & AccountStore & SeriesStore;
+/** Where a song is for the student: still learning it, ready to perform, or done with it. */
+export type SongStatus = 'learning' | 'ready' | 'past';
+
+export interface SongInput {
+	title: string;
+	/** Composer or artist; '' when unknown. */
+	artist: string;
+	status: SongStatus;
+	notes: string;
+}
+
+/** A song on a student's repertoire list. Just the list: no sheet music is stored. */
+export interface RepertoireSong extends SongInput {
+	id: string;
+	studentId: string;
+	createdAt: Date;
+}
+
+export interface RepertoireStore {
+	/** Every song for these students, by title. */
+	listRepertoire(studentIds: string[]): Promise<RepertoireSong[]>;
+	/** Trims text fields. Throws AccountStoreError not_found (unknown student). */
+	addSong(studentId: string, input: SongInput): Promise<RepertoireSong>;
+	/** Trims text fields. Throws AccountStoreError not_found (not this student's song). */
+	updateSong(studentId: string, songId: string, input: SongInput): Promise<RepertoireSong>;
+	/** Throws AccountStoreError not_found (not this student's song). */
+	deleteSong(studentId: string, songId: string): Promise<void>;
+}
+
+export type AppStore = BookingStore & AdminStore & AccountStore & SeriesStore & RepertoireStore;

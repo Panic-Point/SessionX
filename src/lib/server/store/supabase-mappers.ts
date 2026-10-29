@@ -14,6 +14,8 @@ import {
 	type LessonType,
 	type LiveBooking,
 	type PasswordTokenData,
+	type RepertoireSong,
+	type SongStatus,
 	type SeriesTag,
 	type Student,
 	type StudentPrice,
@@ -369,6 +371,28 @@ export interface AccountWithStudentsRow extends AccountRow {
 
 export function mapStudentRow(row: StudentRow): Student {
 	return { id: row.id, accountId: row.account_id, name: row.name, notes: row.notes };
+}
+
+export interface RepertoireSongRow {
+	id: string;
+	student_id: string;
+	title: string;
+	artist: string;
+	status: SongStatus;
+	notes: string;
+	created_at: string;
+}
+
+export function mapRepertoireSongRow(row: RepertoireSongRow): RepertoireSong {
+	return {
+		id: row.id,
+		studentId: row.student_id,
+		title: row.title,
+		artist: row.artist,
+		status: row.status,
+		notes: row.notes,
+		createdAt: new Date(row.created_at)
+	};
 }
 
 export function mapStudentPriceRow(row: StudentPriceRow): StudentPrice {

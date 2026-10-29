@@ -15,6 +15,16 @@ import { formString, requireAdmin } from '#lib/server/admin-actions.ts';
 import { getAppUrl, getCalendar, getMailer, getStore } from '#lib/server/context.ts';
 import { localToday } from '#lib/server/recurrence.ts';
 import {
+	addSong,
+	listFamilyRepertoire,
+	removeSong,
+	SONG_FORM_FIELDS,
+	SONG_STATUS_LABELS,
+	SONG_STATUSES,
+	updateSong,
+	type SongForm
+} from '#lib/server/repertoire-service.ts';
+import {
 	createSeries,
 	listFamilySeries,
 	previewSeries,
@@ -29,14 +39,17 @@ export const load: PageServerLoad = async ({ locals, params, url }) => {
 	const family = await getFamily(store, params.id);
 	if (!family) error(404, 'Family not found.');
 	const now = new Date();
-	const [series, lessonTypes, settings] = await Promise.all([
+	const [series, songs, lessonTypes, settings] = await Promise.all([
 		listFamilySeries(store, params.id, now),
+		listFamilyRepertoire(store, params.id),
 		store.getActiveLessonTypes(),
 		store.getSettings()
 	]);
 	return {
 		family,
 		series,
+		songs,
+		songStatuses: SONG_STATUSES.map((s) => [s, SONG_STATUS_LABELS[s]] as [string, string]),
 		lessonTypes: lessonTypes.map((t) => ({ id: t.id, name: t.name, durationMin: t.durationMin })),
 		today: localToday(now, settings.timezone),
 		/** Set right after the family was added on the Families page. */
@@ -53,6 +66,12 @@ function seriesForm(data: FormData): SeriesForm {
 function bookingForm(data: FormData): AdminBookingForm {
 	const form = {} as AdminBookingForm;
 	for (const field of ADMIN_BOOKING_FORM_FIELDS) form[field] = formString(data, field);
+	return form;
+}
+
+function songForm(data: FormData): SongForm {
+	const form = {} as SongForm;
+	for (const field of SONG_FORM_FIELDS) form[field] = formString(data, field);
 	return form;
 }
 
@@ -99,6 +118,47 @@ export const actions: Actions = {
 		if (!result.ok)
 			return fail(400, { kind: 'student', target: 'new', errors: result.errors, name });
 		return { kind: 'student', target: 'new', saved: true, name: name.trim() };
+	},
+	addSong: async ({ locals, request, params }) => {
+		requireAdmin(locals.account);
+		const data = await request.formData();
+		const studentId = formString(data, 'studentId');
+		const values = songForm(data);
+		const result = await addSong(getStore(), params.id, studentId, values);
+		// A new song's form is targeted by its student.
+		if (!result.ok)
+			return fail(400, { kind: 'song', target: studentId, errors: result.errors, values });
+		return {
+			kind: 'song',
+			target: studentId,
+			saved: true,
+			added: true,
+			message: `Added ${result.value.title}.`
+		};
+	},
+	updateSong: async ({ locals, request, params }) => {
+		requireAdmin(locals.account);
+		const data = await request.formData();
+		const songId = formString(data, 'songId');
+		const values = songForm(data);
+		const result = await updateSong(
+			getStore(),
+			params.id,
+			formString(data, 'studentId'),
+			songId,
+			values
+		);
+		if (!result.ok)
+			return fail(400, { kind: 'song', target: songId, errors: result.errors, values });
+		return { kind: 'song', target: songId, saved: true, message: `Saved ${result.value.title}.` };
+	},
+	removeSong: async ({ locals, request, params }) => {
+		requireAdmin(locals.account);
+		const data = await request.formData();
+		const studentId = formString(data, 'studentId');
+		const result = await removeSong(getStore(), params.id, studentId, formString(data, 'songId'));
+		if (!result.ok) return fail(400, { kind: 'song', target: studentId, errors: result.errors });
+		return { kind: 'song', target: studentId, saved: true, message: 'Song removed.' };
 	},
 	book: async ({ locals, request, params }) => {
 		requireAdmin(locals.account);

@@ -64,7 +64,14 @@ describe('admin page loads', () => {
 });
 
 describe('admin family actions', () => {
-	const names = ['accountNotes', 'studentNotes', 'prices'] as const;
+	const names = [
+		'accountNotes',
+		'studentNotes',
+		'prices',
+		'addSong',
+		'updateSong',
+		'removeSong'
+	] as const;
 	function event(account: Account | null) {
 		return {
 			locals: { account },

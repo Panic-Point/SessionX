@@ -6,6 +6,7 @@ import { MemoryBookingStore } from '#lib/server/store/memory.ts';
 import type { Account } from '#lib/server/store/types.ts';
 import { load as homeLoad } from './(tabs)/+page.server';
 import { actions as familyActions, load as familyLoad } from './(tabs)/family/+page.server';
+import { load as repertoireLoad } from './(tabs)/repertoire/+page.server';
 import { actions as securityActions, load as securityLoad } from './(tabs)/security/+page.server';
 import { actions as cancelActions, load as cancelLoad } from './cancel/[id]/+page.server';
 
@@ -24,6 +25,7 @@ const handlers = {
 	'load /account/family': familyLoad,
 	'action /account/family?/addStudent': familyActions.addStudent,
 	'action /account/family?/renameStudent': familyActions.renameStudent,
+	'load /account/repertoire': repertoireLoad,
 	'load /account/security': securityLoad,
 	'action /account/security?/password': securityActions.password,
 	'action /account/security?/deleteAccount': securityActions.deleteAccount,
@@ -152,6 +154,38 @@ describe('account lessons period', () => {
 		const data = await home(`student=${zedStudent.id}`);
 		expect(data.student).toBeNull();
 		expect(data.upcoming.map((b) => b.id)).toContain(patBooking);
+	});
+});
+
+describe('/account/repertoire', () => {
+	const pat: Account = {
+		id: '22222222-0000-0000-0000-00000000000b',
+		name: 'Pat Parent',
+		email: 'parent@example.com',
+		role: 'client'
+	};
+	const AVA = '33333333-0000-0000-0000-0000000000a1';
+	const BEN = '33333333-0000-0000-0000-0000000000b1';
+
+	it("lists each of the family's students with their songs, and no one else's", async () => {
+		ctx.store = new MemoryBookingStore(demoData());
+		const song = { artist: '', notes: '' };
+		await ctx.store.addSong(AVA, { ...song, title: 'Moon River', status: 'ready' });
+		await ctx.store.addSong(AVA, { ...song, title: 'Edelweiss', status: 'learning' });
+		const other = await ctx.store.createAccount('Other', 'other@example.com');
+		const zed = await ctx.store.addStudent(other.id, 'Zed');
+		await ctx.store.addSong(zed.id, { ...song, title: 'Hidden', status: 'learning' });
+
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
+		const data = (await (repertoireLoad as any)({ locals: { account: pat } })) as {
+			students: { id: string; name: string; songs: { title: string; statusLabel: string }[] }[];
+		};
+		expect(
+			data.students.map((s) => [s.id, s.songs.map((x) => `${x.title}: ${x.statusLabel}`)])
+		).toEqual([
+			[AVA, ['Edelweiss: Learning', 'Moon River: Ready to perform']],
+			[BEN, []]
+		]);
 	});
 });
 
