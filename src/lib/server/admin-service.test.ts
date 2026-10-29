@@ -4,6 +4,7 @@ import {
 	decideRequest,
 	getFamily,
 	listFamilies,
+	listFamilyUpcomingLessons,
 	listLessons,
 	listPendingRequests,
 	saveAccountNotes,
@@ -378,6 +379,34 @@ describe('admin service', () => {
 		await store.cancelBooking(target(c.bookingId), false, now);
 		const rows = await listLessons(store, { range: 'late-cancels', unpaidOnly: false }, now);
 		expect(rows.map((v) => v.id)).toEqual([b.bookingId, a.bookingId]);
+	});
+
+	it("lists a family's confirmed upcoming lessons, soonest first", async () => {
+		const { store, deps } = setup();
+		const mk = (startsAt: string) =>
+			store.requestAccountBooking(
+				{
+					accountId: PAT,
+					studentId: AVA,
+					lessonTypeId: LESSON_30,
+					startsAt: new Date(startsAt),
+					note: ''
+				},
+				now
+			);
+		const tue = await mk(TUE_3PM);
+		const mon = await mk(MON_3PM);
+		for (const x of [tue, mon]) await decideRequest(deps, x.bookingId, 'approved', '', now);
+		const pending = await mk(MON_330PM);
+		const mine = new Set([tue.bookingId, mon.bookingId, pending.bookingId]);
+		const ids = async (at: Date) =>
+			(await listFamilyUpcomingLessons(store, PAT, at))
+				.map((v) => v.id)
+				.filter((id) => mine.has(id));
+		expect(await ids(now)).toEqual([mon.bookingId, tue.bookingId]);
+		// Started lessons are no longer upcoming.
+		expect(await ids(new Date(MON_3PM))).toEqual([tue.bookingId]);
+		expect(await listFamilyUpcomingLessons(store, ADMIN, now)).toEqual([]);
 	});
 
 	describe('google calendar', () => {

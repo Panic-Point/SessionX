@@ -5,7 +5,7 @@
 	let { data, form }: PageProps = $props();
 
 	// Submitted values and errors apply only to the form that was submitted.
-	type Kind = 'notes' | 'prices' | 'series' | 'student' | 'book' | 'song';
+	type Kind = 'notes' | 'prices' | 'series' | 'student' | 'book' | 'song' | 'cancel';
 	type Failed = {
 		kind: Kind;
 		target: string;
@@ -140,6 +140,11 @@
 		return stored;
 	}
 
+	const cancelledMessage = $derived(
+		form && 'message' in form && form.kind === 'cancel' ? (form.message as string) : null
+	);
+	const cancelFailed = $derived(failed?.kind === 'cancel' ? failed : null);
+
 	const NEW_SONG = { title: '', artist: '', status: 'learning', notes: '' };
 
 	function priceValue(studentId: string, lessonTypeId: string, stored: string): string {
@@ -205,6 +210,51 @@
 	<h2>Account notes</h2>
 	{@render notesForm('account', '?/accountNotes', null, data.family.adminNotes)}
 </section>
+
+{#if !data.family.deleted}
+	<section class="card">
+		<h2>Upcoming lessons</h2>
+		{#if cancelledMessage}
+			<p class="banner" role="status">{cancelledMessage}</p>
+		{/if}
+		{#if data.upcoming.length === 0}
+			<p class="meta">No upcoming lessons.</p>
+		{:else}
+			<ul class="upcoming">
+				{#each data.upcoming as l (l.id)}
+					<li>
+						<div>
+							<strong>{l.whenLabel}</strong> · {l.studentName}
+							<p class="meta">
+								{l.lessonTypeName} · {l.durationMin} min · {l.priceLabel}
+								{#if l.seriesId}
+									· <a href="/admin/series/{l.seriesId}">{l.seriesLabel}</a>
+								{/if}
+							</p>
+						</div>
+						{#if cancelFailed?.target === l.id}
+							<p class="banner bad" role="alert">{cancelFailed.errors.form}</p>
+						{/if}
+						<details open={cancelFailed?.target === l.id}>
+							<summary>Cancel lesson…</summary>
+							<form method="POST" action="?/cancelLesson" use:enhance>
+								<input type="hidden" name="id" value={l.id} />
+								<div class="field">
+									<label for="cancel-reason-{l.id}">Reason for the family (optional)</label>
+									<textarea id="cancel-reason-{l.id}" name="reason" rows="2" maxlength="500"
+									></textarea>
+								</div>
+								<button class="button danger" type="submit">
+									Yes, cancel and email the family
+								</button>
+							</form>
+						</details>
+					</li>
+				{/each}
+			</ul>
+		{/if}
+	</section>
+{/if}
 
 {#each data.family.students as s (s.id)}
 	{@const errs = errorsFor(s.id, 'prices')}
@@ -741,6 +791,21 @@
 	.series {
 		margin: 0 0 0.75rem;
 		padding-left: 1.25rem;
+	}
+
+	.upcoming {
+		margin: 0;
+		padding: 0;
+		list-style: none;
+	}
+
+	.upcoming > li {
+		padding: 0.5rem 0;
+		border-bottom: 1px solid var(--border);
+	}
+
+	.upcoming .meta {
+		margin: 0.25rem 0 0;
 	}
 
 	.songs {

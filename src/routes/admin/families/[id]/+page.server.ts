@@ -1,6 +1,7 @@
 import { error, fail } from '@sveltejs/kit';
 import {
 	getFamily,
+	listFamilyUpcomingLessons,
 	saveAccountNotes,
 	saveStudentNotes,
 	saveStudentPrices
@@ -25,6 +26,7 @@ import {
 	type SongForm
 } from '#lib/server/repertoire-service.ts';
 import {
+	adminCancelLesson,
 	createSeries,
 	listFamilySeries,
 	previewSeries,
@@ -39,7 +41,8 @@ export const load: PageServerLoad = async ({ locals, params, url }) => {
 	const family = await getFamily(store, params.id);
 	if (!family) error(404, 'Family not found.');
 	const now = new Date();
-	const [series, songs, lessonTypes, settings] = await Promise.all([
+	const [upcoming, series, songs, lessonTypes, settings] = await Promise.all([
+		listFamilyUpcomingLessons(store, params.id, now),
 		listFamilySeries(store, params.id, now),
 		listFamilyRepertoire(store, params.id),
 		store.getActiveLessonTypes(),
@@ -47,6 +50,16 @@ export const load: PageServerLoad = async ({ locals, params, url }) => {
 	]);
 	return {
 		family,
+		upcoming: upcoming.map((l) => ({
+			id: l.id,
+			studentName: l.studentName,
+			lessonTypeName: l.lessonTypeName,
+			durationMin: l.durationMin,
+			whenLabel: l.whenLabel,
+			priceLabel: l.priceLabel,
+			seriesId: l.series?.id ?? null,
+			seriesLabel: l.seriesLabel
+		})),
 		series,
 		songs,
 		songStatuses: SONG_STATUSES.map((s) => [s, SONG_STATUS_LABELS[s]] as [string, string]),
@@ -78,6 +91,27 @@ function songForm(data: FormData): SongForm {
 const PRICE_PREFIX = 'price-';
 
 export const actions: Actions = {
+	cancelLesson: async ({ locals, request }) => {
+		requireAdmin(locals.account);
+		const data = await request.formData();
+		const id = formString(data, 'id');
+		const deps = {
+			store: getStore(),
+			mailer: getMailer(),
+			appUrl: getAppUrl(),
+			calendar: getCalendar()
+		};
+		const result = await adminCancelLesson(deps, id, new Date(), formString(data, 'reason'));
+		if (!result.ok) {
+			return fail(400, { kind: 'cancel', target: id, errors: { form: result.message } });
+		}
+		return {
+			kind: 'cancel',
+			target: 'lessons',
+			saved: true,
+			message: 'Lesson cancelled. The family has been emailed.'
+		};
+	},
 	accountNotes: async ({ locals, request, params }) => {
 		requireAdmin(locals.account);
 		const notes = formString(await request.formData(), 'notes');

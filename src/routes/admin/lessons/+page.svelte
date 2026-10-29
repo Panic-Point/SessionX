@@ -84,6 +84,8 @@
 
 {#if form?.message}
 	<p class="banner bad" role="alert">{form.message}</p>
+{:else if form && 'cancelled' in form}
+	<p class="banner" role="status">{form.cancelled}</p>
 {/if}
 
 {#if data.period?.error}
@@ -138,6 +140,21 @@
 						</form>
 					{/if}
 				</div>
+				{#if l.canCancel}
+					<details class="cancel">
+						<summary>Cancel lesson…</summary>
+						<form method="POST" action="?/cancel" use:enhance={submit}>
+							<input type="hidden" name="id" value={l.id} />
+							<div class="field">
+								<label for="reason-{l.id}">Reason for the family (optional)</label>
+								<textarea id="reason-{l.id}" name="reason" rows="2" maxlength="500"></textarea>
+							</div>
+							<button class="button danger" type="submit" disabled={busyId === l.id}>
+								Yes, cancel and email the family
+							</button>
+						</form>
+					</details>
+				{/if}
 			</li>
 		{/each}
 	</ul>
@@ -218,6 +235,18 @@
 	.when {
 		margin: 0;
 		font-weight: 600;
+	}
+
+	.cancel {
+		flex-basis: 100%;
+	}
+
+	.cancel summary {
+		cursor: pointer;
+		font-weight: 600;
+		min-height: var(--tap);
+		display: flex;
+		align-items: center;
 	}
 
 	.pay {
