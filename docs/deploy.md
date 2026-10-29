@@ -182,6 +182,29 @@ example once a month):
 
 Any commit or other repository activity resets the 60-day clock.
 
+### Automatic database migrations
+
+A second workflow (`.github/workflows/migrate.yml`) runs `supabase db push` against the production
+project every time CI passes on `main`, so a merged pull request that adds a file under
+`supabase/migrations` is applied without anyone running the command by hand. Migrations the
+database already has are skipped, so runs with nothing new do nothing. Add three more repository
+secrets:
+
+| Secret                  | Value                                                                                            |
+| ----------------------- | ------------------------------------------------------------------------------------------------ |
+| `SUPABASE_ACCESS_TOKEN` | A personal access token from supabase.com, Account, Access Tokens                                |
+| `SUPABASE_DB_PASSWORD`  | The database password chosen when the project was created (Project Settings, Database resets it) |
+| `SUPABASE_PROJECT_REF`  | The project ref, the part of the project URL before `.supabase.co`                               |
+
+Until all three are set the workflow skips itself harmlessly. To apply migrations right away (for
+example after adding the secrets), open Actions, choose Migrate database, and click **Run
+workflow**.
+
+Cloudflare Pages builds from `main` on its own and does not wait for this workflow, so the new code
+can go live a minute or two before its migration finishes. Write migrations so the code that is
+already live keeps working with the new schema: add tables and columns first, and remove or rename
+them only in a later pull request once nothing uses them.
+
 ## 9. Post-deploy checks (#16)
 
 1. Open the site on your domain. It loads over https with no warnings.
