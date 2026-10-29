@@ -24,5 +24,8 @@ jobs:
           fi
       - name: Trigger scheduled jobs
         if: steps.gate.outputs.skip != 'true'
+        # SvelteKit treats a POST with no Content-Type and no Origin as a cross-site form
+        # submission and answers 403, so the JSON content type is required.
         run: >-
-          curl -fsS --max-time 60 -X POST -H "Authorization: Bearer $CRON_SECRET" "${APP_URL%/}/api/cron"
+          curl -fsS --max-time 60 -X POST -H "Authorization: Bearer $CRON_SECRET"
+          -H "Content-Type: application/json" "${APP_URL%/}/api/cron"
