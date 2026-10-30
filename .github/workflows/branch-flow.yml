@@ -1,0 +1,27 @@
+name: Branch flow
+
+# Changes move feature branch -> dev -> qa -> main. This check fails a pull request that skips a
+# step, and is meant to be a required status check on qa and main.
+on:
+  pull_request:
+    branches: [main, qa]
+
+permissions: {}
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 1
+    steps:
+      - env:
+          BASE: ${{ github.base_ref }}
+          HEAD: ${{ github.head_ref }}
+        run: |
+          case "$BASE" in
+            main) expected=qa ;;
+            qa) expected=dev ;;
+          esac
+          if [ "$HEAD" != "$expected" ]; then
+            echo "::error::Pull requests into $BASE must come from $expected (this one is from $HEAD). Open it against dev instead."
+            exit 1
+          fi
