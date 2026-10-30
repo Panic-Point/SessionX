@@ -79,6 +79,7 @@ interface StoredPasswordToken {
 	data: PasswordTokenData;
 	expiresAt: Date;
 	used: boolean;
+	createdAt: Date;
 }
 
 /** Matches the delete_account SQL function, so the old email is free for a new account. */
@@ -105,7 +106,7 @@ export class MemoryBookingStore
 	private readonly passwordHashes = new Map<string, string>();
 	private readonly sessionVersions = new Map<string, number>();
 	private readonly passwordTokens = new Map<string, StoredPasswordToken>();
-	private readonly passwordFailures: { email: string; failedAt: Date }[] = [];
+	private readonly passwordFailures: { id: string; email: string; failedAt: Date }[] = [];
 	private readonly overrideNotes = new Map<string, string>();
 	private readonly accountNotes = new Map<string, string>();
 	private readonly studentNotes = new Map<string, string>();
@@ -299,7 +300,39 @@ export class MemoryBookingStore
 			data.purpose === 'register'
 				? { ...data, email: data.email.trim().toLowerCase() }
 				: { ...data };
-		this.passwordTokens.set(tokenHash, { data: stored, expiresAt, used: false });
+		this.passwordTokens.set(tokenHash, {
+			data: stored,
+			expiresAt,
+			used: false,
+			createdAt: new Date()
+		});
+	}
+
+	async createResetTokenUnlessRecent(
+		tokenHash: string,
+		accountId: string,
+		expiresAt: Date,
+		since: Date,
+		now: Date
+	): Promise<boolean> {
+		if (!this.data.accounts.some((a) => a.id === accountId)) return false;
+		for (const token of this.passwordTokens.values()) {
+			if (
+				token.data.purpose === 'reset' &&
+				token.data.accountId === accountId &&
+				!token.used &&
+				token.createdAt > since
+			) {
+				return false;
+			}
+		}
+		this.passwordTokens.set(tokenHash, {
+			data: { purpose: 'reset', accountId },
+			expiresAt,
+			used: false,
+			createdAt: now
+		});
+		return true;
 	}
 
 	private livePasswordToken(
@@ -398,8 +431,15 @@ export class MemoryBookingStore
 		return this.passwordFailures.filter((f) => f.email === wanted && f.failedAt > since).length;
 	}
 
-	async recordPasswordFailure(email: string, failedAt: Date): Promise<void> {
-		this.passwordFailures.push({ email: email.trim().toLowerCase(), failedAt });
+	async recordPasswordFailure(email: string, failedAt: Date): Promise<string> {
+		const id = crypto.randomUUID();
+		this.passwordFailures.push({ id, email: email.trim().toLowerCase(), failedAt });
+		return id;
+	}
+
+	async removePasswordFailure(id: string): Promise<void> {
+		const i = this.passwordFailures.findIndex((f) => f.id === id);
+		if (i !== -1) this.passwordFailures.splice(i, 1);
 	}
 
 	async clearPasswordFailures(email: string): Promise<void> {

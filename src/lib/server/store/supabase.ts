@@ -373,6 +373,24 @@ export function createSupabaseBookingStore(url: string, serviceRoleKey: string):
 			if (error) fail('createPasswordToken', error);
 		},
 
+		async createResetTokenUnlessRecent(
+			tokenHash: string,
+			accountId: string,
+			expiresAt: Date,
+			since: Date,
+			now: Date
+		): Promise<boolean> {
+			const { data, error } = await db.rpc('create_reset_token_unless_recent', {
+				p_token_hash: tokenHash,
+				p_account_id: accountId,
+				p_expires_at: expiresAt.toISOString(),
+				p_since: since.toISOString(),
+				p_now: now.toISOString()
+			});
+			if (error) fail('createResetTokenUnlessRecent', error);
+			return data === true;
+		},
+
 		async peekPasswordToken(
 			tokenHash: string,
 			purpose: PasswordTokenData['purpose'],
@@ -429,10 +447,12 @@ export function createSupabaseBookingStore(url: string, serviceRoleKey: string):
 			return count ?? 0;
 		},
 
-		async recordPasswordFailure(email: string, failedAt: Date): Promise<void> {
-			const { error } = await db
+		async recordPasswordFailure(email: string, failedAt: Date): Promise<string> {
+			const { data, error } = await db
 				.from('password_failures')
-				.insert({ email: email.trim().toLowerCase(), failed_at: failedAt.toISOString() });
+				.insert({ email: email.trim().toLowerCase(), failed_at: failedAt.toISOString() })
+				.select('id')
+				.single();
 			if (error) fail('recordPasswordFailure', error);
 			// Housekeeping: rows only matter for the 15-minute lockout window.
 			const dayAgo = new Date(failedAt.getTime() - 24 * 60 * 60 * 1000);
@@ -441,6 +461,12 @@ export function createSupabaseBookingStore(url: string, serviceRoleKey: string):
 				.delete()
 				.lt('failed_at', dayAgo.toISOString());
 			if (pruned.error) console.error('Failed to prune password_failures', pruned.error.message);
+			return String((data as { id: number | string }).id);
+		},
+
+		async removePasswordFailure(id: string): Promise<void> {
+			const { error } = await db.from('password_failures').delete().eq('id', id);
+			if (error) fail('removePasswordFailure', error);
 		},
 
 		async clearPasswordFailures(email: string): Promise<void> {

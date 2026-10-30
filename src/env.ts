@@ -50,7 +50,7 @@ export const variables = defineEnvVars({
 	TURNSTILE_SITE_KEY: {
 		schema: optional,
 		description:
-			'Cloudflare Turnstile site key. The spam check on guest booking, registration and password sign-in is active only when this and TURNSTILE_SECRET_KEY are both set.'
+			'Cloudflare Turnstile site key. The spam check on guest booking, registration, password sign-in and password reset is active only when this and TURNSTILE_SECRET_KEY are both set.'
 	},
 	TURNSTILE_SECRET_KEY: {
 		schema: optional,
