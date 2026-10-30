@@ -5,6 +5,8 @@ export const SESSION_MAX_AGE_SECONDS = 60 * 60 * 24 * 30;
 
 export interface SessionPayload {
 	accountId: string;
+	/** The account's session_version when signed; a bump revokes every cookie issued before it. */
+	sessionVersion: number;
 	/** Expiry, seconds since epoch. */
 	exp: number;
 }
@@ -50,9 +52,15 @@ export async function verifySession(
 	if (!ok) return null;
 	try {
 		const p = JSON.parse(new TextDecoder().decode(raw));
-		if (typeof p?.accountId !== 'string' || typeof p?.exp !== 'number') return null;
+		if (
+			typeof p?.accountId !== 'string' ||
+			typeof p?.sessionVersion !== 'number' ||
+			typeof p?.exp !== 'number'
+		) {
+			return null;
+		}
 		if (p.exp * 1000 <= now.getTime()) return null;
-		return { accountId: p.accountId, exp: p.exp };
+		return { accountId: p.accountId, sessionVersion: p.sessionVersion, exp: p.exp };
 	} catch {
 		return null;
 	}

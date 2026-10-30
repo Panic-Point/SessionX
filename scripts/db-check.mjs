@@ -981,6 +981,44 @@ await check(
 	}
 );
 
+// ---- session revocation ----
+const sessionVersionOf = async (id) =>
+	(await db.query('select session_version from accounts where id = $1', [id])).rows[0]
+		?.session_version;
+
+await check('every password change bumps session_version', async () => {
+	const start = await sessionVersionOf(PARENT);
+	await db.query(`update accounts set name = 'Pat P' where id = $1`, [PARENT]);
+	assert((await sessionVersionOf(PARENT)) === start, 'non-password update bumped');
+	await db.query(`update accounts set password_hash = 'x' where id = $1`, [PARENT]);
+	assert((await sessionVersionOf(PARENT)) === start + 1, 'direct password update');
+	await addReset('sv-reset', PARENT);
+	assert((await completeReset('sv-reset', 'y')) === PARENT, 'reset');
+	assert((await sessionVersionOf(PARENT)) === start + 2, 'complete_password_reset');
+	await addRegistration('sv-register', 'parent@example.com');
+	assert((await completeRegistration('sv-register', '', 'z')) === PARENT, 'register');
+	assert((await sessionVersionOf(PARENT)) === start + 3, 'complete_registration');
+	await db.query('select delete_account($1, now())', [PARENT]);
+	assert((await sessionVersionOf(PARENT)) === start + 4, 'delete_account');
+});
+
+await check('revoke_sessions is service-role only and bumps live accounts', async () => {
+	const sig = 'revoke_sessions(uuid)';
+	const { rows: p } = await db.query(
+		`select has_function_privilege('anon', '${sig}', 'execute') anon,
+		        has_function_privilege('authenticated', '${sig}', 'execute') authenticated,
+		        has_function_privilege('service_role', '${sig}', 'execute') service_role`
+	);
+	assert(!p[0].anon && !p[0].authenticated && p[0].service_role, JSON.stringify(p[0]));
+	const ok = async (id) => (await db.query('select revoke_sessions($1) ok', [id])).rows[0].ok;
+	const start = await sessionVersionOf(ADMIN);
+	assert((await ok(ADMIN)) === true, 'admin revoke');
+	assert((await sessionVersionOf(ADMIN)) === start + 1, 'admin version');
+	assert((await ok('99999999-0000-0000-0000-000000000000')) === false, 'unknown account');
+	await db.query('select delete_account($1, now())', [PARENT]);
+	assert((await ok(PARENT)) === false, 'deleted account');
+});
+
 // Supabase's pg_safeupdate rejects DELETE/UPDATE without a WHERE, even inside functions.
 await check('migrations have no DELETE without a WHERE clause', () => {
 	for (const f of readdirSync(migDir)) {

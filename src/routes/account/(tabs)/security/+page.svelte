@@ -106,6 +106,19 @@
 		</form>
 	</section>
 
+	<section class="card" aria-labelledby="sessions-heading">
+		<h2 id="sessions-heading">Signed-in devices</h2>
+		<p class="empty">
+			Lost a phone or signed in on a shared computer? Sign out everywhere, including here. Changing
+			your password also signs out your other devices.
+		</p>
+		<form method="POST" action="?/signOutEverywhere" use:enhance={track('sessions')}>
+			<button class="button" type="submit" disabled={busy === 'sessions'}>
+				{busy === 'sessions' ? 'Signing out…' : 'Sign out everywhere'}
+			</button>
+		</form>
+	</section>
+
 	{#if data.canDelete}
 		<section class="card" aria-labelledby="delete-heading">
 			<h2 id="delete-heading">Delete account</h2>
