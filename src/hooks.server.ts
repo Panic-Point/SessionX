@@ -4,15 +4,21 @@ import { adminGuard, isAdminRequest } from '#lib/server/admin-guard.ts';
 import { SESSION_COOKIE, verifySession } from '#lib/server/auth/session.ts';
 import { getSessionSecret, getStore } from '#lib/server/context.ts';
 
-/** Resolves the session cookie to `locals.account`; drops cookies that no longer verify. */
+/**
+ * Resolves the session cookie to `locals.account`; drops cookies that no longer verify, including
+ * ones issued before the account's sessions were revoked.
+ */
 export const handle: Handle = async ({ event, resolve }) => {
 	event.locals.account = null;
 	const cookie = event.cookies.get(SESSION_COOKIE);
 	if (cookie) {
 		const session = await verifySession(cookie, getSessionSecret(), new Date());
-		const account = session ? await getStore().findAccountById(session.accountId) : null;
-		if (account) event.locals.account = account;
-		else event.cookies.delete(SESSION_COOKIE, { path: '/' });
+		const found = session ? await getStore().findSessionAccount(session.accountId) : null;
+		if (found && found.sessionVersion === session?.sessionVersion) {
+			event.locals.account = found.account;
+		} else {
+			event.cookies.delete(SESSION_COOKIE, { path: '/' });
+		}
 	}
 	// Central guard: covers page loads, form actions and __data.json, so no admin data leaves unchecked.
 	// Checks the resolved route as well as the pathname, since `/%61dmin` routes to `/admin`.

@@ -103,6 +103,7 @@ export class MemoryBookingStore
 	private readonly loginTokens = new Map<string, StoredLoginToken>();
 	// Kept apart from the account rows so a hash never leaks into a returned Account.
 	private readonly passwordHashes = new Map<string, string>();
+	private readonly sessionVersions = new Map<string, number>();
 	private readonly passwordTokens = new Map<string, StoredPasswordToken>();
 	private readonly passwordFailures: { email: string; failedAt: Date }[] = [];
 	private readonly overrideNotes = new Map<string, string>();
@@ -246,6 +247,29 @@ export class MemoryBookingStore
 		return account && !this.deletedAccounts.has(account.id) ? { ...account } : null;
 	}
 
+	async findSessionAccount(
+		id: string
+	): Promise<{ account: Account; sessionVersion: number } | null> {
+		const account = await this.findAccountById(id);
+		return account ? { account, sessionVersion: this.sessionVersions.get(id) ?? 0 } : null;
+	}
+
+	async revokeSessions(accountId: string): Promise<void> {
+		if (!(await this.findAccountById(accountId))) throw new AdminStoreError('not_found');
+		this.bumpSessionVersion(accountId);
+	}
+
+	/** Mirrors the accounts trigger: any change to the password hash revokes existing sessions. */
+	private setPassword(accountId: string, passwordHash: string | null): void {
+		if (passwordHash === null) this.passwordHashes.delete(accountId);
+		else this.passwordHashes.set(accountId, passwordHash);
+		this.bumpSessionVersion(accountId);
+	}
+
+	private bumpSessionVersion(accountId: string): void {
+		this.sessionVersions.set(accountId, (this.sessionVersions.get(accountId) ?? 0) + 1);
+	}
+
 	async createLoginToken(accountId: string, tokenHash: string, expiresAt: Date): Promise<void> {
 		this.loginTokens.set(tokenHash, { accountId, expiresAt, used: false });
 	}
@@ -263,7 +287,7 @@ export class MemoryBookingStore
 
 	async setPasswordHash(accountId: string, passwordHash: string): Promise<void> {
 		if (!this.data.accounts.some((a) => a.id === accountId)) throw new AdminStoreError('not_found');
-		this.passwordHashes.set(accountId, passwordHash);
+		this.setPassword(accountId, passwordHash);
 	}
 
 	async createPasswordToken(
@@ -350,7 +374,7 @@ export class MemoryBookingStore
 			// The new account holder is its first student; an existing family keeps its own.
 			if (name) this.data.students.push({ id: crypto.randomUUID(), accountId: account.id, name });
 		}
-		this.passwordHashes.set(account.id, details.passwordHash);
+		this.setPassword(account.id, details.passwordHash);
 		this.passwordLinkUsed(account.id, data.email);
 		return account.id;
 	}
@@ -364,7 +388,7 @@ export class MemoryBookingStore
 		if (data?.purpose !== 'reset') return null;
 		const account = this.data.accounts.find((a) => a.id === data.accountId);
 		if (!account) return null;
-		this.passwordHashes.set(account.id, passwordHash);
+		this.setPassword(account.id, passwordHash);
 		this.passwordLinkUsed(account.id, account.email.toLowerCase());
 		return account.id;
 	}
@@ -703,7 +727,7 @@ export class MemoryBookingStore
 		}
 		this.deletedAccounts.add(accountId);
 		account.email = deletedEmail(accountId);
-		this.passwordHashes.delete(accountId);
+		this.setPassword(accountId, null);
 		for (const [hash, token] of this.loginTokens) {
 			if (token.accountId === accountId) this.loginTokens.delete(hash);
 		}

@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { demoData } from '#lib/server/store/demo-data.ts';
 import { MemoryBookingStore } from '#lib/server/store/memory.ts';
 import type { Account } from '#lib/server/store/types.ts';
+import { SESSION_COOKIE, verifySession } from '#lib/server/auth/session.ts';
 import { load as homeLoad } from './(tabs)/+page.server';
 import { actions as familyActions, load as familyLoad } from './(tabs)/family/+page.server';
 import { load as repertoireLoad } from './(tabs)/repertoire/+page.server';
@@ -15,7 +16,8 @@ vi.mock('#lib/server/context.ts', () => ({
 	getStore: () => ctx.store,
 	getMailer: () => ({ send: async () => {} }),
 	getAppUrl: () => 'https://example.test',
-	getCalendar: () => undefined
+	getCalendar: () => undefined,
+	getSessionSecret: () => 'test-secret'
 }));
 
 // Defense in depth: every /account load and action enforces the guard itself, because a data
@@ -28,6 +30,7 @@ const handlers = {
 	'load /account/repertoire': repertoireLoad,
 	'load /account/security': securityLoad,
 	'action /account/security?/password': securityActions.password,
+	'action /account/security?/signOutEverywhere': securityActions.signOutEverywhere,
 	'action /account/security?/deleteAccount': securityActions.deleteAccount,
 	'load /account/cancel/[id]': cancelLoad,
 	'action /account/cancel/[id]': cancelActions.default
@@ -242,5 +245,72 @@ describe('/account/security delete account', () => {
 		expect(result).toMatchObject({ status: 303, location: '/?accountDeleted=1' });
 		expect(deleted).toEqual(['sx_session']);
 		expect(await ctx.store.findAccountById(pat.id)).toBeNull();
+	});
+});
+
+describe('/account/security sessions', () => {
+	const pat: Account = {
+		id: '22222222-0000-0000-0000-00000000000b',
+		name: 'Pat Parent',
+		email: 'parent@example.com',
+		role: 'client'
+	};
+
+	beforeEach(() => {
+		ctx.store = new MemoryBookingStore(demoData());
+	});
+
+	function event(fields: Record<string, string> = {}) {
+		const body = new FormData();
+		for (const [k, v] of Object.entries(fields)) body.set(k, v);
+		const set = new Map<string, string>();
+		const deleted: string[] = [];
+		return {
+			set,
+			deleted,
+			event: {
+				locals: { account: pat },
+				cookies: {
+					set: (name: string, value: string) => set.set(name, value),
+					delete: (name: string) => deleted.push(name)
+				},
+				request: new Request('http://localhost/account/security', { method: 'POST', body })
+			}
+		};
+	}
+
+	async function versionOf(id: string): Promise<number | undefined> {
+		return (await ctx.store.findSessionAccount(id))?.sessionVersion;
+	}
+
+	it('sign out everywhere revokes every session and signs this device out', async () => {
+		const before = await versionOf(pat.id);
+		const { deleted, event: e } = event();
+		let result: unknown;
+		try {
+			// eslint-disable-next-line @typescript-eslint/no-explicit-any
+			await (securityActions.signOutEverywhere as any)(e);
+		} catch (err) {
+			result = err;
+		}
+		expect(result).toMatchObject({ status: 303, location: '/?signedOutEverywhere=1' });
+		expect(deleted).toEqual([SESSION_COOKIE]);
+		expect(await versionOf(pat.id)).toBe(before! + 1);
+	});
+
+	it('a password change revokes other sessions but keeps this device signed in', async () => {
+		const before = await versionOf(pat.id);
+		const { set, event: e } = event({
+			currentPassword: 'sessionx-parent-dev1',
+			password: 'a-brand-new-passphrase-7',
+			confirmPassword: 'a-brand-new-passphrase-7'
+		});
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
+		const result = await (securityActions.password as any)(e);
+		expect(result).toMatchObject({ message: 'Password changed.' });
+		const after = await versionOf(pat.id);
+		expect(after).toBe(before! + 1);
+		const session = await verifySession(set.get(SESSION_COOKIE), 'test-secret', new Date());
+		expect(session).toMatchObject({ accountId: pat.id, sessionVersion: after });
 	});
 });

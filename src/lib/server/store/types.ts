@@ -181,6 +181,14 @@ export interface AdminStore {
 	/** Trim + case-insensitive. */
 	findAccountByEmail(email: string): Promise<Account | null>;
 	findAccountById(id: string): Promise<Account | null>;
+	/** The account with its session_version; null for an unknown or deleted account. */
+	findSessionAccount(id: string): Promise<{ account: Account; sessionVersion: number } | null>;
+	/**
+	 * Bumps session_version so every existing session cookie stops working. Setting a password
+	 * (setPasswordHash, completeRegistration, completePasswordReset) does this too.
+	 * Throws AdminStoreError not_found.
+	 */
+	revokeSessions(accountId: string): Promise<void>;
 	createLoginToken(accountId: string, tokenHash: string, expiresAt: Date): Promise<void>;
 	/** Returns the accountId and marks the token used; null if unknown, used or expired (expiresAt <= now). */
 	consumeLoginToken(tokenHash: string, now: Date): Promise<string | null>;
