@@ -655,10 +655,38 @@ await check('reset sets the password, voids other tokens and clears the lockout'
 	assert(rows.length === 1 && rows[0].email === 'other@example.com', JSON.stringify(rows));
 });
 
+const createResetUnlessRecent = async (hash, accountId, since, now) =>
+	(
+		await db.query(
+			`select create_reset_token_unless_recent($1, $2, '2030-01-01Z', $3, $4) created`,
+			[hash, accountId, since, now]
+		)
+	).rows[0].created;
+
+await check('a reset token is created only when none is unused since the cooldown', async () => {
+	const at = (min) => new Date(Date.UTC(2026, 10, 1, 0, min)).toISOString();
+	assert((await createResetUnlessRecent('c1', PARENT, at(-5), at(0))) === true, 'first refused');
+	assert((await createResetUnlessRecent('c2', PARENT, at(-4), at(1))) === false, 'second created');
+	assert((await createResetUnlessRecent('c3', ADMIN, at(-4), at(1))) === true, 'other account');
+	assert((await createResetUnlessRecent('c4', PARENT, at(0), at(5))) === true, 'after cooldown');
+	assert((await completeReset('c4', 'pw-reset', at(6))) === PARENT, 'cooldown token unusable');
+	assert((await createResetUnlessRecent('c5', PARENT, at(2), at(7))) === true, 'after a reset');
+	assert(
+		(await createResetUnlessRecent('c6', '99999999-0000-0000-0000-000000000000', at(0), at(5))) ===
+			false,
+		'created for an unknown account'
+	);
+	const { rows } = await db.query(
+		`select token_hash from password_tokens where token_hash like 'c%' order by token_hash`
+	);
+	assert(rows.map((r) => r.token_hash).join() === 'c1,c3,c4,c5', JSON.stringify(rows));
+});
+
 await check('only service_role can complete registrations and resets', async () => {
 	for (const sig of [
 		'complete_registration(text,text,text,timestamptz)',
-		'complete_password_reset(text,text,timestamptz)'
+		'complete_password_reset(text,text,timestamptz)',
+		'create_reset_token_unless_recent(text,uuid,timestamptz,timestamptz,timestamptz)'
 	]) {
 		const { rows } = await db.query(
 			`select has_function_privilege('anon', '${sig}', 'execute') anon,

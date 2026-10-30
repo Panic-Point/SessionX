@@ -204,6 +204,45 @@ export function runPasswordStoreContract(
 			expect(await store.countPasswordFailures('other@example.com', at(-1))).toBe(1);
 		});
 
+		it('removes one failure by id', async () => {
+			const store = await makeStore();
+			const first = await store.recordPasswordFailure('someone@example.com', NOW);
+			const second = await store.recordPasswordFailure('someone@example.com', NOW);
+			expect(first).not.toBe(second);
+			await store.removePasswordFailure(first);
+			await store.removePasswordFailure(first);
+			expect(await store.countPasswordFailures('someone@example.com', new Date(0))).toBe(1);
+			await store.removePasswordFailure(second);
+			expect(await store.countPasswordFailures('someone@example.com', new Date(0))).toBe(0);
+		});
+
+		it('creates a reset token only when the account has no unused one since `since`', async () => {
+			const store = await makeStore();
+			const at = (min: number) => new Date(NOW.getTime() + min * 60_000);
+			const first = tokenHash();
+			expect(await store.createResetTokenUnlessRecent(first, PARENT_ID, LATER, at(-5), at(0))).toBe(
+				true
+			);
+			expect(await store.peekPasswordToken(first, 'reset', at(0))).toEqual({
+				purpose: 'reset',
+				accountId: PARENT_ID
+			});
+			expect(
+				await store.createResetTokenUnlessRecent(tokenHash(), PARENT_ID, LATER, at(-4), at(1))
+			).toBe(false);
+			expect(
+				await store.createResetTokenUnlessRecent(tokenHash(), ADMIN_ID, LATER, at(-4), at(1))
+			).toBe(true);
+			expect(
+				await store.createResetTokenUnlessRecent(tokenHash(), MISSING_ID, LATER, at(-4), at(1))
+			).toBe(false);
+			// A used link doesn't hold back the next one.
+			await store.completePasswordReset(first, HASH_A, at(2));
+			expect(
+				await store.createResetTokenUnlessRecent(tokenHash(), PARENT_ID, LATER, at(-2), at(3))
+			).toBe(true);
+		});
+
 		it('using a reset link clears the lockout for that email', async () => {
 			const store = await makeStore();
 			await store.recordPasswordFailure('parent@example.com', NOW);
