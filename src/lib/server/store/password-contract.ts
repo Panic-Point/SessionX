@@ -43,6 +43,43 @@ export function runPasswordStoreContract(
 			);
 		});
 
+		it('session version: revokeSessions and every password change bump it', async () => {
+			const store = await makeStore();
+			const start = (await store.findSessionAccount(PARENT_ID))!;
+			expect(start.account).toEqual(await store.findAccountById(PARENT_ID));
+
+			await store.revokeSessions(PARENT_ID);
+			expect((await store.findSessionAccount(PARENT_ID))?.sessionVersion).toBe(
+				start.sessionVersion + 1
+			);
+
+			await store.setPasswordHash(PARENT_ID, HASH_A);
+			expect((await store.findSessionAccount(PARENT_ID))?.sessionVersion).toBe(
+				start.sessionVersion + 2
+			);
+
+			const t = tokenHash();
+			await store.createPasswordToken(t, { purpose: 'reset', accountId: PARENT_ID }, LATER);
+			await store.completePasswordReset(t, HASH_B, NOW);
+			expect((await store.findSessionAccount(PARENT_ID))?.sessionVersion).toBe(
+				start.sessionVersion + 3
+			);
+
+			const r = tokenHash();
+			await store.createPasswordToken(
+				r,
+				{ purpose: 'register', email: 'parent@example.com' },
+				LATER
+			);
+			await store.completeRegistration(r, { name: '', passwordHash: HASH_A }, NOW);
+			expect((await store.findSessionAccount(PARENT_ID))?.sessionVersion).toBe(
+				start.sessionVersion + 4
+			);
+
+			expect(await store.findSessionAccount(MISSING_ID)).toBeNull();
+			await expect(store.revokeSessions(MISSING_ID)).rejects.toBeInstanceOf(AdminStoreError);
+		});
+
 		it('registration for a new email creates a client account and student only when used', async () => {
 			const store = await makeStore();
 			const t = tokenHash();

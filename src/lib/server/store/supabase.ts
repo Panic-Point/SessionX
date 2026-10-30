@@ -300,6 +300,27 @@ export function createSupabaseBookingStore(url: string, serviceRoleKey: string):
 			return data ? mapAccountRow(data as AccountRow) : null;
 		},
 
+		async findSessionAccount(
+			id: string
+		): Promise<{ account: Account; sessionVersion: number } | null> {
+			const { data, error } = await db
+				.from('accounts')
+				.select(`${ACCOUNT_COLUMNS}, session_version`)
+				.eq('id', id)
+				.is('deleted_at', null)
+				.maybeSingle();
+			if (error) fail('findSessionAccount', error);
+			if (!data) return null;
+			const row = data as AccountRow & { session_version: number };
+			return { account: mapAccountRow(row), sessionVersion: row.session_version };
+		},
+
+		async revokeSessions(accountId: string): Promise<void> {
+			const { data, error } = await db.rpc('revoke_sessions', { p_account_id: accountId });
+			if (error) fail('revokeSessions', error);
+			if (data !== true) throw new AdminStoreError('not_found');
+		},
+
 		async createLoginToken(accountId: string, tokenHash: string, expiresAt: Date): Promise<void> {
 			const { error } = await db.from('login_tokens').insert({
 				token_hash: tokenHash,
