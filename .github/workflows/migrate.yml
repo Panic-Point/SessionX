@@ -53,15 +53,20 @@ jobs:
             echo "skip=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
+          # A ref is the 20 lowercase letters before .supabase.co, not the project name or URL.
+          if ! [[ "$ref" =~ ^[a-z]{20}$ ]]; then
+            echo "::error::The $branch project ref secret is not a project ref. Use the 20 letters from the project URL (https://<ref>.supabase.co), with no spaces."
+            exit 1
+          fi
           echo "branch=$branch" >> "$GITHUB_OUTPUT"
           echo "SUPABASE_PROJECT_REF=$ref" >> "$GITHUB_ENV"
           echo "SUPABASE_DB_PASSWORD=$password" >> "$GITHUB_ENV"
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         if: steps.gate.outputs.skip != 'true'
         with:
           # The commit CI just tested, or the tip of the target's branch when run by hand.
           ref: ${{ github.event.workflow_run.head_sha || steps.gate.outputs.branch }}
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         if: steps.gate.outputs.skip != 'true'
         with:
           node-version: 22
