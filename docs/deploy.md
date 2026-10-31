@@ -187,7 +187,7 @@ Any commit or other repository activity resets the 60-day clock.
 ### Automatic database migrations
 
 A second workflow (`.github/workflows/migrate.yml`) runs `supabase db push` against the production
-project every time CI passes on `main` (and against the test project for `dev` and `qa`, see
+project every time CI passes on `main` (and against the test project for `dev`, see
 [release-flow.md](release-flow.md)), so a merged pull request that adds a file under
 `supabase/migrations` is applied without anyone running the command by hand. Migrations the
 database already has are skipped, so runs with nothing new do nothing. Add three more repository
@@ -229,5 +229,5 @@ them only in a later pull request once nothing uses them.
 
 - [local-dev.md](local-dev.md) for running everything on your own machine
 - [google-calendar.md](google-calendar.md) for calendar sync
-- [release-flow.md](release-flow.md) for the dev and QA sites and the dev → qa → main flow
+- [release-flow.md](release-flow.md) for the dev site and the dev → main flow
 - Issue #7, the launch tracking issue

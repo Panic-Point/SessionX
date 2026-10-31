@@ -27,12 +27,6 @@ jobs:
           fi
           curl -fsS --max-time 60 -X POST -H "Authorization: Bearer $CRON_SECRET" \
             -H "Content-Type: application/json" "${APP_URL%/}/api/cron"
-      - name: QA
-        if: ${{ !cancelled() }}
-        env:
-          APP_URL: ${{ secrets.QA_APP_URL }}
-          CRON_SECRET: ${{ secrets.QA_CRON_SECRET }}
-        run: *tick
       - name: Dev
         if: ${{ !cancelled() }}
         env:
