@@ -58,9 +58,11 @@ In the Cloudflare dashboard open Workers & Pages, the `sessionx` project, Settin
    `https://dev.sessionx-c49.pages.dev`. Until this is set, every pull request branch also gets a
    preview build that uses the Preview variables, so first check that Preview holds no production
    database keys.
-2. **Variables and Secrets, Preview environment:** add the variables below, all as type
-   **Secret**, like production. Do not copy the production values for the database, session or
-   cron secrets.
+2. **Variables and Secrets, Preview environment:** at the very top of the Settings tab there is
+   a **Choose Environment** dropdown that reads **Production**. Switch it to **Preview**, then
+   scroll to Variables and Secrets and add the variables below, all as type **Secret**, like
+   production. The switch is for the whole page, not inside the Variables and Secrets section.
+   Do not copy the production values for the database, session or cron secrets.
 
 | Variable                             | Preview value                                                                                    |
 | ------------------------------------ | ------------------------------------------------------------------------------------------------ |
