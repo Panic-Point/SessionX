@@ -47,6 +47,6 @@ npm run test:all  # all of the above
 - [Local development](docs/local-dev.md): Docker and Supabase on your machine
 - [Testing guide](docs/testing.md): how to try every feature by hand
 - [Deploying to production](docs/deploy.md): domain, email, database, hosting, secrets
-- [Release flow](docs/release-flow.md): dev and QA sites, and how changes move dev → qa → main
+- [Release flow](docs/release-flow.md): the dev site, and how changes move dev → main
 - [Google Calendar setup](docs/google-calendar.md)
 - Launch tracking: issue #7
