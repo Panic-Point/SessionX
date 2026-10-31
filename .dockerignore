@@ -4,3 +4,8 @@ node_modules
 .superpowers
 .git
 supabase/.temp
+
+# Local secrets (e.g. the Supabase service-role key) must not land in image
+# layers. Compose still injects them at runtime via env_file.
+.env*
+!.env.local.example

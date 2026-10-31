@@ -181,6 +181,14 @@ export interface AdminStore {
 	/** Trim + case-insensitive. */
 	findAccountByEmail(email: string): Promise<Account | null>;
 	findAccountById(id: string): Promise<Account | null>;
+	/** The account with its session_version; null for an unknown or deleted account. */
+	findSessionAccount(id: string): Promise<{ account: Account; sessionVersion: number } | null>;
+	/**
+	 * Bumps session_version so every existing session cookie stops working. Setting a password
+	 * (setPasswordHash, completeRegistration, completePasswordReset) does this too.
+	 * Throws AdminStoreError not_found.
+	 */
+	revokeSessions(accountId: string): Promise<void>;
 	createLoginToken(accountId: string, tokenHash: string, expiresAt: Date): Promise<void>;
 	/** Returns the accountId and marks the token used; null if unknown, used or expired (expiresAt <= now). */
 	consumeLoginToken(tokenHash: string, now: Date): Promise<string | null>;
@@ -189,6 +197,18 @@ export interface AdminStore {
 	/** Throws AdminStoreError not_found. */
 	setPasswordHash(accountId: string, passwordHash: string): Promise<void>;
 	createPasswordToken(tokenHash: string, data: PasswordTokenData, expiresAt: Date): Promise<void>;
+	/**
+	 * Creates a reset token for the account, created at `now`, unless the account has an unused
+	 * reset token created after `since`. The check and the insert happen at once, so parallel
+	 * requests create one token. Returns whether it was created; false for an unknown account.
+	 */
+	createResetTokenUnlessRecent(
+		tokenHash: string,
+		accountId: string,
+		expiresAt: Date,
+		since: Date,
+		now: Date
+	): Promise<boolean>;
 	/**
 	 * The token's data without using it; null if unknown, used, expired (expiresAt <= now) or of
 	 * another purpose. Registration emails come back trimmed and lowercased.
@@ -214,7 +234,10 @@ export interface AdminStore {
 	completePasswordReset(tokenHash: string, passwordHash: string, now: Date): Promise<string | null>;
 	/** Failed password sign-ins for the email (trim + case-insensitive) with failedAt > since. */
 	countPasswordFailures(email: string, since: Date): Promise<number>;
-	recordPasswordFailure(email: string, failedAt: Date): Promise<void>;
+	/** Returns the failure's id, for removePasswordFailure. */
+	recordPasswordFailure(email: string, failedAt: Date): Promise<string>;
+	/** Removes one failure by id; no-op when it is already gone. */
+	removePasswordFailure(id: string): Promise<void>;
 	clearPasswordFailures(email: string): Promise<void>;
 	listBookings(filter: BookingFilter): Promise<AdminBooking[]>;
 	getBooking(id: string): Promise<AdminBooking | null>;

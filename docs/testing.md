@@ -348,6 +348,8 @@ TURNSTILE_SECRET_KEY=1x0000000000000000000000000000000AA
 2. Submit. The request goes through as usual.
 3. Change the secret to `2x0000000000000000000000000000000AA` (Cloudflare's "always fails" key),
    restart, and submit again. You see "Please complete the spam check and try again."
+4. The same box appears on **Sign in**, **Register** and **Reset your password**, and each of them
+   shows that message with the failing key.
 
 Remove both lines afterwards.
 

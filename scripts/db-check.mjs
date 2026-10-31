@@ -655,10 +655,38 @@ await check('reset sets the password, voids other tokens and clears the lockout'
 	assert(rows.length === 1 && rows[0].email === 'other@example.com', JSON.stringify(rows));
 });
 
+const createResetUnlessRecent = async (hash, accountId, since, now) =>
+	(
+		await db.query(
+			`select create_reset_token_unless_recent($1, $2, '2030-01-01Z', $3, $4) created`,
+			[hash, accountId, since, now]
+		)
+	).rows[0].created;
+
+await check('a reset token is created only when none is unused since the cooldown', async () => {
+	const at = (min) => new Date(Date.UTC(2026, 10, 1, 0, min)).toISOString();
+	assert((await createResetUnlessRecent('c1', PARENT, at(-5), at(0))) === true, 'first refused');
+	assert((await createResetUnlessRecent('c2', PARENT, at(-4), at(1))) === false, 'second created');
+	assert((await createResetUnlessRecent('c3', ADMIN, at(-4), at(1))) === true, 'other account');
+	assert((await createResetUnlessRecent('c4', PARENT, at(0), at(5))) === true, 'after cooldown');
+	assert((await completeReset('c4', 'pw-reset', at(6))) === PARENT, 'cooldown token unusable');
+	assert((await createResetUnlessRecent('c5', PARENT, at(2), at(7))) === true, 'after a reset');
+	assert(
+		(await createResetUnlessRecent('c6', '99999999-0000-0000-0000-000000000000', at(0), at(5))) ===
+			false,
+		'created for an unknown account'
+	);
+	const { rows } = await db.query(
+		`select token_hash from password_tokens where token_hash like 'c%' order by token_hash`
+	);
+	assert(rows.map((r) => r.token_hash).join() === 'c1,c3,c4,c5', JSON.stringify(rows));
+});
+
 await check('only service_role can complete registrations and resets', async () => {
 	for (const sig of [
 		'complete_registration(text,text,text,timestamptz)',
-		'complete_password_reset(text,text,timestamptz)'
+		'complete_password_reset(text,text,timestamptz)',
+		'create_reset_token_unless_recent(text,uuid,timestamptz,timestamptz,timestamptz)'
 	]) {
 		const { rows } = await db.query(
 			`select has_function_privilege('anon', '${sig}', 'execute') anon,
@@ -980,6 +1008,44 @@ await check(
 		assert(left.rows.length === 0, 'songs left behind');
 	}
 );
+
+// ---- session revocation ----
+const sessionVersionOf = async (id) =>
+	(await db.query('select session_version from accounts where id = $1', [id])).rows[0]
+		?.session_version;
+
+await check('every password change bumps session_version', async () => {
+	const start = await sessionVersionOf(PARENT);
+	await db.query(`update accounts set name = 'Pat P' where id = $1`, [PARENT]);
+	assert((await sessionVersionOf(PARENT)) === start, 'non-password update bumped');
+	await db.query(`update accounts set password_hash = 'x' where id = $1`, [PARENT]);
+	assert((await sessionVersionOf(PARENT)) === start + 1, 'direct password update');
+	await addReset('sv-reset', PARENT);
+	assert((await completeReset('sv-reset', 'y')) === PARENT, 'reset');
+	assert((await sessionVersionOf(PARENT)) === start + 2, 'complete_password_reset');
+	await addRegistration('sv-register', 'parent@example.com');
+	assert((await completeRegistration('sv-register', '', 'z')) === PARENT, 'register');
+	assert((await sessionVersionOf(PARENT)) === start + 3, 'complete_registration');
+	await db.query('select delete_account($1, now())', [PARENT]);
+	assert((await sessionVersionOf(PARENT)) === start + 4, 'delete_account');
+});
+
+await check('revoke_sessions is service-role only and bumps live accounts', async () => {
+	const sig = 'revoke_sessions(uuid)';
+	const { rows: p } = await db.query(
+		`select has_function_privilege('anon', '${sig}', 'execute') anon,
+		        has_function_privilege('authenticated', '${sig}', 'execute') authenticated,
+		        has_function_privilege('service_role', '${sig}', 'execute') service_role`
+	);
+	assert(!p[0].anon && !p[0].authenticated && p[0].service_role, JSON.stringify(p[0]));
+	const ok = async (id) => (await db.query('select revoke_sessions($1) ok', [id])).rows[0].ok;
+	const start = await sessionVersionOf(ADMIN);
+	assert((await ok(ADMIN)) === true, 'admin revoke');
+	assert((await sessionVersionOf(ADMIN)) === start + 1, 'admin version');
+	assert((await ok('99999999-0000-0000-0000-000000000000')) === false, 'unknown account');
+	await db.query('select delete_account($1, now())', [PARENT]);
+	assert((await ok(PARENT)) === false, 'deleted account');
+});
 
 // Supabase's pg_safeupdate rejects DELETE/UPDATE without a WHERE, even inside functions.
 await check('migrations have no DELETE without a WHERE clause', () => {
