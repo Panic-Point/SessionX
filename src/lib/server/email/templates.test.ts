@@ -229,13 +229,13 @@ const booked = [
 describe('series templates', () => {
 	const now = new Date('2026-11-01T17:00:00Z');
 
-	it('created email describes the schedule, names skipped dates and attaches one .ics', () => {
-		const m = seriesCreatedEmail(
-			series,
-			booked,
-			[{ startsAt: new Date('2026-11-10T20:00:00Z'), reason: 'Studio closed that day' }],
-			{ policyText: 'Cancel 24h ahead.', continues: false, accountUrl, now }
-		);
+	it('created email describes the schedule and attaches one .ics', () => {
+		const m = seriesCreatedEmail(series, booked, {
+			policyText: 'Cancel 24h ahead.',
+			continues: false,
+			accountUrl,
+			now
+		});
 		expect(m.to).toBe('pat@example.com');
 		expect(m.subject).toBe('Recurring lessons booked – Ben, Weekly · Tue 3:00pm');
 		for (const part of [m.text, m.html]) {
@@ -244,9 +244,6 @@ describe('series templates', () => {
 			expect(part).not.toContain('Tuesday, November 3, 2026 at 3:00 PM EST');
 			expect(part).not.toContain('Tuesday, November 17, 2026 at 3:00 PM EST');
 			expect(part).not.toContain('https://x.test/manage/');
-			expect(part).toContain('No lesson on these dates');
-			expect(part).toContain('Tuesday, November 10, 2026 at 3:00 PM EST');
-			expect(part).toContain('Studio closed that day');
 			expect(part).toContain('$30.00');
 			expect(part).toContain('Cancel 24h ahead.');
 			expect(part).toContain(accountUrl);
@@ -261,21 +258,20 @@ describe('series templates', () => {
 		expect(ics.content.replace(/\r\n /g, '')).toContain('https://x.test/manage/t2');
 	});
 
-	it('created email leaves out empty sections and mentions top-ups for continuing series', () => {
-		const m = seriesCreatedEmail(series, booked, [], {
+	it('created email leaves out an empty policy and mentions top-ups for continuing series', () => {
+		const m = seriesCreatedEmail(series, booked, {
 			policyText: '',
 			continues: true,
 			accountUrl,
 			now
 		});
-		expect(m.text).not.toContain('No lesson on these dates');
 		expect(m.text).not.toContain('Cancellation policy');
 		expect(m.text).toContain('More lessons are added automatically');
 		expect(m.html).toContain('More lessons are added automatically');
 	});
 
 	it('created email escapes HTML', () => {
-		const m = seriesCreatedEmail({ ...series, studentName: '<b>Ben</b>' }, booked, [], {
+		const m = seriesCreatedEmail({ ...series, studentName: '<b>Ben</b>' }, booked, {
 			policyText: '<i>x</i>',
 			continues: false,
 			accountUrl,

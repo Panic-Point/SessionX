@@ -278,16 +278,13 @@ const lessonCount = (n: number) => (n === 1 ? '1 lesson' : `${n} lessons`);
 
 /**
  * One email for a whole new series. It describes the schedule rather than listing every date:
- * the attached .ics holds each booked lesson, with its own manage link. Dates the schedule
- * includes but that could not be booked are still named, since the schedule alone can't say so.
+ * the attached .ics holds each booked lesson, with its own manage link.
  */
 export function seriesCreatedEmail(
 	d: SeriesEmailData,
 	booked: SeriesLesson[],
-	skipped: SkippedLesson[],
 	opts: { policyText: string; continues: boolean; accountUrl: string; now: Date }
 ): EmailMessage {
-	const when = (at: Date) => formatDateTime(at, d.timezone);
 	const rows = seriesRows(d);
 	const more = opts.continues
 		? 'More lessons are added automatically as the dates get closer. We will skip any date the studio is already booked or closed.'
@@ -301,22 +298,11 @@ export function seriesCreatedEmail(
 		`${d.studentName} is booked for recurring lessons.`,
 		textRows(rows)
 	];
-	if (skipped.length > 0) {
-		textParts.push(
-			`No lesson on these dates:\n${skipped.map((s) => `- ${when(s.startsAt)}: ${s.reason}`).join('\n')}`
-		);
-	}
 	textParts.push(calendarNote, accountNote);
 	if (more) textParts.push(more);
 	if (opts.policyText) textParts.push(`Cancellation policy: ${opts.policyText}`);
 
-	let footer = '';
-	if (skipped.length > 0) {
-		footer += `<p style="margin:16px 0 0">No lesson on these dates:</p>${htmlList(
-			skipped.map((s) => `${escapeHtml(when(s.startsAt))}: ${escapeHtml(s.reason)}`)
-		)}`;
-	}
-	footer += `<p style="margin:16px 0 0">${escapeHtml(calendarNote)}</p>`;
+	let footer = `<p style="margin:16px 0 0">${escapeHtml(calendarNote)}</p>`;
 	footer += `<p style="margin:8px 0 0">You can also see and manage every lesson when signed in at <a href="${escapeHtml(opts.accountUrl)}">${escapeHtml(opts.accountUrl)}</a></p>`;
 	if (more) footer += `<p style="margin:8px 0 0">${escapeHtml(more)}</p>`;
 	if (opts.policyText) {

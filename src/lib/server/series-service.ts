@@ -387,7 +387,6 @@ export async function createSeries(
 						startsAt: b.startsAt,
 						manageUrl: `${appUrl}/manage/${b.manageToken}`
 					})),
-					skipped,
 					{
 						policyText: settings.cancellationPolicyText,
 						continues: preview.continues,

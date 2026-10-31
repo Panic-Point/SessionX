@@ -333,8 +333,9 @@ describe('createSeries', () => {
 		]);
 		const kept = await store.getBooking(existing.bookingId);
 		expect(kept).toMatchObject({ status: 'pending', startsAt: at3pm('2026-11-10'), series: null });
-		expect(sent[0].text).toContain('No lesson on these dates:');
-		expect(sent[0].text).toContain('Studio closed that day');
+		// The admin sees the skipped dates; the family's email only describes the schedule.
+		expect(sent[0].text).not.toContain('November 17, 2026');
+		expect(sent[0].text).not.toContain('Studio closed that day');
 	});
 
 	it('reports a date taken between the preview and the save as skipped', async () => {
