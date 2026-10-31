@@ -287,7 +287,16 @@ describe('createSeries', () => {
 		const ics = sent[0].attachments![0].content;
 		expect(ics.match(/BEGIN:VEVENT/g)).toHaveLength(10);
 		expect(ics).toContain(`UID:${lessons[0].id}@sessionx`);
-		expect(sent[0].text).toContain(`https://example.test/manage/${lessons[0].manageToken}`);
+		// The email describes the schedule; each lesson's manage link lives in its calendar event.
+		expect(sent[0].text).toContain(
+			'Schedule: Weekly on Tuesdays at 3:00 PM, starting November 3, 2026, until January 5, 2027 (10 lessons)'
+		);
+		expect(sent[0].text).not.toContain('November 10, 2026');
+		expect(sent[0].text).not.toContain('/manage/');
+		expect(sent[0].text).toContain('https://example.test/account');
+		expect(ics.replace(/\r\n /g, '')).toContain(
+			`https://example.test/manage/${lessons[0].manageToken}`
+		);
 
 		expect(calendar.created).toHaveLength(10);
 		expect(calendar.created[0].calendarId).toBe(CALENDAR);
@@ -324,8 +333,9 @@ describe('createSeries', () => {
 		]);
 		const kept = await store.getBooking(existing.bookingId);
 		expect(kept).toMatchObject({ status: 'pending', startsAt: at3pm('2026-11-10'), series: null });
-		expect(sent[0].text).toContain('Dates skipped:');
-		expect(sent[0].text).toContain('Studio closed that day');
+		// The admin sees the skipped dates; the family's email only describes the schedule.
+		expect(sent[0].text).not.toContain('November 17, 2026');
+		expect(sent[0].text).not.toContain('Studio closed that day');
 	});
 
 	it('reports a date taken between the preview and the save as skipped', async () => {
@@ -498,8 +508,10 @@ describe('cancelling', () => {
 
 		expect(sent).toHaveLength(1);
 		expect(sent[0].subject).toBe('Recurring lessons cancelled – Ben, Weekly · Tue 3:00pm');
-		expect(sent[0].text).toContain('Tuesday, November 10, 2026');
-		expect(sent[0].text).not.toContain('November 3, 2026');
+		expect(sent[0].text).toContain(
+			'Cancelled: Every lesson from Tuesday, November 10, 2026 onward (3 lessons)'
+		);
+		expect(sent[0].text).not.toContain('November 17, 2026');
 
 		const topUp = await topUpSeries(deps, days(later, 30));
 		expect(await store.listSeriesBookings(seriesId)).toHaveLength(4);
@@ -570,6 +582,23 @@ describe('cancelling', () => {
 		expect(sent).toHaveLength(1);
 		expect(sent[0].text).toContain('Your teacher has cancelled this lesson.');
 		expect(sent[0].text).toContain('Reason: Teacher is unwell');
+	});
+
+	it('the admin can cancel a lesson or end a series without emailing the family', async () => {
+		const { store, calendar, sent, deps, seriesId } = await withSeries();
+		const [first, second] = await store.listSeriesBookings(seriesId);
+		expect(await adminCancelLesson(deps, first.id, now, 'Arranged by phone', false)).toEqual({
+			ok: true
+		});
+		expect((await store.getBooking(first.id))?.status).toBe('cancelled');
+		expect(calendar.deleted.map((d) => d.eventId)).toEqual(['evt-1']);
+
+		expect(await endSeries(deps, seriesId, second.startsAt, now, false)).toEqual({
+			ok: true,
+			cancelled: 3
+		});
+		expect(calendar.deleted.map((d) => d.eventId)).toEqual(['evt-1', 'evt-2', 'evt-3', 'evt-4']);
+		expect(sent).toEqual([]);
 	});
 
 	it('a family cancelling one lesson uses the usual late rules and keeps the rest', async () => {

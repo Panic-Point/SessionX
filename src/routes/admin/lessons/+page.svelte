@@ -149,8 +149,14 @@
 								<label for="reason-{l.id}">Reason for the family (optional)</label>
 								<textarea id="reason-{l.id}" name="reason" rows="2" maxlength="500"></textarea>
 							</div>
+							<div class="field">
+								<label class="check" for="notify-{l.id}">
+									<input id="notify-{l.id}" type="checkbox" name="notify" checked />
+									Email the family
+								</label>
+							</div>
 							<button class="button danger" type="submit" disabled={busyId === l.id}>
-								Yes, cancel and email the family
+								Yes, cancel lesson
 							</button>
 						</form>
 					</details>

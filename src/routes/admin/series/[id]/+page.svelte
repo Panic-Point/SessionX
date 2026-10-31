@@ -5,6 +5,8 @@
 	let { data, form }: PageProps = $props();
 
 	let busy = $state<string | null>(null);
+	// One choice for every cancel button on the page; each form posts it as a hidden field.
+	let notify = $state(true);
 	const track =
 		(key: string): SubmitFunction =>
 		() => {
@@ -39,6 +41,15 @@
 
 <section class="card">
 	<h2>Lessons</h2>
+	{#if data.lessons.some((l) => l.canCancel)}
+		<div class="field">
+			<label class="check" for="notify">
+				<input id="notify" type="checkbox" bind:checked={notify} />
+				Email the family when I cancel
+			</label>
+			<p class="hint">Untick to cancel quietly, for example when you've already told them.</p>
+		</div>
+	{/if}
 	{#if data.lessons.length === 0}
 		<p class="empty">No lessons in this series yet.</p>
 	{:else}
@@ -54,6 +65,7 @@
 						<div class="actions">
 							<form method="POST" action="?/cancelLesson" use:enhance={track(l.id)}>
 								<input type="hidden" name="id" value={l.id} />
+								<input type="hidden" name="notify" value={notify ? 'on' : ''} />
 								<button class="button secondary" type="submit" disabled={busy !== null}>
 									Cancel this lesson
 								</button>
@@ -61,6 +73,7 @@
 							{#if !data.series.ended}
 								<form method="POST" action="?/endFrom" use:enhance={track(`from-${l.id}`)}>
 									<input type="hidden" name="from" value={l.startsAtIso} />
+									<input type="hidden" name="notify" value={notify ? 'on' : ''} />
 									<button class="button secondary" type="submit" disabled={busy !== null}>
 										Cancel this and later
 									</button>
@@ -80,7 +93,7 @@
 		<p>
 			Cancels all {data.series.upcomingCount} upcoming
 			{data.series.upcomingCount === 1 ? 'lesson' : 'lessons'} and stops new ones being added. Past lessons
-			stay as they are. The family gets one email listing the cancelled dates.
+			stay as they are. The family gets one email saying which lessons were cancelled.
 		</p>
 		<p class="hint">
 			To change the day, time or lesson type, cancel from the first lesson that should change, then
@@ -89,6 +102,13 @@
 		<details>
 			<summary>Cancel remaining lessons…</summary>
 			<form method="POST" action="?/endFrom" use:enhance={track('end')}>
+				<div class="field">
+					<label class="check" for="end-notify">
+						<input id="end-notify" type="checkbox" bind:checked={notify} />
+						Email the family
+					</label>
+				</div>
+				<input type="hidden" name="notify" value={notify ? 'on' : ''} />
 				<button class="button danger" type="submit" disabled={busy !== null}>
 					Yes, cancel remaining lessons
 				</button>

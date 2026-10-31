@@ -20,6 +20,7 @@ import {
 	materialiseThrough,
 	nextDate,
 	occurrenceStarts,
+	scheduleDescription,
 	seriesLabel,
 	type Occurrence,
 	type RecurrenceRule
@@ -318,7 +319,8 @@ function emailData(series: LessonSeries, timezone: string): SeriesEmailData {
 		durationMin: series.durationMin,
 		timezone,
 		priceCents: series.priceCents,
-		scheduleLabel: seriesLabel(series)
+		scheduleLabel: seriesLabel(series),
+		scheduleText: scheduleDescription(series)
 	};
 }
 
@@ -385,8 +387,12 @@ export async function createSeries(
 						startsAt: b.startsAt,
 						manageUrl: `${appUrl}/manage/${b.manageToken}`
 					})),
-					skipped,
-					{ policyText: settings.cancellationPolicyText, continues: preview.continues, now }
+					{
+						policyText: settings.cancellationPolicyText,
+						continues: preview.continues,
+						accountUrl: `${appUrl}/account`,
+						now
+					}
 				)
 			);
 		} catch (e) {
@@ -410,13 +416,15 @@ export async function createSeries(
 
 /**
  * Ends the series: cancels its live lessons from `from` (default now; past lessons are never
- * touched), stops the daily top-up, sends one email and removes each lesson's calendar event.
+ * touched), stops the daily top-up, sends one email (unless `notify` is false) and removes each
+ * lesson's calendar event.
  */
 export async function endSeries(
 	deps: SeriesDeps,
 	seriesId: string,
 	from: Date | null,
-	now: Date
+	now: Date,
+	notify = true
 ): Promise<ActionResult & { cancelled?: number }> {
 	const { store, mailer } = deps;
 	if (from && Number.isNaN(from.getTime())) return { ok: false, message: 'Choose a lesson.' };
@@ -428,7 +436,7 @@ export async function endSeries(
 		throw e;
 	}
 	const settings = await store.getSettings();
-	if (cancelled.length > 0) {
+	if (notify && cancelled.length > 0) {
 		try {
 			const series = await store.getSeries(seriesId);
 			if (series) {
@@ -451,13 +459,14 @@ const MAX_CANCEL_REASON = 500;
 
 /**
  * The admin cancels one lesson, from any admin page. Never a late cancellation; the family is
- * emailed (with `reason` when given) and the calendar event is removed.
+ * emailed (with `reason` when given) unless `notify` is false, and the calendar event is removed.
  */
 export async function adminCancelLesson(
 	deps: SeriesDeps,
 	bookingId: string,
 	now: Date,
-	reason = ''
+	reason = '',
+	notify = true
 ): Promise<ActionResult> {
 	const { store, mailer, appUrl } = deps;
 	const trimmed = reason.trim();
@@ -487,6 +496,18 @@ export async function adminCancelLesson(
 		console.error('Failed to read settings after cancelling a lesson', e);
 		return { ok: true };
 	}
+	if (notify) await sendTeacherCancelEmail(mailer, booking, settings, appUrl, trimmed);
+	await removeLessonFromCalendar(deps, existing, settings);
+	return { ok: true };
+}
+
+async function sendTeacherCancelEmail(
+	mailer: Mailer,
+	booking: AdminBooking,
+	settings: StudioSettings,
+	appUrl: string,
+	reason: string
+): Promise<void> {
 	try {
 		await mailer.send(
 			lessonCancelledByTeacherEmail(
@@ -502,14 +523,12 @@ export async function adminCancelLesson(
 					note: booking.note,
 					manageUrl: `${appUrl}/manage/${booking.manageToken}`
 				},
-				trimmed || null
+				reason || null
 			)
 		);
 	} catch (e) {
 		console.error('Failed to send cancellation email', e);
 	}
-	await removeLessonFromCalendar(deps, existing, settings);
-	return { ok: true };
 }
 
 // ---- Daily top-up ----
