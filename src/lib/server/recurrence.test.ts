@@ -7,6 +7,7 @@ import {
 	nextDate,
 	occurrenceDates,
 	occurrenceStarts,
+	scheduleDescription,
 	seriesLabel,
 	type RecurrenceRule
 } from './recurrence';
@@ -126,6 +127,25 @@ describe('recurrence', () => {
 		);
 		expect(seriesLabel({ weekday: 1, startTime: '12:30', intervalWeeks: 1 })).toBe(
 			'Weekly · Mon 12:30pm'
+		);
+	});
+
+	it('describes the schedule as a sentence', () => {
+		expect(scheduleDescription(rule())).toBe(
+			'Weekly on Tuesdays at 3:00 PM, starting March 2, 2027, with no end date'
+		);
+		expect(scheduleDescription(rule({ occurrenceCount: 10 }))).toBe(
+			'Weekly on Tuesdays at 3:00 PM, starting March 2, 2027, until May 4, 2027 (10 lessons)'
+		);
+		expect(scheduleDescription(rule({ occurrenceCount: 1 }))).toContain('(1 lesson)');
+		// An end date that isn't a lesson day names the last lesson before it.
+		expect(
+			scheduleDescription(
+				rule({ weekday: 7, startTime: '09:05', intervalWeeks: 2, endsOn: '2027-04-01' })
+			)
+		).toBe('Every 2 weeks on Sundays at 9:05 AM, starting March 7, 2027, until March 21, 2027');
+		expect(scheduleDescription(rule({ startTime: '12:30', endsOn: '2027-03-02' }))).toBe(
+			'Weekly on Tuesdays at 12:30 PM, starting March 2, 2027, until March 2, 2027'
 		);
 	});
 });

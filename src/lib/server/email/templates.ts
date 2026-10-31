@@ -1,4 +1,4 @@
-import { escapeHtml, formatDateTime, formatMoney, formatTime } from '../format';
+import { escapeHtml, formatDate, formatDateTime, formatMoney, formatTime } from '../format';
 import { buildIcs, buildIcsCalendar } from './ics';
 import type { EmailMessage } from './mailer';
 
@@ -244,8 +244,10 @@ export interface SeriesEmailData {
 	durationMin: number;
 	timezone: string;
 	priceCents: number;
-	/** e.g. "Weekly · Tue 3:00pm" */
+	/** e.g. "Weekly · Tue 3:00pm", for subject lines */
 	scheduleLabel: string;
+	/** e.g. "Weekly on Tuesdays at 3:00 PM, starting November 3, 2026, until December 15, 2026" */
+	scheduleText: string;
 }
 
 export interface SeriesLesson {
@@ -263,7 +265,7 @@ function seriesRows(d: SeriesEmailData): [string, string][] {
 	return [
 		['Lesson', `${d.lessonTypeName} (${d.durationMin} min)`],
 		['Student', d.studentName],
-		['Schedule', d.scheduleLabel],
+		['Schedule', d.scheduleText],
 		['Price per lesson', formatMoney(d.priceCents)]
 	];
 }
@@ -272,47 +274,50 @@ function htmlList(items: string[]): string {
 	return `<ul style="margin:4px 0 0;padding-left:20px">${items.map((i) => `<li>${i}</li>`).join('')}</ul>`;
 }
 
+const lessonCount = (n: number) => (n === 1 ? '1 lesson' : `${n} lessons`);
+
 /**
- * One email for a whole new series: the dates booked (each with its own manage link), any dates
- * skipped and why, and one .ics holding every booked lesson.
+ * One email for a whole new series. It describes the schedule rather than listing every date:
+ * the attached .ics holds each booked lesson, with its own manage link. Dates the schedule
+ * includes but that could not be booked are still named, since the schedule alone can't say so.
  */
 export function seriesCreatedEmail(
 	d: SeriesEmailData,
 	booked: SeriesLesson[],
 	skipped: SkippedLesson[],
-	opts: { policyText: string; continues: boolean; now: Date }
+	opts: { policyText: string; continues: boolean; accountUrl: string; now: Date }
 ): EmailMessage {
 	const when = (at: Date) => formatDateTime(at, d.timezone);
 	const rows = seriesRows(d);
 	const more = opts.continues
 		? 'More lessons are added automatically as the dates get closer. We will skip any date the studio is already booked or closed.'
 		: '';
+	const calendarNote =
+		'A calendar file with every lesson is attached. Each lesson in it has its own link to manage or cancel it.';
+	const accountNote = `You can also see and manage every lesson when signed in at ${opts.accountUrl}`;
 
 	const textParts = [
 		`Hi ${d.accountName},`,
-		`${d.studentName} is booked for recurring lessons. A calendar file with every lesson is attached.`,
-		textRows(rows),
-		`Lessons booked:\n${booked.map((b) => `- ${when(b.startsAt)} (manage: ${b.manageUrl})`).join('\n')}`
+		`${d.studentName} is booked for recurring lessons.`,
+		textRows(rows)
 	];
 	if (skipped.length > 0) {
 		textParts.push(
-			`Dates skipped:\n${skipped.map((s) => `- ${when(s.startsAt)}: ${s.reason}`).join('\n')}`
+			`No lesson on these dates:\n${skipped.map((s) => `- ${when(s.startsAt)}: ${s.reason}`).join('\n')}`
 		);
 	}
+	textParts.push(calendarNote, accountNote);
 	if (more) textParts.push(more);
 	if (opts.policyText) textParts.push(`Cancellation policy: ${opts.policyText}`);
 
-	let footer = `<p style="margin:16px 0 0">Lessons booked:</p>${htmlList(
-		booked.map(
-			(b) => `${escapeHtml(when(b.startsAt))} · <a href="${escapeHtml(b.manageUrl)}">Manage</a>`
-		)
-	)}`;
+	let footer = '';
 	if (skipped.length > 0) {
-		footer += `<p style="margin:16px 0 0">Dates skipped:</p>${htmlList(
+		footer += `<p style="margin:16px 0 0">No lesson on these dates:</p>${htmlList(
 			skipped.map((s) => `${escapeHtml(when(s.startsAt))}: ${escapeHtml(s.reason)}`)
 		)}`;
 	}
-	footer += '<p style="margin:16px 0 0">A calendar file with every lesson is attached.</p>';
+	footer += `<p style="margin:16px 0 0">${escapeHtml(calendarNote)}</p>`;
+	footer += `<p style="margin:8px 0 0">You can also see and manage every lesson when signed in at <a href="${escapeHtml(opts.accountUrl)}">${escapeHtml(opts.accountUrl)}</a></p>`;
 	if (more) footer += `<p style="margin:8px 0 0">${escapeHtml(more)}</p>`;
 	if (opts.policyText) {
 		footer += `<p style="margin:8px 0 0;color:#555">Cancellation policy: ${escapeHtml(opts.policyText)}</p>`;
@@ -338,17 +343,23 @@ export function seriesCreatedEmail(
 	};
 }
 
-/** One email when the admin ends a series, listing the lessons that were cancelled. */
+/**
+ * One email when the admin ends a series. Ending always cancels everything from one lesson on, so
+ * the email names where the cancellation starts and how many lessons it covers, not each date.
+ */
 export function seriesEndedEmail(d: SeriesEmailData, cancelled: Date[]): EmailMessage {
-	const when = (at: Date) => formatDateTime(at, d.timezone);
+	const from = new Date(Math.min(...cancelled.map((c) => c.getTime())));
 	const rows = seriesRows(d);
-	const text = `Hi ${d.accountName},\n\n${d.studentName}'s recurring lessons have been cancelled.\n\n${textRows(rows)}\n\nLessons cancelled:\n${cancelled.map((c) => `- ${when(c)}`).join('\n')}\n`;
-	const footer = `<p style="margin:16px 0 0">Lessons cancelled:</p>${htmlList(cancelled.map((c) => escapeHtml(when(c))))}`;
+	rows.push([
+		'Cancelled',
+		`Every lesson from ${formatDate(from, d.timezone)} onward (${lessonCount(cancelled.length)})`
+	]);
+	const text = `Hi ${d.accountName},\n\n${d.studentName}'s recurring lessons have been cancelled.\n\n${textRows(rows)}\n`;
 	return {
 		to: d.email,
 		subject: `Recurring lessons cancelled – ${d.studentName}, ${d.scheduleLabel}`,
 		text,
-		html: wrap(`Hi ${d.accountName}, recurring lessons have been cancelled`, rows, footer)
+		html: wrap(`Hi ${d.accountName}, recurring lessons have been cancelled`, rows, '')
 	};
 }
 

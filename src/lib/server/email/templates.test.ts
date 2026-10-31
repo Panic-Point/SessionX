@@ -207,8 +207,11 @@ const series: SeriesEmailData = {
 	durationMin: 30,
 	timezone: 'America/New_York',
 	priceCents: 3000,
-	scheduleLabel: 'Weekly · Tue 3:00pm'
+	scheduleLabel: 'Weekly · Tue 3:00pm',
+	scheduleText: 'Weekly on Tuesdays at 3:00 PM, starting November 3, 2026, until December 15, 2026'
 };
+
+const accountUrl = 'https://x.test/account';
 
 const booked = [
 	{
@@ -226,23 +229,27 @@ const booked = [
 describe('series templates', () => {
 	const now = new Date('2026-11-01T17:00:00Z');
 
-	it('created email lists booked and skipped dates, price, policy and one .ics', () => {
+	it('created email describes the schedule, names skipped dates and attaches one .ics', () => {
 		const m = seriesCreatedEmail(
 			series,
 			booked,
 			[{ startsAt: new Date('2026-11-10T20:00:00Z'), reason: 'Studio closed that day' }],
-			{ policyText: 'Cancel 24h ahead.', continues: false, now }
+			{ policyText: 'Cancel 24h ahead.', continues: false, accountUrl, now }
 		);
 		expect(m.to).toBe('pat@example.com');
 		expect(m.subject).toBe('Recurring lessons booked – Ben, Weekly · Tue 3:00pm');
 		for (const part of [m.text, m.html]) {
-			expect(part).toContain('Tuesday, November 3, 2026 at 3:00 PM EST');
-			expect(part).toContain('Tuesday, November 17, 2026 at 3:00 PM EST');
+			expect(part).toContain(series.scheduleText);
+			// Booked dates aren't listed one by one: the schedule and the .ics cover them.
+			expect(part).not.toContain('Tuesday, November 3, 2026 at 3:00 PM EST');
+			expect(part).not.toContain('Tuesday, November 17, 2026 at 3:00 PM EST');
+			expect(part).not.toContain('https://x.test/manage/');
+			expect(part).toContain('No lesson on these dates');
 			expect(part).toContain('Tuesday, November 10, 2026 at 3:00 PM EST');
 			expect(part).toContain('Studio closed that day');
 			expect(part).toContain('$30.00');
 			expect(part).toContain('Cancel 24h ahead.');
-			expect(part).toContain('https://x.test/manage/t2');
+			expect(part).toContain(accountUrl);
 			expect(part).not.toContain('added automatically');
 		}
 		expect(m.attachments).toHaveLength(1);
@@ -251,11 +258,17 @@ describe('series templates', () => {
 		expect(ics.content.match(/BEGIN:VEVENT/g)).toHaveLength(2);
 		expect(ics.content).toContain('UID:b1@sessionx');
 		expect(ics.content).toContain('DTEND:20261117T203000Z');
+		expect(ics.content.replace(/\r\n /g, '')).toContain('https://x.test/manage/t2');
 	});
 
 	it('created email leaves out empty sections and mentions top-ups for continuing series', () => {
-		const m = seriesCreatedEmail(series, booked, [], { policyText: '', continues: true, now });
-		expect(m.text).not.toContain('Dates skipped');
+		const m = seriesCreatedEmail(series, booked, [], {
+			policyText: '',
+			continues: true,
+			accountUrl,
+			now
+		});
+		expect(m.text).not.toContain('No lesson on these dates');
 		expect(m.text).not.toContain('Cancellation policy');
 		expect(m.text).toContain('More lessons are added automatically');
 		expect(m.html).toContain('More lessons are added automatically');
@@ -265,6 +278,7 @@ describe('series templates', () => {
 		const m = seriesCreatedEmail({ ...series, studentName: '<b>Ben</b>' }, booked, [], {
 			policyText: '<i>x</i>',
 			continues: false,
+			accountUrl,
 			now
 		});
 		expect(m.html).not.toContain('<b>Ben</b>');
@@ -272,13 +286,19 @@ describe('series templates', () => {
 		expect(m.html).toContain('&lt;b&gt;Ben&lt;/b&gt;');
 	});
 
-	it('ended email lists the cancelled dates', () => {
-		const m = seriesEndedEmail(series, [booked[1].startsAt]);
+	it('ended email says where the cancellation starts instead of listing dates', () => {
+		const m = seriesEndedEmail(series, [
+			new Date('2026-11-24T20:00:00Z'),
+			booked[1].startsAt,
+			new Date('2026-12-01T20:00:00Z')
+		]);
 		expect(m.to).toBe('pat@example.com');
 		expect(m.subject).toBe('Recurring lessons cancelled – Ben, Weekly · Tue 3:00pm');
 		for (const part of [m.text, m.html]) {
-			expect(part).toContain('Tuesday, November 17, 2026 at 3:00 PM EST');
-			expect(part).not.toContain('November 3, 2026');
+			expect(part).toContain(series.scheduleText);
+			expect(part).toContain('Every lesson from Tuesday, November 17, 2026 onward (3 lessons)');
+			expect(part).not.toContain('November 24');
+			expect(part).not.toContain('December 1, 2026');
 		}
 		expect(m.attachments).toBeUndefined();
 	});

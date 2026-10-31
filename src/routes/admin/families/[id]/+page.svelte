@@ -244,9 +244,13 @@
 									<textarea id="cancel-reason-{l.id}" name="reason" rows="2" maxlength="500"
 									></textarea>
 								</div>
-								<button class="button danger" type="submit">
-									Yes, cancel and email the family
-								</button>
+								<div class="field">
+									<label class="check" for="cancel-notify-{l.id}">
+										<input id="cancel-notify-{l.id}" type="checkbox" name="notify" checked />
+										Email the family
+									</label>
+								</div>
+								<button class="button danger" type="submit">Yes, cancel lesson</button>
 							</form>
 						</details>
 					</li>

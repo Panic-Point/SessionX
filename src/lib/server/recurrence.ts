@@ -99,3 +99,32 @@ export function seriesLabel(rule: Pick<RecurrenceRule, 'weekday' | 'startTime' |
 export function cadenceLabel(intervalWeeks: number): string {
 	return intervalWeeks === 2 ? 'Every 2 weeks' : 'Weekly';
 }
+
+const WEEKDAY_PLURALS = [
+	'Mondays',
+	'Tuesdays',
+	'Wednesdays',
+	'Thursdays',
+	'Fridays',
+	'Saturdays',
+	'Sundays'
+];
+
+const longDate = (date: string) => day(date).setLocale('en-US').toFormat('LLLL d, yyyy');
+
+/**
+ * The schedule as a sentence, for emails that describe a series instead of listing its dates:
+ * "Weekly on Tuesdays at 3:00 PM, starting November 3, 2026, until December 15, 2026".
+ */
+export function scheduleDescription(rule: RecurrenceRule): string {
+	const [hour, minute] = rule.startTime.split(':').map(Number);
+	const time = `${hour % 12 || 12}:${String(minute).padStart(2, '0')} ${hour < 12 ? 'AM' : 'PM'}`;
+	const first = firstDate(rule);
+	const head = `${cadenceLabel(rule.intervalWeeks)} on ${WEEKDAY_PLURALS[rule.weekday - 1]} at ${time}, starting ${longDate(first)}`;
+	const last = lastDate(rule);
+	if (last === null) return `${head}, with no end date`;
+	// An end date need not fall on a lesson day: name the last lesson instead.
+	const lastLesson = occurrenceDates(rule, first, last).at(-1) ?? first;
+	const count = rule.occurrenceCount;
+	return `${head}, until ${longDate(lastLesson)}${count !== null ? ` (${count === 1 ? '1 lesson' : `${count} lessons`})` : ''}`;
+}

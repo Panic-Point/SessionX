@@ -10,6 +10,13 @@ export function formatDateTime(at: Date, timezone: string): string {
 		.toFormat("cccc, LLLL d, yyyy 'at' h:mm a ZZZZ");
 }
 
+/** "Tuesday, November 17, 2026" in the studio timezone. */
+export function formatDate(at: Date, timezone: string): string {
+	return DateTime.fromJSDate(at, { zone: timezone })
+		.setLocale('en-US')
+		.toFormat('cccc, LLLL d, yyyy');
+}
+
 export function formatTime(at: Date, timezone: string): string {
 	return DateTime.fromJSDate(at, { zone: timezone }).setLocale('en-US').toFormat('h:mm a');
 }

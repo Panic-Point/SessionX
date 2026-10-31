@@ -12,7 +12,12 @@ import {
 	bookForStudent,
 	type AdminBookingForm
 } from '#lib/server/admin-family-service.ts';
-import { formString, requireAdmin } from '#lib/server/admin-actions.ts';
+import {
+	cancelledMessage,
+	formNotify,
+	formString,
+	requireAdmin
+} from '#lib/server/admin-actions.ts';
 import { getAppUrl, getCalendar, getMailer, getStore } from '#lib/server/context.ts';
 import { localToday } from '#lib/server/recurrence.ts';
 import {
@@ -101,7 +106,14 @@ export const actions: Actions = {
 			appUrl: getAppUrl(),
 			calendar: getCalendar()
 		};
-		const result = await adminCancelLesson(deps, id, new Date(), formString(data, 'reason'));
+		const notify = formNotify(data);
+		const result = await adminCancelLesson(
+			deps,
+			id,
+			new Date(),
+			formString(data, 'reason'),
+			notify
+		);
 		if (!result.ok) {
 			return fail(400, { kind: 'cancel', target: id, errors: { form: result.message } });
 		}
@@ -109,7 +121,7 @@ export const actions: Actions = {
 			kind: 'cancel',
 			target: 'lessons',
 			saved: true,
-			message: 'Lesson cancelled. The family has been emailed.'
+			message: cancelledMessage('Lesson cancelled.', notify)
 		};
 	},
 	accountNotes: async ({ locals, request, params }) => {
