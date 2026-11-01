@@ -2,6 +2,7 @@ import type { Cookies } from '@sveltejs/kit';
 import { dev } from '$app/env';
 import { getSessionSecret, getStore } from '../context';
 import type { Account } from '../store/types';
+import { recordUsage, signInEvent } from '../usage';
 import { SESSION_COOKIE, SESSION_MAX_AGE_SECONDS, signSession } from './session';
 
 /**
@@ -24,4 +25,14 @@ export async function startSession(cookies: Cookies, account: Account, now: Date
 		maxAge: SESSION_MAX_AGE_SECONDS
 	});
 	return account.role === 'admin' ? '/admin' : '/account';
+}
+
+/**
+ * startSession for a real sign-in (password, registration or reset), counted on the Usage tab.
+ * Re-issuing the cookie after a password change is not a sign-in, so that uses startSession.
+ */
+export async function signIn(cookies: Cookies, account: Account, now: Date): Promise<string> {
+	const event = signInEvent(account, now);
+	if (event) await recordUsage(getStore(), event);
+	return startSession(cookies, account, now);
 }

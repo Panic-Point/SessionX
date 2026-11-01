@@ -112,6 +112,40 @@ describe('password sign-in action', () => {
 		expect(cookies.get('sx_session')).toBeTruthy();
 	});
 
+	it('counts family sign-ins and failed attempts on the Usage tab, but not the admin', async () => {
+		const usage = async () =>
+			(await ctx.store.listUsageEvents(new Date(0), new Date(Date.now() + 1000), 100)).events;
+		await post(login.actions.default, {
+			email: 'admin@sessionx.local',
+			password: 'sessionx-admin-dev1'
+		});
+		expect(await usage()).toEqual([]);
+		await post(login.actions.default, {
+			email: 'parent@example.com',
+			password: 'sessionx-parent-dev1'
+		});
+		await post(login.actions.default, { email: 'parent@example.com', password: 'nope' });
+		const events = await usage();
+		expect(events.map((e) => [e.kind, e.accountId])).toEqual([
+			['sign_in', '22222222-0000-0000-0000-00000000000b'],
+			['sign_in_failed', null]
+		]);
+		// The email someone typed is never kept.
+		expect(JSON.stringify(events)).not.toContain('parent@example.com');
+	});
+
+	it('still signs in when recording the sign-in fails, and logs it', async () => {
+		vi.spyOn(ctx.store, 'recordUsageEvent').mockRejectedValue(new Error('db down'));
+		const errors = vi.spyOn(console, 'error').mockImplementation(() => {});
+		const { result } = await post(login.actions.default, {
+			email: 'parent@example.com',
+			password: 'sessionx-parent-dev1'
+		});
+		expect(result).toMatchObject({ status: 303, location: '/account' });
+		expect(errors).toHaveBeenCalledWith('usage: failed to record sign_in event', expect.any(Error));
+		errors.mockRestore();
+	});
+
 	it('answers wrong password, no password and unknown email identically', async () => {
 		const answers = [];
 		for (const email of ['parent@example.com', 'gina@example.com', 'nobody@example.com']) {
