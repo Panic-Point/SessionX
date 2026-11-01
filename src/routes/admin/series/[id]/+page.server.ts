@@ -1,5 +1,10 @@
 import { error, fail } from '@sveltejs/kit';
-import { formString, requireAdmin } from '#lib/server/admin-actions.ts';
+import {
+	cancelledMessage,
+	formNotify,
+	formString,
+	requireAdmin
+} from '#lib/server/admin-actions.ts';
 import { getAppUrl, getCalendar, getMailer, getStore } from '#lib/server/context.ts';
 import { adminCancelLesson, endSeries, getSeriesPage } from '#lib/server/series-service.ts';
 import type { Actions, PageServerLoad } from './$types';
@@ -18,22 +23,34 @@ function deps() {
 export const actions: Actions = {
 	cancelLesson: async ({ locals, request }) => {
 		requireAdmin(locals.account);
-		const id = formString(await request.formData(), 'id');
-		const result = await adminCancelLesson(deps(), id, new Date());
+		const data = await request.formData();
+		const notify = formNotify(data);
+		const result = await adminCancelLesson(deps(), formString(data, 'id'), new Date(), '', notify);
 		if (!result.ok) return fail(400, { message: result.message });
-		return { message: 'Lesson cancelled. The family has been emailed.' };
+		return { message: cancelledMessage('Lesson cancelled.', notify) };
 	},
 	endFrom: async ({ locals, request, params }) => {
 		requireAdmin(locals.account);
-		const from = formString(await request.formData(), 'from');
-		const result = await endSeries(deps(), params.id, from ? new Date(from) : null, new Date());
+		const data = await request.formData();
+		const from = formString(data, 'from');
+		const notify = formNotify(data);
+		const result = await endSeries(
+			deps(),
+			params.id,
+			from ? new Date(from) : null,
+			new Date(),
+			notify
+		);
 		if (!result.ok) return fail(400, { message: result.message });
 		const n = result.cancelled ?? 0;
 		return {
 			message:
 				n === 0
 					? 'Series ended. There were no upcoming lessons to cancel.'
-					: `Series ended and ${n} ${n === 1 ? 'lesson' : 'lessons'} cancelled. The family has been emailed.`
+					: cancelledMessage(
+							`Series ended and ${n} ${n === 1 ? 'lesson' : 'lessons'} cancelled.`,
+							notify
+						)
 		};
 	}
 };

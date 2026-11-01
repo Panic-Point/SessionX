@@ -43,6 +43,43 @@ export function runPasswordStoreContract(
 			);
 		});
 
+		it('session version: revokeSessions and every password change bump it', async () => {
+			const store = await makeStore();
+			const start = (await store.findSessionAccount(PARENT_ID))!;
+			expect(start.account).toEqual(await store.findAccountById(PARENT_ID));
+
+			await store.revokeSessions(PARENT_ID);
+			expect((await store.findSessionAccount(PARENT_ID))?.sessionVersion).toBe(
+				start.sessionVersion + 1
+			);
+
+			await store.setPasswordHash(PARENT_ID, HASH_A);
+			expect((await store.findSessionAccount(PARENT_ID))?.sessionVersion).toBe(
+				start.sessionVersion + 2
+			);
+
+			const t = tokenHash();
+			await store.createPasswordToken(t, { purpose: 'reset', accountId: PARENT_ID }, LATER);
+			await store.completePasswordReset(t, HASH_B, NOW);
+			expect((await store.findSessionAccount(PARENT_ID))?.sessionVersion).toBe(
+				start.sessionVersion + 3
+			);
+
+			const r = tokenHash();
+			await store.createPasswordToken(
+				r,
+				{ purpose: 'register', email: 'parent@example.com' },
+				LATER
+			);
+			await store.completeRegistration(r, { name: '', passwordHash: HASH_A }, NOW);
+			expect((await store.findSessionAccount(PARENT_ID))?.sessionVersion).toBe(
+				start.sessionVersion + 4
+			);
+
+			expect(await store.findSessionAccount(MISSING_ID)).toBeNull();
+			await expect(store.revokeSessions(MISSING_ID)).rejects.toBeInstanceOf(AdminStoreError);
+		});
+
 		it('registration for a new email creates a client account and student only when used', async () => {
 			const store = await makeStore();
 			const t = tokenHash();
@@ -202,6 +239,45 @@ export function runPasswordStoreContract(
 			await store.clearPasswordFailures('someone@EXAMPLE.com');
 			expect(await store.countPasswordFailures('someone@example.com', at(-1))).toBe(0);
 			expect(await store.countPasswordFailures('other@example.com', at(-1))).toBe(1);
+		});
+
+		it('removes one failure by id', async () => {
+			const store = await makeStore();
+			const first = await store.recordPasswordFailure('someone@example.com', NOW);
+			const second = await store.recordPasswordFailure('someone@example.com', NOW);
+			expect(first).not.toBe(second);
+			await store.removePasswordFailure(first);
+			await store.removePasswordFailure(first);
+			expect(await store.countPasswordFailures('someone@example.com', new Date(0))).toBe(1);
+			await store.removePasswordFailure(second);
+			expect(await store.countPasswordFailures('someone@example.com', new Date(0))).toBe(0);
+		});
+
+		it('creates a reset token only when the account has no unused one since `since`', async () => {
+			const store = await makeStore();
+			const at = (min: number) => new Date(NOW.getTime() + min * 60_000);
+			const first = tokenHash();
+			expect(await store.createResetTokenUnlessRecent(first, PARENT_ID, LATER, at(-5), at(0))).toBe(
+				true
+			);
+			expect(await store.peekPasswordToken(first, 'reset', at(0))).toEqual({
+				purpose: 'reset',
+				accountId: PARENT_ID
+			});
+			expect(
+				await store.createResetTokenUnlessRecent(tokenHash(), PARENT_ID, LATER, at(-4), at(1))
+			).toBe(false);
+			expect(
+				await store.createResetTokenUnlessRecent(tokenHash(), ADMIN_ID, LATER, at(-4), at(1))
+			).toBe(true);
+			expect(
+				await store.createResetTokenUnlessRecent(tokenHash(), MISSING_ID, LATER, at(-4), at(1))
+			).toBe(false);
+			// A used link doesn't hold back the next one.
+			await store.completePasswordReset(first, HASH_A, at(2));
+			expect(
+				await store.createResetTokenUnlessRecent(tokenHash(), PARENT_ID, LATER, at(-2), at(3))
+			).toBe(true);
 		});
 
 		it('using a reset link clears the lockout for that email', async () => {

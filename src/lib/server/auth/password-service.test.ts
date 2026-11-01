@@ -271,6 +271,28 @@ describe('loginWithPassword', () => {
 		});
 	});
 
+	it('parallel attempts test at most 5 passwords', async () => {
+		const { store } = setup();
+		const results = await Promise.all(
+			Array.from({ length: 20 }, () =>
+				loginWithPassword(store, 'parent@example.com', 'wrong guess!', now)
+			)
+		);
+		expect(results.every((r) => !r.ok)).toBe(true);
+		// Every guess that was tested left a failure; locked ones left none.
+		expect(
+			await store.countPasswordFailures('parent@example.com', new Date(0))
+		).toBeLessThanOrEqual(5);
+		// Once 5 guesses are recorded, even the right password is locked out.
+		for (let i = 0; i < 5; i++) await store.recordPasswordFailure('parent@example.com', now);
+		const right = await Promise.all(
+			Array.from({ length: 3 }, () =>
+				loginWithPassword(store, 'parent@example.com', PARENT_PASSWORD, now)
+			)
+		);
+		expect(right).toEqual(Array(3).fill({ ok: false, locked: true }));
+	});
+
 	it('a successful sign-in clears earlier failures', async () => {
 		const { store } = setup();
 		for (let i = 0; i < 4; i++)
@@ -341,6 +363,28 @@ describe('password reset', () => {
 		expect((await completePasswordReset(store, token, NEW_PASSWORD, NEW_PASSWORD, now)).ok).toBe(
 			true
 		);
+	});
+
+	it('sends at most one email per account every 5 minutes while the links are unused', async () => {
+		const { deps, sent, store } = setup();
+		await Promise.all(
+			Array.from({ length: 5 }, () => requestPasswordReset(deps, 'parent@example.com', now))
+		);
+		await requestPasswordReset(deps, 'parent@example.com', later(4));
+		expect(sent).toHaveLength(1);
+		await requestPasswordReset(deps, GUEST.email, later(4));
+		expect(sent).toHaveLength(2);
+
+		await requestPasswordReset(deps, 'parent@example.com', later(5));
+		expect(sent).toHaveLength(3);
+		// Both links still work until one is used.
+		const token = tokenFrom(sent[2], '/login/reset/complete');
+		expect(
+			(await completePasswordReset(store, token, NEW_PASSWORD, NEW_PASSWORD, later(6))).ok
+		).toBe(true);
+		// Using a link voids the others, so the next request sends straight away.
+		await requestPasswordReset(deps, 'parent@example.com', later(7));
+		expect(sent).toHaveLength(4);
 	});
 
 	it('does nothing for unknown email; logs mailer failures', async () => {
@@ -414,5 +458,31 @@ describe('changePassword', () => {
 			now
 		);
 		expect(r.ok === false && r.errors.currentPassword).toMatch(/Too many incorrect attempts/);
+	});
+
+	it('parallel wrong current passwords test at most 5', async () => {
+		const { store } = setup();
+		const form = {
+			currentPassword: 'wrong wrong',
+			password: NEW_PASSWORD,
+			confirmPassword: NEW_PASSWORD
+		};
+		await Promise.all(Array.from({ length: 20 }, () => changePassword(store, parent, form, now)));
+		expect(
+			await store.countPasswordFailures('parent@example.com', new Date(0))
+		).toBeLessThanOrEqual(5);
+	});
+
+	it('a right current password does not count towards the lockout', async () => {
+		const { store } = setup();
+		for (let i = 0; i < 4; i++) {
+			await changePassword(
+				store,
+				parent,
+				{ currentPassword: PARENT_PASSWORD, password: 'x', confirmPassword: 'x' },
+				now
+			);
+		}
+		expect(await store.countPasswordFailures('parent@example.com', new Date(0))).toBe(0);
 	});
 });

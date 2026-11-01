@@ -7,15 +7,23 @@ import { MemoryBookingStore } from '#lib/server/store/memory.ts';
 const ctx = vi.hoisted(() => ({
 	store: undefined as unknown as MemoryBookingStore,
 	sent: [] as EmailMessage[],
-	background: [] as Promise<unknown>[]
+	background: [] as Promise<unknown>[],
+	env: { TURNSTILE_SITE_KEY: undefined, TURNSTILE_SECRET_KEY: undefined } as {
+		TURNSTILE_SITE_KEY: string | undefined;
+		TURNSTILE_SECRET_KEY: string | undefined;
+	}
 }));
 vi.mock('#lib/server/background.ts', () => ({
 	runInBackground: (task: Promise<unknown>) => void ctx.background.push(task)
 }));
 vi.mock('$app/env', () => ({ dev: true }));
 vi.mock('$app/env/private', () => ({
-	TURNSTILE_SITE_KEY: undefined,
-	TURNSTILE_SECRET_KEY: undefined
+	get TURNSTILE_SITE_KEY() {
+		return ctx.env.TURNSTILE_SITE_KEY;
+	},
+	get TURNSTILE_SECRET_KEY() {
+		return ctx.env.TURNSTILE_SECRET_KEY;
+	}
 }));
 vi.mock('#lib/server/context.ts', () => ({
 	getStore: () => ctx.store,
@@ -273,6 +281,36 @@ describe('password reset actions', () => {
 		const unknown = await post(reset.actions.default, { email: 'nobody@example.com' });
 		expect(known.result).toEqual({ sent: true });
 		expect(unknown.result).toEqual(known.result);
+	});
+
+	it('sends one email per account however often the form is posted', async () => {
+		const posts = Array.from({ length: 10 }, () =>
+			post(reset.actions.default, { email: 'parent@example.com' })
+		);
+		for (const { result } of await Promise.all(posts)) expect(result).toEqual({ sent: true });
+		await Promise.all(ctx.background.splice(0));
+		expect(ctx.sent.filter((m) => m.to === 'parent@example.com')).toHaveLength(1);
+	});
+
+	it('needs the spam check when Turnstile is configured, and passes the site key', async () => {
+		ctx.env.TURNSTILE_SITE_KEY = 'site';
+		ctx.env.TURNSTILE_SECRET_KEY = 'secret';
+		const siteverify = vi.fn(async () => Response.json({ success: false }));
+		vi.stubGlobal('fetch', siteverify);
+		try {
+			// eslint-disable-next-line @typescript-eslint/no-explicit-any
+			expect(await (reset.load as any)({})).toEqual({ turnstileSiteKey: 'site' });
+			const { result } = await post(reset.actions.default, { email: 'parent@example.com' });
+			expect(isActionFailure(result)).toBe(true);
+			expect((result as { data: { error: string } }).data.error).toBe(
+				'Please complete the spam check and try again.'
+			);
+			expect(ctx.background).toHaveLength(0);
+		} finally {
+			vi.unstubAllGlobals();
+			ctx.env.TURNSTILE_SITE_KEY = undefined;
+			ctx.env.TURNSTILE_SECRET_KEY = undefined;
+		}
 	});
 
 	it('reset link sets the new password and signs in', async () => {

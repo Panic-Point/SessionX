@@ -300,6 +300,27 @@ export function createSupabaseBookingStore(url: string, serviceRoleKey: string):
 			return data ? mapAccountRow(data as AccountRow) : null;
 		},
 
+		async findSessionAccount(
+			id: string
+		): Promise<{ account: Account; sessionVersion: number } | null> {
+			const { data, error } = await db
+				.from('accounts')
+				.select(`${ACCOUNT_COLUMNS}, session_version`)
+				.eq('id', id)
+				.is('deleted_at', null)
+				.maybeSingle();
+			if (error) fail('findSessionAccount', error);
+			if (!data) return null;
+			const row = data as AccountRow & { session_version: number };
+			return { account: mapAccountRow(row), sessionVersion: row.session_version };
+		},
+
+		async revokeSessions(accountId: string): Promise<void> {
+			const { data, error } = await db.rpc('revoke_sessions', { p_account_id: accountId });
+			if (error) fail('revokeSessions', error);
+			if (data !== true) throw new AdminStoreError('not_found');
+		},
+
 		async createLoginToken(accountId: string, tokenHash: string, expiresAt: Date): Promise<void> {
 			const { error } = await db.from('login_tokens').insert({
 				token_hash: tokenHash,
@@ -350,6 +371,24 @@ export function createSupabaseBookingStore(url: string, serviceRoleKey: string):
 				.from('password_tokens')
 				.insert(toPasswordTokenRow(tokenHash, data, expiresAt));
 			if (error) fail('createPasswordToken', error);
+		},
+
+		async createResetTokenUnlessRecent(
+			tokenHash: string,
+			accountId: string,
+			expiresAt: Date,
+			since: Date,
+			now: Date
+		): Promise<boolean> {
+			const { data, error } = await db.rpc('create_reset_token_unless_recent', {
+				p_token_hash: tokenHash,
+				p_account_id: accountId,
+				p_expires_at: expiresAt.toISOString(),
+				p_since: since.toISOString(),
+				p_now: now.toISOString()
+			});
+			if (error) fail('createResetTokenUnlessRecent', error);
+			return data === true;
 		},
 
 		async peekPasswordToken(
@@ -408,10 +447,12 @@ export function createSupabaseBookingStore(url: string, serviceRoleKey: string):
 			return count ?? 0;
 		},
 
-		async recordPasswordFailure(email: string, failedAt: Date): Promise<void> {
-			const { error } = await db
+		async recordPasswordFailure(email: string, failedAt: Date): Promise<string> {
+			const { data, error } = await db
 				.from('password_failures')
-				.insert({ email: email.trim().toLowerCase(), failed_at: failedAt.toISOString() });
+				.insert({ email: email.trim().toLowerCase(), failed_at: failedAt.toISOString() })
+				.select('id')
+				.single();
 			if (error) fail('recordPasswordFailure', error);
 			// Housekeeping: rows only matter for the 15-minute lockout window.
 			const dayAgo = new Date(failedAt.getTime() - 24 * 60 * 60 * 1000);
@@ -420,6 +461,12 @@ export function createSupabaseBookingStore(url: string, serviceRoleKey: string):
 				.delete()
 				.lt('failed_at', dayAgo.toISOString());
 			if (pruned.error) console.error('Failed to prune password_failures', pruned.error.message);
+			return String((data as { id: number | string }).id);
+		},
+
+		async removePasswordFailure(id: string): Promise<void> {
+			const { error } = await db.from('password_failures').delete().eq('id', id);
+			if (error) fail('removePasswordFailure', error);
 		},
 
 		async clearPasswordFailures(email: string): Promise<void> {

@@ -14,6 +14,7 @@ export const LOCKOUT_ATTEMPTS = 5;
 export const LOCKOUT_WINDOW_MS = 15 * 60 * 1000;
 const REGISTRATION_TOKEN_TTL_MS = 24 * 60 * 60 * 1000;
 const RESET_TOKEN_TTL_MS = 30 * 60 * 1000;
+export const RESET_COOLDOWN_MS = 5 * 60 * 1000;
 const NAME_MAX = 100;
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -131,6 +132,37 @@ export async function completeRegistration(
 	return account ? { ok: true, account } : { ok: false, invalid: true };
 }
 
+type AttemptResult<T> =
+	{ outcome: 'locked' } | { outcome: 'wrong'; locked: boolean } | { outcome: 'ok'; value: T };
+
+/**
+ * Counts a password attempt towards the email's lockout before checking it. The attempt is
+ * recorded first and the count includes it, so parallel requests can't all see an empty window:
+ * the nth attempt to be recorded counts at least n. Locked attempts don't run `check` and their
+ * row is removed again, so they don't extend the lockout; a match (`check` returning non-null)
+ * removes its row too.
+ */
+async function attemptPassword<T>(
+	store: AdminStore,
+	email: string,
+	now: Date,
+	check: () => Promise<T | null>
+): Promise<AttemptResult<T>> {
+	const attempt = await store.recordPasswordFailure(email, now);
+	const attempts = await store.countPasswordFailures(
+		email,
+		new Date(now.getTime() - LOCKOUT_WINDOW_MS)
+	);
+	if (attempts > LOCKOUT_ATTEMPTS) {
+		await store.removePasswordFailure(attempt);
+		return { outcome: 'locked' };
+	}
+	const value = await check();
+	if (value === null) return { outcome: 'wrong', locked: attempts >= LOCKOUT_ATTEMPTS };
+	await store.removePasswordFailure(attempt);
+	return { outcome: 'ok', value };
+}
+
 export type PasswordLoginResult = { ok: true; account: Account } | { ok: false; locked: boolean };
 
 /**
@@ -144,24 +176,23 @@ export async function loginWithPassword(
 	now: Date
 ): Promise<PasswordLoginResult> {
 	const normalized = normalize(email);
-	const failures = await store.countPasswordFailures(
-		normalized,
-		new Date(now.getTime() - LOCKOUT_WINDOW_MS)
-	);
-	const account = await store.findAccountByEmail(normalized);
-	const stored = account ? await store.getPasswordHash(account.id) : null;
-	const matches = await verifyPasswordOrDummy(password, stored);
-
-	if (failures >= LOCKOUT_ATTEMPTS) return { ok: false, locked: true };
-	if (!account || !matches) {
-		await store.recordPasswordFailure(normalized, now);
-		return { ok: false, locked: failures + 1 >= LOCKOUT_ATTEMPTS };
-	}
+	const result = await attemptPassword(store, normalized, now, async () => {
+		const account = await store.findAccountByEmail(normalized);
+		const stored = account ? await store.getPasswordHash(account.id) : null;
+		const matches = await verifyPasswordOrDummy(password, stored);
+		return account && matches ? account : null;
+	});
+	if (result.outcome !== 'ok')
+		return { ok: false, locked: result.outcome === 'locked' || result.locked };
 	await store.clearPasswordFailures(normalized);
-	return { ok: true, account };
+	return { ok: true, account: result.value };
 }
 
-/** Silent no-op for unknown emails so callers cannot enumerate accounts. */
+/**
+ * Silent no-op for unknown emails so callers cannot enumerate accounts. Sends at most one email per
+ * account every 5 minutes while its earlier links are unused, so repeated requests can't flood the
+ * inbox or use up the mail quota. Run it in the background so the response is the same either way.
+ */
 export async function requestPasswordReset(
 	deps: PasswordDeps,
 	email: string,
@@ -170,11 +201,14 @@ export async function requestPasswordReset(
 	const account = await deps.store.findAccountByEmail(normalize(email));
 	if (!account) return;
 	const token = generateToken();
-	await deps.store.createPasswordToken(
+	const created = await deps.store.createResetTokenUnlessRecent(
 		await hashToken(token),
-		{ purpose: 'reset', accountId: account.id },
-		new Date(now.getTime() + RESET_TOKEN_TTL_MS)
+		account.id,
+		new Date(now.getTime() + RESET_TOKEN_TTL_MS),
+		new Date(now.getTime() - RESET_COOLDOWN_MS),
+		now
 	);
+	if (!created) return;
 	const url = linkUrl(deps.appUrl, '/login/reset/complete', token);
 	try {
 		await deps.mailer.send(passwordResetEmail(account.email, account.name, url));
@@ -219,20 +253,14 @@ export async function currentPasswordProblem(
 	currentPassword: string,
 	now: Date
 ): Promise<string | null> {
-	const email = normalize(account.email);
-	const failures = await store.countPasswordFailures(
-		email,
-		new Date(now.getTime() - LOCKOUT_WINDOW_MS)
+	if (!currentPassword) return 'Enter your current password.';
+	const result = await attemptPassword(store, normalize(account.email), now, async () =>
+		(await verifyPassword(currentPassword, stored)) ? true : null
 	);
-	if (failures >= LOCKOUT_ATTEMPTS) {
+	if (result.outcome === 'locked') {
 		return 'Too many incorrect attempts. Try again in 15 minutes, or reset your password from the sign-in page.';
 	}
-	if (!currentPassword) return 'Enter your current password.';
-	if (!(await verifyPassword(currentPassword, stored))) {
-		await store.recordPasswordFailure(email, now);
-		return 'Current password is incorrect.';
-	}
-	return null;
+	return result.outcome === 'wrong' ? 'Current password is incorrect.' : null;
 }
 
 export interface ChangePasswordForm {

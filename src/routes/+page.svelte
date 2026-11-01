@@ -10,6 +10,8 @@
 <main class="landing">
 	{#if page.url.searchParams.get('accountDeleted') === '1'}
 		<p class="banner" role="status">Your account has been deleted.</p>
+	{:else if page.url.searchParams.get('signedOutEverywhere') === '1'}
+		<p class="banner" role="status">You've been signed out on every device.</p>
 	{/if}
 	<h1><img src={logo} alt="Brenda Sings" width="420" height="84" /></h1>
 	<p class="tagline">Singing lessons with Brenda, booked in a minute.</p>

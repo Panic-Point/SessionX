@@ -1,7 +1,12 @@
 import { fail } from '@sveltejs/kit';
 import { listLessons, setLessonPaid, summarizeLessons } from '#lib/server/admin-service.ts';
 import { parsePeriod, periodQuery } from '#lib/server/periods.ts';
-import { formString, requireAdmin } from '#lib/server/admin-actions.ts';
+import {
+	cancelledMessage,
+	formNotify,
+	formString,
+	requireAdmin
+} from '#lib/server/admin-actions.ts';
 import { getAppUrl, getCalendar, getMailer, getStore } from '#lib/server/context.ts';
 import { adminCancelLesson } from '#lib/server/series-service.ts';
 import type { Actions, PageServerLoad } from './$types';
@@ -65,13 +70,15 @@ export const actions: Actions = {
 			appUrl: getAppUrl(),
 			calendar: getCalendar()
 		};
+		const notify = formNotify(data);
 		const result = await adminCancelLesson(
 			deps,
 			formString(data, 'id'),
 			new Date(),
-			formString(data, 'reason')
+			formString(data, 'reason'),
+			notify
 		);
 		if (!result.ok) return fail(400, { message: result.message });
-		return { message: null, cancelled: 'Lesson cancelled. The family has been emailed.' };
+		return { message: null, cancelled: cancelledMessage('Lesson cancelled.', notify) };
 	}
 };
