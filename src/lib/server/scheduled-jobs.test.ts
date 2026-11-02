@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { fakeCalendar } from './calendar/fake-client.test-helpers';
-import { runScheduledJobs } from './scheduled-jobs';
+import { runScheduledJobs, USAGE_RETENTION_DAYS } from './scheduled-jobs';
 import { demoData } from './store/demo-data';
 import { MemoryBookingStore } from './store/memory';
 
@@ -30,8 +30,31 @@ describe('runScheduledJobs', () => {
 			seriesToppedUp: 1,
 			lessonsAdded: 12,
 			seriesDeferred: 0,
-			calendarAdded: 0
+			calendarAdded: 0,
+			usagePurged: 0
 		});
+	});
+
+	it('deletes usage events older than the retention period, and survives a failed delete', async () => {
+		const store = new MemoryBookingStore(demoData());
+		const old = new Date(now.getTime() - (USAGE_RETENTION_DAYS + 1) * 24 * 60 * 60 * 1000);
+		const base = { accountId: null, visitId: null, route: '/', durationMs: 0, detail: null };
+		await store.recordUsageEvent({ ...base, kind: 'page_view', occurredAt: old });
+		await store.recordUsageEvent({ ...base, kind: 'page_view', occurredAt: now });
+		const deps = { store, appUrl: 'https://example.test' };
+		expect((await runScheduledJobs(deps, now)).usagePurged).toBe(1);
+		expect(
+			(await store.listUsageEvents(new Date(0), new Date(now.getTime() + 1), 10)).events
+		).toHaveLength(1);
+
+		vi.spyOn(store, 'deleteUsageEventsBefore').mockRejectedValue(new Error('db down'));
+		const errors = vi.spyOn(console, 'error').mockImplementation(() => {});
+		expect(await runScheduledJobs(deps, now)).toMatchObject({ usagePurged: null, expired: 0 });
+		expect(errors).toHaveBeenCalledWith(
+			'cron: deleting old usage events failed',
+			expect.any(Error)
+		);
+		errors.mockRestore();
 	});
 
 	it('puts lessons left off the calendar on it with the budget left after top-ups', async () => {

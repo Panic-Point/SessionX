@@ -1,7 +1,11 @@
 <script lang="ts">
 	import favicon from '#lib/assets/favicon.svg';
 	import logo from '#lib/assets/logo-inline.svg';
+	import { afterNavigate } from '$app/navigation';
 	import { page } from '$app/state';
+	import { isTrackedRoute } from '#lib/usage-pages.ts';
+	import { createUsageTracker, getVisitId, type UsageBeacon } from '#lib/usage-tracker.ts';
+	import { onMount } from 'svelte';
 	import type { LayoutProps } from './$types';
 
 	let { data, children }: LayoutProps = $props();
@@ -12,6 +16,55 @@
 	);
 	// The home page shows the full logo itself.
 	const showLogo = $derived(page.url.pathname !== '/');
+
+	// First-party usage stats for the admin Usage tab: which page, for how long. No cookies; the
+	// visit id lives in sessionStorage for this tab only. The admin's own browsing is not sent.
+	function sendBeacon(beacon: UsageBeacon) {
+		const body = JSON.stringify(beacon);
+		try {
+			if (navigator.sendBeacon?.('/api/usage', new Blob([body], { type: 'text/plain' }))) return;
+			void fetch('/api/usage', {
+				method: 'POST',
+				body,
+				headers: { 'content-type': 'text/plain' },
+				keepalive: true
+			}).catch(() => {});
+		} catch {
+			// Telemetry never gets in the visitor's way.
+		}
+	}
+
+	let tracker: ReturnType<typeof createUsageTracker> | null = null;
+
+	function trackedRoute(): string | null {
+		const id = page.route.id;
+		return data.viewer !== 'admin' && id && isTrackedRoute(id) ? id : null;
+	}
+
+	// Runs after the first load ('enter') and every client-side navigation.
+	afterNavigate(() => {
+		tracker ??= createUsageTracker({
+			now: () => performance.now(),
+			send: sendBeacon,
+			visitId: getVisitId(
+				() => sessionStorage,
+				() => crypto.randomUUID()
+			)
+		});
+		tracker.navigated(trackedRoute());
+	});
+
+	onMount(() => {
+		const onVisibility = () =>
+			document.visibilityState === 'hidden' ? tracker?.hidden() : tracker?.visible();
+		const onPageHide = () => tracker?.hidden();
+		document.addEventListener('visibilitychange', onVisibility);
+		window.addEventListener('pagehide', onPageHide);
+		return () => {
+			document.removeEventListener('visibilitychange', onVisibility);
+			window.removeEventListener('pagehide', onPageHide);
+		};
+	});
 </script>
 
 <svelte:head>

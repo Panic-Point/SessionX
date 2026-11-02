@@ -66,8 +66,40 @@ import {
 	type SeriesInput,
 	type Student,
 	type StudentPrice,
-	type StudioSettings
+	type StudioSettings,
+	type UsageEvent,
+	type UsageEventInput,
+	type UsageEventKind,
+	type UsageEventPage
 } from './types';
+
+interface UsageEventRow {
+	id: number;
+	occurred_at: string;
+	kind: UsageEventKind;
+	account_id: string | null;
+	visit_id: string | null;
+	route: string | null;
+	duration_ms: number | null;
+	detail: string | null;
+}
+
+const USAGE_COLUMNS = 'id, occurred_at, kind, account_id, visit_id, route, duration_ms, detail';
+/** PostgREST returns at most this many rows per request by default. */
+const USAGE_PAGE_ROWS = 1000;
+
+function mapUsageEventRow(row: UsageEventRow): UsageEvent {
+	return {
+		id: String(row.id),
+		occurredAt: new Date(row.occurred_at),
+		kind: row.kind,
+		accountId: row.account_id,
+		visitId: row.visit_id,
+		route: row.route,
+		durationMs: row.duration_ms,
+		detail: row.detail
+	};
+}
 
 function fail(context: string, error: { message?: string }): never {
 	throw new Error(`${context}: ${error.message ?? 'unknown error'}`);
@@ -1088,6 +1120,68 @@ export function createSupabaseBookingStore(url: string, serviceRoleKey: string):
 				.select('id');
 			if (error) failAccount('deleteSong', error);
 			if ((data as { id: string }[]).length === 0) throw new AccountStoreError('not_found');
+		},
+
+		// ---- UsageStore ----
+
+		async recordUsageEvent(event: UsageEventInput): Promise<void> {
+			const { error } = await db.from('usage_events').insert({
+				occurred_at: event.occurredAt.toISOString(),
+				kind: event.kind,
+				account_id: event.accountId,
+				visit_id: event.visitId,
+				route: event.route,
+				duration_ms: event.durationMs,
+				detail: event.detail
+			});
+			if (error) fail('recordUsageEvent', error);
+		},
+
+		async listUsageEvents(from: Date, to: Date, limit: number): Promise<UsageEventPage> {
+			const events: UsageEvent[] = [];
+			// Pages by id so rows landing mid-read neither repeat nor go missing. One extra row tells
+			// whether the limit cut the list short.
+			let afterId = 0;
+			while (events.length <= limit) {
+				const want = Math.min(USAGE_PAGE_ROWS, limit + 1 - events.length);
+				const { data, error } = await db
+					.from('usage_events')
+					.select(USAGE_COLUMNS)
+					.gte('occurred_at', from.toISOString())
+					.lt('occurred_at', to.toISOString())
+					.gt('id', afterId)
+					.order('id')
+					.limit(want);
+				if (error) fail('listUsageEvents', error);
+				const rows = data as UsageEventRow[];
+				events.push(...rows.map(mapUsageEventRow));
+				if (rows.length < want) break;
+				afterId = rows[rows.length - 1].id;
+			}
+			const truncated = events.length > limit;
+			const kept = events.slice(0, limit);
+			kept.sort((a, b) => a.occurredAt.getTime() - b.occurredAt.getTime());
+			return { events: kept, truncated };
+		},
+
+		async lastUsageEventAt(): Promise<Date | null> {
+			const { data, error } = await db
+				.from('usage_events')
+				.select('occurred_at')
+				.order('occurred_at', { ascending: false })
+				.limit(1);
+			if (error) fail('lastUsageEventAt', error);
+			const row = (data as { occurred_at: string }[])[0];
+			return row ? new Date(row.occurred_at) : null;
+		},
+
+		async deleteUsageEventsBefore(before: Date): Promise<number> {
+			const { count, error } = await db
+				.from('usage_events')
+				.delete({ count: 'exact' })
+				.lt('occurred_at', before.toISOString());
+			if (error) fail('deleteUsageEventsBefore', error);
+			return count ?? 0;
 		}
 	};
 }

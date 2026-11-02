@@ -36,7 +36,11 @@ import {
 	type SongInput,
 	type SeriesTag,
 	SeriesStoreError,
-	type StudioSettings
+	type StudioSettings,
+	type UsageEvent,
+	type UsageEventInput,
+	type UsageEventPage,
+	type UsageStore
 } from './types';
 
 const MAX_PENDING = 2;
@@ -96,7 +100,7 @@ const isLive = (b: StoredBooking) => b.status === 'pending' || b.status === 'app
 
 /** In-memory BookingStore that mirrors the request_guest_booking SQL function's semantics. */
 export class MemoryBookingStore
-	implements BookingStore, AdminStore, AccountStore, SeriesStore, RepertoireStore
+	implements BookingStore, AdminStore, AccountStore, SeriesStore, RepertoireStore, UsageStore
 {
 	private readonly data: DemoData;
 	private readonly bookings: StoredBooking[] = [];
@@ -112,6 +116,8 @@ export class MemoryBookingStore
 	private readonly studentNotes = new Map<string, string>();
 	private readonly deletedAccounts = new Set<string>();
 	private readonly songs: RepertoireSong[] = [];
+	private usageEvents: UsageEvent[] = [];
+	private nextUsageId = 1;
 
 	constructor(data: DemoData = demoData()) {
 		this.data = structuredClone(data);
@@ -766,6 +772,7 @@ export class MemoryBookingStore
 			throw new AccountStoreError('not_found');
 		}
 		this.deletedAccounts.add(accountId);
+		this.usageEvents = this.usageEvents.filter((e) => e.accountId !== accountId);
 		account.email = deletedEmail(accountId);
 		this.setPassword(accountId, null);
 		for (const [hash, token] of this.loginTokens) {
@@ -899,6 +906,35 @@ export class MemoryBookingStore
 	}
 
 	/** Mirrors create_series_occurrences: skip clashes and starts not after now, then advance. */
+	// ---- UsageStore ----
+
+	async recordUsageEvent(event: UsageEventInput): Promise<void> {
+		this.usageEvents.push({ ...event, id: String(this.nextUsageId++) });
+	}
+
+	async listUsageEvents(from: Date, to: Date, limit: number): Promise<UsageEventPage> {
+		const matched = this.usageEvents
+			.filter((e) => e.occurredAt >= from && e.occurredAt < to)
+			.sort((a, b) => a.occurredAt.getTime() - b.occurredAt.getTime());
+		return {
+			events: matched.slice(0, limit).map((e) => ({ ...e })),
+			truncated: matched.length > limit
+		};
+	}
+
+	async lastUsageEventAt(): Promise<Date | null> {
+		let last: Date | null = null;
+		for (const e of this.usageEvents) if (!last || e.occurredAt > last) last = e.occurredAt;
+		return last;
+	}
+
+	async deleteUsageEventsBefore(before: Date): Promise<number> {
+		const kept = this.usageEvents.filter((e) => e.occurredAt >= before);
+		const removed = this.usageEvents.length - kept.length;
+		this.usageEvents = kept;
+		return removed;
+	}
+
 	private materialise(
 		stored: StoredSeries,
 		startsAt: Date[],
