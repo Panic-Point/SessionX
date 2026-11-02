@@ -1,8 +1,9 @@
 import { fail, redirect } from '@sveltejs/kit';
 import { loginWithPassword } from '#lib/server/auth/password-service.ts';
-import { startSession } from '#lib/server/auth/start-session.ts';
+import { signIn } from '#lib/server/auth/start-session.ts';
 import { formString } from '#lib/server/admin-actions.ts';
 import { getStore } from '#lib/server/context.ts';
+import { recordUsage, signInFailedEvent } from '#lib/server/usage.ts';
 import {
 	passesTurnstile,
 	TURNSTILE_FAILED,
@@ -40,6 +41,7 @@ export const actions: Actions = {
 		const now = new Date();
 		const result = await loginWithPassword(getStore(), email, password, now);
 		if (!result.ok) {
+			await recordUsage(getStore(), signInFailedEvent(now));
 			return fail(400, {
 				email,
 				errors,
@@ -47,6 +49,6 @@ export const actions: Actions = {
 				locked: result.locked
 			});
 		}
-		redirect(303, await startSession(cookies, result.account, now));
+		redirect(303, await signIn(cookies, result.account, now));
 	}
 };

@@ -10,6 +10,7 @@
 		{ href: '/admin/families', label: 'Families' },
 		{ href: '/admin/hours', label: 'Hours' },
 		{ href: '/admin/lesson-types', label: 'Lesson types' },
+		{ href: '/admin/usage', label: 'Usage' },
 		{ href: '/admin/settings', label: 'Settings' }
 	];
 

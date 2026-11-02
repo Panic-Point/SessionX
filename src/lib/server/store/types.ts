@@ -476,4 +476,47 @@ export interface RepertoireStore {
 	deleteSong(studentId: string, songId: string): Promise<void>;
 }
 
-export type AppStore = BookingStore & AdminStore & AccountStore & SeriesStore & RepertoireStore;
+/**
+ * page_view starts a view of a page; page_time adds more time to the same view (sent when a tab is
+ * hidden and later shown again). sign_in_failed carries no account: the email is never stored.
+ */
+export type UsageEventKind = 'page_view' | 'page_time' | 'sign_in' | 'sign_in_failed' | 'error';
+
+export interface UsageEventInput {
+	kind: UsageEventKind;
+	occurredAt: Date;
+	accountId: string | null;
+	/** Random per-tab-session id from the browser; null for server-side events. */
+	visitId: string | null;
+	/** SvelteKit route id, e.g. `/book/details`; never a full URL. */
+	route: string | null;
+	durationMs: number | null;
+	detail: string | null;
+}
+
+export interface UsageEvent extends UsageEventInput {
+	id: string;
+}
+
+export interface UsageEventPage {
+	events: UsageEvent[];
+	/** True when more events matched than `limit`; the report says it is incomplete. */
+	truncated: boolean;
+}
+
+export interface UsageStore {
+	recordUsageEvent(event: UsageEventInput): Promise<void>;
+	/** occurredAt in [from, to), oldest first, at most `limit` events. */
+	listUsageEvents(from: Date, to: Date, limit: number): Promise<UsageEventPage>;
+	/** The newest event's time, any kind; null when nothing was ever recorded. */
+	lastUsageEventAt(): Promise<Date | null>;
+	/** Deletes events with occurredAt < before; returns how many. */
+	deleteUsageEventsBefore(before: Date): Promise<number>;
+}
+
+export type AppStore = BookingStore &
+	AdminStore &
+	AccountStore &
+	SeriesStore &
+	RepertoireStore &
+	UsageStore;

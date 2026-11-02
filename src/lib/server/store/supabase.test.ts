@@ -5,6 +5,7 @@ import { runAdminStoreContract } from './admin-contract';
 import { runBookingStoreContract } from './contract';
 import { runRepertoireStoreContract } from './repertoire-contract';
 import { runSeriesStoreContract } from './series-contract';
+import { runUsageStoreContract } from './usage-contract';
 import { demoData } from './demo-data';
 import { runPasswordStoreContract } from './password-contract';
 import { createSupabaseBookingStore } from './supabase';
@@ -28,6 +29,7 @@ async function resetToSeed() {
 	check((await db.from('login_tokens').delete().not('token_hash', 'is', null)).error);
 	check((await db.from('password_tokens').delete().not('token_hash', 'is', null)).error);
 	check((await db.from('password_failures').delete().not('id', 'is', null)).error);
+	check((await db.from('usage_events').delete().not('id', 'is', null)).error);
 	check((await db.from('bookings').delete().not('id', 'is', null)).error);
 	check((await db.from('repertoire_songs').delete().not('id', 'is', null)).error);
 	// Only the seed's series stays, un-materialised (its seeded occurrences went with the bookings).
@@ -186,6 +188,11 @@ describe.skipIf(!url || !key)('supabase store', () => {
 		resetToSeed
 	);
 	runRepertoireStoreContract(
+		'supabase',
+		async () => createSupabaseBookingStore(url!, key!),
+		resetToSeed
+	);
+	runUsageStoreContract(
 		'supabase',
 		async () => createSupabaseBookingStore(url!, key!),
 		resetToSeed

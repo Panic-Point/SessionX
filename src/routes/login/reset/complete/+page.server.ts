@@ -1,6 +1,6 @@
 import { fail, redirect } from '@sveltejs/kit';
 import { completePasswordReset } from '#lib/server/auth/password-service.ts';
-import { startSession } from '#lib/server/auth/start-session.ts';
+import { signIn } from '#lib/server/auth/start-session.ts';
 import { formString } from '#lib/server/admin-actions.ts';
 import { getStore } from '#lib/server/context.ts';
 import type { Actions, PageServerLoad } from './$types';
@@ -26,6 +26,6 @@ export const actions: Actions = {
 				? fail(400, { invalid: true as const, errors: {} })
 				: fail(400, { invalid: false as const, errors: result.errors });
 		}
-		redirect(303, await startSession(cookies, result.account, now));
+		redirect(303, await signIn(cookies, result.account, now));
 	}
 };

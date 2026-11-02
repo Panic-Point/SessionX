@@ -1047,6 +1047,48 @@ await check('revoke_sessions is service-role only and bumps live accounts', asyn
 	assert((await ok(PARENT)) === false, 'deleted account');
 });
 
+// ---- usage events ----
+await check('usage_events are service-role only, with RLS on', async () => {
+	const { rows } = await db.query(
+		`select relrowsecurity rls,
+		        has_table_privilege('anon', 'usage_events', 'select') anon,
+		        has_table_privilege('authenticated', 'usage_events', 'insert') authenticated,
+		        has_table_privilege('service_role', 'usage_events', 'insert') service_role
+		   from pg_class where relname = 'usage_events'`
+	);
+	const r = rows[0];
+	assert(r.rls && !r.anon && !r.authenticated && r.service_role, JSON.stringify(r));
+});
+
+for (const [label, sql] of [
+	['an unknown kind', `insert into usage_events (kind) values ('click')`],
+	[
+		'an over-long duration',
+		`insert into usage_events (kind, duration_ms) values ('page_view', 1800001)`
+	],
+	[
+		'a too-short visit id',
+		`insert into usage_events (kind, visit_id) values ('page_view', 'short')`
+	]
+]) {
+	await check(`usage_events reject ${label}`, () => expectCode(() => db.exec(sql), '23514'));
+}
+
+await check("delete_account forgets the account's usage events", async () => {
+	await db.query(
+		`insert into usage_events (kind, account_id, route) values ('page_view', $1, '/account'),
+		        ('page_view', null, '/book')`,
+		[PAT]
+	);
+	await db.query('select delete_account($1, $2)', [PAT, '2026-11-01T00:00:00Z']);
+	const { rows } = await db.query(
+		`select (select count(*)::int from usage_events where account_id = $1) mine,
+		        (select count(*)::int from usage_events where account_id is null) guests`,
+		[PAT]
+	);
+	assert(rows[0].mine === 0 && rows[0].guests === 1, JSON.stringify(rows[0]));
+});
+
 // Supabase's pg_safeupdate rejects DELETE/UPDATE without a WHERE, even inside functions.
 await check('migrations have no DELETE without a WHERE clause', () => {
 	for (const f of readdirSync(migDir)) {
