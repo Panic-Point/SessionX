@@ -493,6 +493,12 @@ export class MemoryBookingStore
 		return this.toAdminBooking(booking);
 	}
 
+	async setBookingPrice(id: string, priceCents: number): Promise<AdminBooking> {
+		const booking = this.requireBooking(id);
+		booking.priceCents = priceCents;
+		return this.toAdminBooking(booking);
+	}
+
 	async updateSettings(settings: StudioSettings): Promise<void> {
 		this.data.settings = { ...settings, gcalBusyCalendarIds: [...settings.gcalBusyCalendarIds] };
 	}

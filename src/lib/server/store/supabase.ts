@@ -567,6 +567,18 @@ export function createSupabaseBookingStore(url: string, serviceRoleKey: string):
 			return mapAdminBookingRow(row);
 		},
 
+		async setBookingPrice(id: string, priceCents: number): Promise<AdminBooking> {
+			const { data, error } = await db
+				.from('bookings')
+				.update({ price_cents: priceCents })
+				.eq('id', id)
+				.select(BOOKING_COLUMNS);
+			if (error) fail('setBookingPrice', error);
+			const row = (data as unknown as AdminBookingRow[])[0];
+			if (!row) throw new AdminStoreError('not_found');
+			return mapAdminBookingRow(row);
+		},
+
 		async updateSettings(settings: StudioSettings): Promise<void> {
 			const { error } = await db
 				.from('settings')
