@@ -250,6 +250,11 @@ export interface AdminStore {
 	): Promise<AdminBooking>;
 	/** Throws AdminStoreError not_found. */
 	setPaid(id: string, paidAt: Date | null): Promise<AdminBooking>;
+	/**
+	 * Changes the price snapshotted on this one booking. The lesson type, custom prices and
+	 * other occurrences of a series are left alone. Throws AdminStoreError not_found.
+	 */
+	setBookingPrice(id: string, priceCents: number): Promise<AdminBooking>;
 	updateSettings(settings: StudioSettings): Promise<void>;
 	/** Throws AdminStoreError not_found. Null clears the stored Google Calendar event id. */
 	setCalendarEventId(bookingId: string, eventId: string | null): Promise<void>;

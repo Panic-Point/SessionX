@@ -167,6 +167,7 @@ export function runAdminStoreContract(
 				'not_found'
 			);
 			expect(await adminCode(store.setPaid(missing, NOW))).toBe('not_found');
+			expect(await adminCode(store.setBookingPrice(missing, 1000))).toBe('not_found');
 			expect(await store.getBooking(missing)).toBeNull();
 		});
 
@@ -177,6 +178,17 @@ export function runAdminStoreContract(
 			expect((await store.setPaid(created.bookingId, paidAt)).paidAt).toEqual(paidAt);
 			expect((await store.getBooking(created.bookingId))?.paidAt).toEqual(paidAt);
 			expect((await store.setPaid(created.bookingId, null)).paidAt).toBeNull();
+		});
+
+		it('setBookingPrice changes only that booking', async () => {
+			const store = await makeStore();
+			const changed = await store.requestGuestBooking(input(), NOW);
+			const other = await store.requestGuestBooking(input({ startsAt: NEXT_DAY }), NOW);
+			const before = (await store.getBooking(other.bookingId))!.priceCents;
+			expect((await store.setBookingPrice(changed.bookingId, 1234)).priceCents).toBe(1234);
+			expect((await store.getBooking(changed.bookingId))?.priceCents).toBe(1234);
+			expect((await store.getBooking(other.bookingId))?.priceCents).toBe(before);
+			expect((await store.setBookingPrice(changed.bookingId, 0)).priceCents).toBe(0);
 		});
 
 		it('unpaidOnly filter excludes paid', async () => {

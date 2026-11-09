@@ -11,6 +11,7 @@ import {
 	saveStudentNotes,
 	saveStudentPrices,
 	setLessonPaid,
+	setLessonPrice,
 	summarizeLessons,
 	type AdminDeps
 } from './admin-service';
@@ -231,6 +232,49 @@ describe('admin service', () => {
 		);
 		expect(unpaid.map((v) => v.id)).toEqual([midnightStart.bookingId, b.bookingId]);
 		expect(summarizeLessons(unpaid)).toBe('2 lessons · $70.00, $70.00 unpaid');
+	});
+
+	it('changes the price of one confirmed lesson only', async () => {
+		const { store, deps } = setup();
+		const a = await book(store, MON_3PM, 'a@example.com');
+		const b = await book(store, TUE_3PM, 'b@example.com');
+		for (const x of [a, b]) await decideRequest(deps, x.bookingId, 'approved', '', now);
+		expect(await setLessonPrice(store, a.bookingId, ' 42.5 ')).toEqual({ ok: true });
+		const lessons = await listLessons(store, { range: 'upcoming', unpaidOnly: false }, now);
+		expect(lessons.map((l) => [l.id, l.priceLabel])).toEqual([
+			[a.bookingId, '$42.50'],
+			[b.bookingId, '$35.00']
+		]);
+		expect(await setLessonPrice(store, a.bookingId, '0')).toEqual({ ok: true });
+		expect((await store.getBooking(a.bookingId))?.priceCents).toBe(0);
+	});
+
+	it('reprices late cancellations', async () => {
+		const { store, deps } = setup();
+		const a = await book(store, MON_3PM);
+		await decideRequest(deps, a.bookingId, 'approved', '', now);
+		const { manageToken } = (await store.getBooking(a.bookingId))!;
+		await store.cancelBooking({ kind: 'token', manageToken }, true, now);
+		expect(await setLessonPrice(store, a.bookingId, '15')).toEqual({ ok: true });
+		expect((await store.getBooking(a.bookingId))?.priceCents).toBe(1500);
+	});
+
+	it('rejects bad prices, missing lessons and lessons without a price to change', async () => {
+		const { store } = setup();
+		const pending = await book(store, MON_3PM);
+		const bad = { ok: false, message: 'Enter a price like 35 or 35.00.' };
+		for (const input of ['', 'abc', '-5', '1.234', '1000.01']) {
+			expect(await setLessonPrice(store, pending.bookingId, input)).toEqual(bad);
+		}
+		expect(await setLessonPrice(store, '99999999-0000-0000-0000-000000000000', '30')).toEqual({
+			ok: false,
+			message: 'Booking not found.'
+		});
+		expect(await setLessonPrice(store, pending.bookingId, '30')).toEqual({
+			ok: false,
+			message: 'Only confirmed lessons and late cancellations have a price to change.'
+		});
+		expect((await store.getBooking(pending.bookingId))?.priceCents).toBe(3500);
 	});
 
 	it('summarizes lessons and late cancels', () => {

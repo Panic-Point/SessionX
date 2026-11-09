@@ -86,6 +86,8 @@
 	<p class="banner bad" role="alert">{form.message}</p>
 {:else if form && 'cancelled' in form}
 	<p class="banner" role="status">{form.cancelled}</p>
+{:else if form && 'priced' in form}
+	<p class="banner" role="status">{form.priced}</p>
 {/if}
 
 {#if data.period?.error}
@@ -140,6 +142,23 @@
 						</form>
 					{/if}
 				</div>
+				<details class="cancel">
+					<summary>Change price…</summary>
+					<form method="POST" action="?/price" use:enhance={submit} class="price-form">
+						<input type="hidden" name="id" value={l.id} />
+						<div class="field">
+							<label for="price-{l.id}">Price for this lesson only ($)</label>
+							<input
+								id="price-{l.id}"
+								name="price"
+								inputmode="decimal"
+								required
+								value={l.priceInput}
+							/>
+						</div>
+						<button class="button" type="submit" disabled={busyId === l.id}>Save price</button>
+					</form>
+				</details>
 				{#if l.canCancel}
 					<details class="cancel">
 						<summary>Cancel lesson…</summary>
@@ -253,6 +272,21 @@
 		min-height: var(--tap);
 		display: flex;
 		align-items: center;
+	}
+
+	.price-form {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: flex-end;
+		gap: 0.5rem;
+	}
+
+	.price-form .field {
+		margin: 0;
+	}
+
+	.price-form input {
+		max-width: 8rem;
 	}
 
 	.pay {
