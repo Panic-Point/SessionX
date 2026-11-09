@@ -1,5 +1,10 @@
 import { fail } from '@sveltejs/kit';
-import { listLessons, setLessonPaid, summarizeLessons } from '#lib/server/admin-service.ts';
+import {
+	listLessons,
+	setLessonPaid,
+	setLessonPrice,
+	summarizeLessons
+} from '#lib/server/admin-service.ts';
 import { parsePeriod, periodQuery } from '#lib/server/periods.ts';
 import {
 	cancelledMessage,
@@ -42,6 +47,8 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 			durationMin: l.durationMin,
 			whenLabel: l.whenLabel,
 			priceLabel: l.priceLabel,
+			/** The current price as the edit field shows it, e.g. "35.00". */
+			priceInput: (l.priceCents / 100).toFixed(2),
 			paid: l.paid,
 			seriesId: l.series?.id ?? null,
 			seriesLabel: l.seriesLabel,
@@ -61,6 +68,14 @@ async function markPaid(locals: App.Locals, request: Request, paid: boolean) {
 export const actions: Actions = {
 	paid: ({ locals, request }) => markPaid(locals, request, true),
 	unpaid: ({ locals, request }) => markPaid(locals, request, false),
+	price: async ({ locals, request }) => {
+		requireAdmin(locals.account);
+		const data = await request.formData();
+		const id = formString(data, 'id');
+		const result = await setLessonPrice(getStore(), id, formString(data, 'price'));
+		if (!result.ok) return fail(400, { message: result.message, priceId: id });
+		return { message: null, priced: 'Price updated for this lesson only.', priceId: id };
+	},
 	cancel: async ({ locals, request }) => {
 		requireAdmin(locals.account);
 		const data = await request.formData();

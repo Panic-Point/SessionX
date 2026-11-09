@@ -200,6 +200,44 @@ export async function setLessonPaid(
 	}
 }
 
+/** Same ceiling as a lesson type's list price. */
+const MAX_LESSON_PRICE_CENTS = 100000;
+
+/**
+ * Changes what one booked lesson costs: only this booking's snapshotted price, never the lesson
+ * type, the student's custom price or other occurrences of a series. Only confirmed lessons and
+ * late cancellations (the ones the lessons page lists and totals) can be repriced.
+ */
+export async function setLessonPrice(
+	store: AdminDataStore,
+	id: string,
+	priceInput: string
+): Promise<ActionResult> {
+	const priceCents = dollarsToCents(priceInput);
+	if (priceCents === null || priceCents > MAX_LESSON_PRICE_CENTS) {
+		return { ok: false, message: 'Enter a price like 35 or 35.00.' };
+	}
+	const booking = await store.getBooking(id);
+	if (!booking) return { ok: false, message: STORE_MESSAGES.not_found };
+	const priceable =
+		booking.status === 'approved' || (booking.status === 'cancelled' && booking.lateCancel);
+	if (!priceable) {
+		return {
+			ok: false,
+			message: 'Only confirmed lessons and late cancellations have a price to change.'
+		};
+	}
+	try {
+		await store.setBookingPrice(id, priceCents);
+		return { ok: true };
+	} catch (e) {
+		if (e instanceof AdminStoreError && e.code === 'not_found') {
+			return { ok: false, message: STORE_MESSAGES.not_found };
+		}
+		throw e;
+	}
+}
+
 export interface FamilyListItem {
 	id: string;
 	name: string;
